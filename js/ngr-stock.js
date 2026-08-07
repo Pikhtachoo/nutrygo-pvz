@@ -673,8 +673,18 @@
       // В раскрытой карточке — рамка вокруг цены, как на Ozon
       '.t-catalog__prod-popup__container .ngr-price{border:1px solid #e8ecf1;border-radius:16px;' +
       'padding:14px 16px;background:#fff;margin:12px 0}' +
+      // Полка «Скидки недели» на главной собрана отдельной вёрсткой —
+      // приводим её цену к тому же виду, что в каталоге (Александр, 07.08).
+      '.ngr-sale-card__bottom strong{display:inline-flex!important;align-items:center;' +
+      'background:#ff7a1a!important;color:#fff!important;padding:6px 12px!important;' +
+      'border-radius:10px!important;font-size:21px!important;font-weight:800!important;' +
+      'line-height:1.15!important;letter-spacing:-.5px}' +
+      '.ngr-sale-card__bottom del{color:#a6adb6!important;font-size:14px!important;' +
+      'font-weight:600!important;margin-top:6px;display:inline-block}' +
+      '.ngr-sale-card__bottom > div{display:flex;flex-direction:column;align-items:flex-start;gap:2px}' +
       '@media(max-width:640px){' +
       '.ngr-price .t-catalog__card__price:not(.t-catalog__card__price_old){font-size:21px!important;padding:5px 10px}' +
+      '.ngr-sale-card__bottom strong{font-size:19px!important;padding:5px 10px!important}' +
       '.ngr-price{gap:8px}}';
     document.head.appendChild(st);
   }
