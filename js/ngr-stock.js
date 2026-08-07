@@ -1800,6 +1800,12 @@
     st.id = 'ngr-side-css';
     st.textContent =
       '.ngr-withside{display:grid;grid-template-columns:262px minmax(0,1fr);gap:24px;align-items:start}' +
+      // Место колонок закреплено, а не задано порядком элементов. После
+      // применения фильтра Tilda вставляет первой свою строку «Найдено»,
+      // и всё съезжало вправо: товары оказывались в узкой колонке под
+      // фильтром, а фильтр занимал витрину (замечание Александра 08.08).
+      '.ngr-withside>*{grid-column:2;min-width:0}' +
+      '.ngr-withside>.ngr-side{grid-column:1;grid-row:1/span 99}' +
       '.ngr-side{position:sticky;top:14px;background:#fff;border:1px solid #e8ecf1;border-radius:16px;' +
       'padding:6px 4px;max-height:calc(100vh - 28px);overflow:auto}' +
       '.ngr-side__g{border-bottom:1px solid #f1f4f7;padding:14px 14px 12px}' +
@@ -1824,7 +1830,9 @@
       '.ngr-side__reset:hover{background:#f6f8fa}' +
       '.ngr-sidebtn{display:none}' +
       '@media(max-width:1000px){' +
-      '.ngr-withside{grid-template-columns:1fr}' +
+      '.ngr-withside{grid-template-columns:minmax(0,1fr)}' +
+      '.ngr-withside>*{grid-column:1}' +
+      '.ngr-withside>.ngr-side{grid-column:1;grid-row:auto}' +
       '.ngr-side{position:fixed;inset:0;z-index:99998;border-radius:0;max-height:none;display:none;padding:10px}' +
       '.ngr-side_open{display:block}' +
       '.ngr-sidebtn{display:inline-flex;align-items:center;gap:8px;margin:0 0 12px;padding:11px 18px;' +
@@ -1903,6 +1911,11 @@
       if (/сортировка/i.test(t)) return;
       if (it.style.display !== 'none') it.style.setProperty('display', 'none', 'important');
     });
+    // Кнопка фильтров должна быть одна: лишние остаются от прежних сборок.
+    var btns = document.querySelectorAll('.ngr-sidebtn');
+    for (var b = 0; b < btns.length - 1; b++) btns[b].remove();
+    var host = side.parentNode;
+    if (host && !host.classList.contains('ngr-withside')) host.classList.add('ngr-withside');
   }
 
   function buildSideFilters() {
@@ -2013,7 +2026,10 @@
     close.type = 'button';
     close.className = 'ngr-side__close';
     close.textContent = 'Показать товары';
-    close.addEventListener('click', function () { side.classList.remove('ngr-side_open'); });
+    close.addEventListener('click', function () {
+      var live = document.querySelector('.ngr-side');
+      if (live) live.classList.remove('ngr-side_open');
+    });
     side.appendChild(close);
 
     // Ставим колонку слева от сетки товаров.
@@ -2025,11 +2041,18 @@
     host.insertBefore(side, grid);
 
     // На телефоне колонка открывается кнопкой.
+    // Колонка пересобирается, когда Tilda перерисовывает каталог, а кнопка
+    // оставалась от прежней и открывала снятую со страницы колонку —
+    // на телефоне фильтры не открывались вовсе (замечание Александра 08.08).
+    document.querySelectorAll('.ngr-sidebtn').forEach(function (b) { b.remove(); });
     var btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'ngr-sidebtn';
     btn.textContent = '☰ Фильтры';
-    btn.addEventListener('click', function () { side.classList.add('ngr-side_open'); });
+    btn.addEventListener('click', function () {
+      var live = document.querySelector('.ngr-side');
+      if (live) live.classList.add('ngr-side_open');
+    });
     host.parentNode.insertBefore(btn, host);
 
     // Старую строку фильтров прячем — поиск и сортировка остаются.
