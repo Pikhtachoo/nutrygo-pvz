@@ -2258,10 +2258,9 @@
     });
     host.parentNode.insertBefore(btn, host);
 
-    // Старую строку фильтров прячем — поиск и сортировка остаются.
+    // Старую строку фильтров прячем целиком — поиск и выбор сортировки
+    // живут отдельно, справа, и остаются на месте.
     document.querySelectorAll('.t-catalog__filter__item').forEach(function (it) {
-      var t = ((it.querySelector('.t-catalog__filter__item-title') || {}).textContent || '').trim();
-      if (/сортировка/i.test(t)) return;
       it.style.setProperty('display', 'none', 'important');
     });
   }
