@@ -817,6 +817,31 @@
 
   window.NGR_OPEN_PRODUCT = openProduct;
 
+  /**
+   * Каталог тоже открывает наше окно (решение Александра 08.08): вид товара
+   * становится одинаковым везде, и мы перестаём зависеть от всплывающей
+   * карточки Tilda.
+   *
+   * Не перехватываем то, что должно работать по-своему: кнопку «В корзину»,
+   * счётчик количества и точки галереи под фотографией.
+   */
+  document.addEventListener('click', function (e) {
+    var el = e.target;
+    if (!el || !el.closest) return;
+    if (el.closest('.ngr-pw')) return;                 // клик внутри нашего окна
+    var card = el.closest('.js-product');
+    if (!card) return;
+    if (el.closest('.ngr-gal')) return;                // точки галереи
+    if (el.closest('.ng2-brand-buy, [class*="cart"], [class*="quantity"], input, select')) return;
+    var txt = (el.textContent || '').trim();
+    if (/^(в корзину|отменить|\+|−|-)$/i.test(txt)) return;
+    var art = article(card);
+    if (!art) return;
+    e.preventDefault();
+    e.stopPropagation();
+    openProduct(art);
+  }, true);
+
   // Прямая ссылка на товар
   (function () {
     var m = location.search.match(/[?&]ngprod=([\w-]+)/);
