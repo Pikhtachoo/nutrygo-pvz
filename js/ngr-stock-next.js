@@ -1864,6 +1864,41 @@
    */
   var SIDE_FILTERS = true;
 
+  /*
+   * Фильтр предлагает только то, что можно купить.
+   *
+   * Tilda считает значения по всему каталогу, включая товары без остатка:
+   * у California Gold Nutrition она показывала 81 позицию, хотя на складе
+   * нет ни одной. Покупатель выбирал бренд и попадал на пустую витрину
+   * (замечание Александра 08.08). Список доступных значений считает воркер
+   * по живым остаткам, здесь мы его только применяем.
+   */
+  var FACETS = null;        // null — ещё не спрашивали, {} — не дождались
+  var facetsAsked = false;
+
+  // Страну «Россия» не показываем: её проставили по ошибке в карточках Ozon,
+  // товар на деле привозной (решение Александра 08.08).
+  var HIDE_OPT = { 'Страна-изготовитель': { 'Россия': 1 } };
+
+  function loadFacets(after) {
+    if (facetsAsked) return;
+    facetsAsked = true;
+    fetch(API + '/catalog/facets')
+      .then(function (r) { return r.json(); })
+      .then(function (j) { FACETS = (j && j.groups) || {}; if (after) after(); })
+      .catch(function () { FACETS = {}; if (after) after(); });
+  }
+
+  // Есть ли товар с таким значением. Про незнакомую группу не спорим:
+  // лучше показать лишнее, чем спрятать нужное.
+  function optAvailable(group, value) {
+    if ((HIDE_OPT[group] || {})[value]) return false;
+    if (!FACETS) return true;
+    var box = FACETS[group];
+    if (!box) return true;
+    return !!box[value];
+  }
+
   /**
    * Флажок фильтра ищем в момент нажатия, а не при сборке колонки.
    * Tilda перерисовывает разметку фильтра после каждого применения, и
@@ -1922,6 +1957,9 @@
     if (!SIDE_FILTERS) return;
     var bar = document.querySelector('.t-catalog__filter');
     if (!bar) return;
+    // Без списка доступных значений колонку не собираем: иначе она мигнёт
+    // полным перечнем и тут же перестроится.
+    if (!FACETS) { loadFacets(buildSideFilters); return; }
     var block = document.querySelector('#rec2502703571 .js-catalog-cont-w-filter, #rec2502703571 .t-catalog');
     if (!block || block.querySelector('.ngr-side')) return;
     var items = [].slice.call(document.querySelectorAll('.t-catalog__filter__item'));
@@ -1967,10 +2005,13 @@
       if (!opts.length) return;
       var g2 = sideGroup(title);
       var shown = 0;
-      opts.forEach(function (o, i) {
+      var i = -1;
+      opts.forEach(function (o) {
         var inp = o.querySelector('input[type="checkbox"], input[type="radio"]');
         var text = (o.textContent || '').trim();
         if (!inp || !text) return;
+        if (!optAvailable(title, text)) return;
+        i++;
         var row = document.createElement('div');
         row.className = 'ngr-side__o' + (inp.checked ? ' on' : '');
         var logo = BRAND_LOGO[text];
