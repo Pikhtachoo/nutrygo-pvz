@@ -33,6 +33,9 @@
    * побольше.
    */
   function askOnlyInStock() {
+    // Выключатель для проверки: с ?ngr=off страница работает так, будто
+    // поправки нет. Нужен, чтобы отличать наши поломки от чужих.
+    if (/[?&]ngr=off/.test(location.search)) return;
     if (window.NGR_STOCK_QUERY) return;
     window.NGR_STOCK_QUERY = 1;
     function fix(u) {
