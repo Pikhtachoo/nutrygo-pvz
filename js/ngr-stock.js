@@ -731,6 +731,8 @@
       (d.left >= 4 ? '<div class="ngr-pd__left">В наличии</div>' :
         '<div class="ngr-pd__left" style="color:#a11">Сейчас недоступен</div>') +
       '<button type="button" class="ngr-pd__buy"' + (d.left >= 4 ? '' : ' disabled') + '>В корзину</button>' +
+      '<button type="button" class="ngr-pd__fav' + (favHas(d.art) ? ' on' : '') + '">' +
+      (favHas(d.art) ? '♥ В избранном' : '♡ В избранное') + '</button>' +
       '</div></div>' +
       '<div class="ngr-pd__full"><div class="ngr-pd__desc"></div><div class="ngr-pd__rev"></div></div>' +
       '</div>';
@@ -757,6 +759,15 @@
       } else {
         buy.textContent = 'Не удалось добавить';
       }
+    });
+
+    favCss();
+    var fav = body.querySelector('.ngr-pd__fav');
+    if (fav) fav.addEventListener('click', function () {
+      var on = favToggle(d.art);
+      fav.className = 'ngr-pd__fav' + (on ? ' on' : '');
+      fav.textContent = on ? '♥ В избранном' : '♡ В избранное';
+      fixFav();
     });
 
     // Описание и характеристики — тем же видом, что в каталоге
@@ -855,8 +866,24 @@
   // Прямая ссылка на товар
   (function () {
     var m = location.search.match(/[?&]ngprod=([\w-]+)/);
-    if (m) setTimeout(function () { openProduct(m[1]); }, 400);
+    if (!m) return;
+    // Ждём, пока страница отрисуется. Раньше окно открывалось через 400 мс
+    // и накрывало ещё не собранную страницу, а блокировка прокрутки могла
+    // остаться на полупустой странице (замечание Александра 08.08).
+    var go = function () { setTimeout(function () { openProduct(m[1]); }, 600); };
+    if (document.readyState === 'complete') go();
+    else window.addEventListener('load', go);
   })();
+
+  // Если окна нет, прокрутка страницы обязана быть свободной. Страховка
+  // от «белой страницы»: что бы ни случилось, сайт не должен остаться
+  // заблокированным.
+  setInterval(function () {
+    var open = document.querySelector('.ngr-pw_open');
+    if (!open && document.body.style.overflow === 'hidden') {
+      document.body.style.removeProperty('overflow');
+    }
+  }, 1000);
 
   /* ---------- Личный кабинет ---------- */
 
@@ -924,6 +951,13 @@
 
   var cabData = { profile: null, dash: null };
 
+  /** Статус заказа Tilda приходит то строкой, то объектом — приводим к тексту. */
+  function orderStatus(o) {
+    var s = o.status_name || o.status || o.state || '';
+    if (s && typeof s === 'object') s = s.name || s.title || s.text || s.value || '';
+    return String(s || 'Оформлен');
+  }
+
   function cabSection(name) {
     var host = document.querySelector('.ngr-cab__main');
     if (!host) return;
@@ -944,7 +978,7 @@
         c.innerHTML = '<div class="ngr-cab__row"><div><b>Заказ № ' + (o.id || o.orderid || '') + '</b>' +
           '<div class="ngr-cab__mail">' + String(o.date || o.created || '').slice(0, 16) + '</div></div>' +
           '<div style="text-align:right"><div class="ngr-cab__sum">' + money(Number(o.amount) || 0) + '</div>' +
-          '<div class="ngr-cab__st">' + (o.status_name || o.status || '') + '</div></div></div>';
+          '<div class="ngr-cab__st">' + orderStatus(o) + '</div></div></div>';
         host.appendChild(c);
       });
       return;
@@ -1062,6 +1096,49 @@
     try { return JSON.parse(localStorage.getItem('ngr_fav') || '[]'); } catch (e) { return []; }
   }
   function favHas(a) { return favList().indexOf(String(a)) > -1; }
+
+  function favCss() {
+    if (document.getElementById('ngr-fav-css')) return;
+    var st = document.createElement('style');
+    st.id = 'ngr-fav-css';
+    st.textContent =
+      '.ngr-fav{position:absolute;top:10px;right:10px;z-index:4;width:34px;height:34px;border:0;' +
+      'border-radius:50%;background:rgba(255,255,255,.92);box-shadow:0 2px 8px rgba(20,23,28,.12);' +
+      'cursor:pointer;font-size:17px;line-height:1;color:#8a919b;display:flex;align-items:center;' +
+      'justify-content:center;padding:0}' +
+      '.ngr-fav:hover{background:#fff;color:#e5342b}' +
+      '.ngr-fav.on{color:#e5342b}' +
+      '.ngr-pd__fav{margin-top:10px;display:inline-flex;align-items:center;gap:7px;border:1px solid #e3e8ee;' +
+      'background:#fff;border-radius:10px;padding:9px 14px;font-size:14px;font-weight:600;' +
+      'color:#14171c;cursor:pointer}' +
+      '.ngr-pd__fav.on{border-color:#f3b4b0;color:#e5342b;background:#fff6f5}';
+    document.head.appendChild(st);
+  }
+
+  /** Сердечко на карточке каталога и на карточках полок. */
+  function fixFav() {
+    favCss();
+    document.querySelectorAll('.js-product, .ngr-sc').forEach(function (c) {
+      if (c.getAttribute('data-ngr-fav') === '1') return;
+      var art = c.classList.contains('ngr-sc') ? c.getAttribute('data-art') : article(c);
+      if (!art) return;
+      c.setAttribute('data-ngr-fav', '1');
+      var host = c.querySelector('.t-catalog__card__imgwrapper, .ngr-sc__pic') || c;
+      if (getComputedStyle(host).position === 'static') host.style.position = 'relative';
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'ngr-fav' + (favHas(art) ? ' on' : '');
+      b.setAttribute('aria-label', 'В избранное');
+      b.textContent = favHas(art) ? '♥' : '♡';
+      b.addEventListener('click', function (e) {
+        e.preventDefault(); e.stopPropagation();
+        var on = favToggle(art);
+        b.className = 'ngr-fav' + (on ? ' on' : '');
+        b.textContent = on ? '♥' : '♡';
+      });
+      host.appendChild(b);
+    });
+  }
   function favToggle(a) {
     var l = favList(), i = l.indexOf(String(a));
     if (i > -1) l.splice(i, 1); else l.push(String(a));
@@ -1143,6 +1220,7 @@
   function shelfCard(c) {
     var a = document.createElement('a');
     a.className = 'ngr-sc';
+    a.setAttribute('data-art', c.art);
     a.href = c.url || '#';
     a.addEventListener('click', function (e) {
       e.preventDefault();
@@ -1509,7 +1587,10 @@
     // и карточка стояла пустой, пока фото едет (замечание Александра 08.08).
     // Теперь снимок Tilda остаётся первым кадром, Ozon идёт следом.
     var orig = getComputedStyle(layers[0]).backgroundImage;
-    if (!orig || orig === 'none') return false;   // ещё не загрузилось — придём позже
+    // Пока фото не загрузилось, Tilda рисует цветную заглушку — это не 'none',
+    // а градиент. Раньше он попадал в галерею первым кадром, и карточка
+    // навсегда оставалась размытым пятном (замечание Александра 08.08).
+    if (!orig || orig.indexOf('url(') !== 0) return false;
     var slides = [orig];
     photos.forEach(function (u) {
       var s = 'url("' + u + '")';
@@ -1895,7 +1976,7 @@
   function apply() {
     fixPopup(); fixCards(); fixCart(); fixDupDelivery(); fixUnits(); fixBrands();
     initSearchGuard(); fixSearch(); fixAccountButton(); fixAuthGate();
-    fixRatings(); fixPopupReviews(); fixDescription(); fixDeliveryOrder(); fixCardPhotos(); fixPrices(); fixFilterValues(); fixRatingFilter(); applyRatingFilter(false); fixShelves(); fixSgr();
+    fixRatings(); fixPopupReviews(); fixDescription(); fixDeliveryOrder(); fixCardPhotos(); fixPrices(); fixFilterValues(); fixRatingFilter(); applyRatingFilter(false); fixShelves(); fixSgr(); fixFav();
   }
 
   apply();
