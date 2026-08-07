@@ -846,22 +846,34 @@
    * Не перехватываем то, что должно работать по-своему: кнопку «В корзину»,
    * счётчик количества и точки галереи под фотографией.
    */
-  document.addEventListener('click', function (e) {
-    var el = e.target;
-    if (!el || !el.closest) return;
-    if (el.closest('.ngr-pw')) return;                 // клик внутри нашего окна
+  /**
+   * Каталог открывает наше окно. Перехватываем не только нажатие, но и
+   * его начало: Tilda открывает свою карточку раньше, и у покупателя
+   * сначала появлялось наше окно, а поверх — старое (замечание
+   * Александра 08.08).
+   */
+  function shouldOpenOurWindow(el) {
+    if (!el || !el.closest) return null;
+    if (el.closest('.ngr-pw')) return null;              // внутри нашего окна
     var card = el.closest('.js-product');
-    if (!card) return;
-    if (el.closest('.ngr-gal')) return;                // точки галереи
-    if (el.closest('.ng2-brand-buy, [class*="cart"], [class*="quantity"], input, select')) return;
+    if (!card) return null;
+    if (el.closest('.ngr-gal, .ngr-fav')) return null;   // точки галереи и сердечко
+    if (el.closest('.ng2-brand-buy, [class*="cart"], [class*="quantity"], input, select')) return null;
     var txt = (el.textContent || '').trim();
-    if (/^(в корзину|отменить|\+|−|-)$/i.test(txt)) return;
-    var art = article(card);
-    if (!art) return;
-    e.preventDefault();
-    e.stopPropagation();
-    openProduct(art);
-  }, true);
+    if (/^(в корзину|отменить|\+|−|-)$/i.test(txt)) return null;
+    return article(card) || null;
+  }
+
+  ['pointerdown', 'mousedown', 'touchstart', 'click'].forEach(function (type) {
+    document.addEventListener(type, function (e) {
+      var art = shouldOpenOurWindow(e.target);
+      if (!art) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+      if (type === 'click') openProduct(art);
+    }, true);
+  });
 
   // Прямая ссылка на товар
   (function () {
