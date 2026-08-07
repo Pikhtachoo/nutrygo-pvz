@@ -1911,6 +1911,12 @@
       '.ngr-side__reset{display:block;width:100%;margin:10px 0 4px;padding:11px;border:1px solid #e3e8ee;' +
       'background:#fff;border-radius:10px;font-size:14px;font-weight:600;color:#14171c;cursor:pointer}' +
       '.ngr-side__reset:hover{background:#f6f8fa}' +
+      '.ngr-side__up{position:sticky;bottom:8px;left:100%;display:block;opacity:0;pointer-events:none;' +
+      'width:38px;height:38px;margin:0 8px 4px auto;border:1px solid #e3e8ee;border-radius:50%;' +
+      'background:#fff;color:#14171c;font-size:17px;line-height:1;cursor:pointer;' +
+      'box-shadow:0 4px 14px rgba(20,23,28,.12);transition:opacity .18s}' +
+      '.ngr-side__up.on{opacity:1;pointer-events:auto}' +
+      '.ngr-side__up:hover{background:#f6f8fa}' +
       '.ngr-sidebtn{display:none}' +
       '@media(max-width:1000px){' +
       '.ngr-withside{grid-template-columns:minmax(0,1fr)}' +
@@ -2024,9 +2030,11 @@
       var inp = lab && lab.querySelector('input');
       row.className = 'ngr-side__o' + (inp && inp.checked ? ' on' : '') + (lab ? '' : ' off');
     });
+    // Прячем всю строку фильтров Tilda, включая кнопку «Сортировка»:
+    // она повторяет список выбора справа от поиска и при этом норовит
+    // закрыться от любого щелчка мимо — выбрать в ней ничего не успеть
+    // (замечание Александра 09.08). Сортировка остаётся одна, справа.
     document.querySelectorAll('.t-catalog__filter__item').forEach(function (it) {
-      var t = ((it.querySelector('.t-catalog__filter__item-title') || {}).textContent || '').trim();
-      if (/сортировка/i.test(t)) return;
       if (it.style.display !== 'none') it.style.setProperty('display', 'none', 'important');
     });
     // Кнопка фильтров должна быть одна: лишние остаются от прежних сборок.
@@ -2197,6 +2205,19 @@
       setTimeout(syncSideFilters, 1500);
     });
     side.appendChild(reset);
+
+    // Колонка длинная: спустившись к странам, листать обратно неудобно
+    // (замечание Александра 09.08).
+    var up = document.createElement('button');
+    up.type = 'button';
+    up.className = 'ngr-side__up';
+    up.title = 'Наверх';
+    up.textContent = '↑';
+    up.addEventListener('click', function () { side.scrollTo({ top: 0, behavior: 'smooth' }); });
+    side.addEventListener('scroll', function () {
+      up.classList.toggle('on', side.scrollTop > 260);
+    });
+    side.appendChild(up);
 
     var close = document.createElement('button');
     close.type = 'button';
