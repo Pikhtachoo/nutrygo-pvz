@@ -918,35 +918,55 @@
    */
   function buildGallery(card, photos) {
     var layers = [].slice.call(card.querySelectorAll('.t-catalog__card__bgimg'));
-    if (!layers.length || photos.length < 2) return;
+    if (!layers.length || !photos.length) return false;
+    // Фото Tilda уже загружено и лежит в кеше браузера, а снимки Ozon весят
+    // по мегабайту и приезжают не сразу. Раньше я подменял картинку сразу —
+    // и карточка стояла пустой, пока фото едет (замечание Александра 08.08).
+    // Теперь снимок Tilda остаётся первым кадром, Ozon идёт следом.
+    var orig = getComputedStyle(layers[0]).backgroundImage;
+    if (!orig || orig === 'none') return false;   // ещё не загрузилось — придём позже
+    var slides = [orig];
+    photos.forEach(function (u) {
+      var s = 'url("' + u + '")';
+      if (slides.indexOf(s) === -1) slides.push(s);
+    });
+    if (slides.length < 2) return true;
     // Слои не прячем. У разных карточек видимым оказывается то первый, то
     // второй — пряча «лишний», я гасил у части товаров само фото
     // (замечание Александра 08.08). Вместо этого следим, чтобы картинка
     // была у каждого слоя, и переключаем их все разом.
-    var main = layers[0];
     galleryCss();
-    var wrap = main.parentNode;
-    if (!wrap || wrap.querySelector('.ngr-gal')) return;
+    var wrap = layers[0].parentNode;
+    if (!wrap || wrap.querySelector('.ngr-gal')) return true;
     if (getComputedStyle(wrap).position === 'static') wrap.style.position = 'relative';
 
-    var base = 'url("' + photos[0] + '")';
     var gal = document.createElement('div');
     gal.className = 'ngr-gal';
-    gal.innerHTML = photos.map(function (_, i) { return '<b' + (i ? '' : ' class="on"') + '></b>'; }).join('');
+    gal.innerHTML = slides.map(function (_, i) { return '<b' + (i ? '' : ' class="on"') + '></b>'; }).join('');
     var dots = [].slice.call(gal.querySelectorAll('b'));
-    photos.forEach(function (u) { var im = new Image(); im.src = u; });   // подгружаем заранее
+    var loaded = false;
+    function preload() {
+      if (loaded) return;
+      loaded = true;
+      slides.slice(1).forEach(function (s) {
+        var im = new Image();
+        im.src = s.replace(/^url\(\"?|\"?\)$/g, '');
+      });
+    }
     function show(i) {
-      var img = 'url("' + photos[i] + '")';
-      layers.forEach(function (l) { l.style.setProperty('background-image', img, 'important'); });
+      layers.forEach(function (l) { l.style.setProperty('background-image', slides[i], 'important'); });
       dots.forEach(function (d, k) { d.className = k === i ? 'on' : ''; });
     }
-    show(0);   // сразу выравниваем все слои по первому фото
     dots.forEach(function (d, i) {
       d.addEventListener('mouseenter', function () { show(i); });
       d.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); show(i); });
     });
+    // Остальные снимки тянем только когда покупатель навёл на карточку —
+    // иначе главная тащит десятки мегабайт впустую.
+    wrap.addEventListener('mouseenter', preload);
     wrap.addEventListener('mouseleave', function () { show(0); });
     wrap.appendChild(gal);
+    return true;
   }
 
   function fixCardPhotos() {
@@ -957,13 +977,19 @@
       var a = article(c);
       if (!a) return;
       c.setAttribute('data-ngr-gal', 'wait');
-      if (photoCache[a]) { c.setAttribute('data-ngr-gal', '1'); buildGallery(c, photoCache[a]); return; }
+      // Пометку ставим только когда галерея действительно собрана: пока фото
+      // Tilda не загружено, собирать нечего — вернёмся на следующем проходе.
+      if (photoCache[a]) {
+        if (buildGallery(c, photoCache[a])) c.setAttribute('data-ngr-gal', '1');
+        else c.removeAttribute('data-ngr-gal');
+        return;
+      }
       fetch(API + '/catalog/photos?offer=' + encodeURIComponent(a))
         .then(function (r) { return r.json(); })
         .then(function (j) {
           photoCache[a] = (j && j.photos) || [];
-          c.setAttribute('data-ngr-gal', '1');
-          buildGallery(c, photoCache[a]);
+          if (buildGallery(c, photoCache[a])) c.setAttribute('data-ngr-gal', '1');
+          else c.removeAttribute('data-ngr-gal');
         })
         .catch(function () { c.setAttribute('data-ngr-gal', '1'); });
     });
