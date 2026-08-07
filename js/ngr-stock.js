@@ -519,6 +519,111 @@
     });
   }
 
+  /* ---------- Полки на главной ---------- */
+
+  /**
+   * Две подборки: «Чаще всего берут» — по числу отзывов покупателей, и
+   * «Скидки недели» — по размеру скидки (решения Александра 07–08.08).
+   * Раньше в полке скидок лежал зашитый список из четырёх товаров; теперь
+   * обе собираются из всего каталога и только из того, что в наличии.
+   */
+  var shelves = null;
+
+  fetch(API + '/catalog/shelves')
+    .then(function (r) { return r.json(); })
+    .then(function (j) { if (j && j.updated) { shelves = j; apply(); } })
+    .catch(function () {});
+
+  function shelfCss() {
+    if (document.getElementById('ngr-shelf-css')) return;
+    var st = document.createElement('style');
+    st.id = 'ngr-shelf-css';
+    st.textContent =
+      '.ngr-shelf{display:grid;grid-template-columns:repeat(4,1fr);gap:18px}' +
+      '.ngr-sc{display:flex;flex-direction:column;background:#fff;border:1px solid #eceff3;' +
+      'border-radius:16px;overflow:hidden;text-decoration:none;color:inherit;transition:box-shadow .2s,transform .2s}' +
+      '.ngr-sc:hover{box-shadow:0 12px 30px rgba(20,23,28,.10);transform:translateY(-2px)}' +
+      '.ngr-sc__pic{position:relative;aspect-ratio:1/1;background:#f7f9fb center/contain no-repeat}' +
+      '.ngr-sc__off{position:absolute;top:10px;left:10px;background:#e5342b;color:#fff;font-size:12px;' +
+      'font-weight:800;padding:4px 8px;border-radius:8px}' +
+      '.ngr-sc__b{padding:14px;display:flex;flex-direction:column;gap:7px;flex:1}' +
+      '.ngr-sc__t{font-size:13.5px;line-height:1.4;color:#14171c;display:-webkit-box;' +
+      '-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}' +
+      '.ngr-sc__r{display:flex;align-items:center;gap:6px;font-size:12.5px;color:#8a919b}' +
+      '.ngr-sc__r b{color:#14171c}' +
+      '.ngr-sc__p{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:auto;padding-top:4px}' +
+      '.ngr-sc__now{background:#4984c4;color:#fff;font-size:18px;font-weight:800;padding:5px 11px;border-radius:10px}' +
+      '.ngr-sc__old{color:#a6adb6;font-size:14px;font-weight:600;text-decoration:line-through}' +
+      '@media(max-width:1024px){.ngr-shelf{grid-template-columns:repeat(3,1fr)}}' +
+      '@media(max-width:760px){.ngr-shelf{grid-template-columns:repeat(2,1fr);gap:12px}' +
+      '.ngr-sc__b{padding:11px;gap:6px}.ngr-sc__t{font-size:13px}' +
+      '.ngr-sc__now{font-size:16px;padding:4px 9px}}';
+    document.head.appendChild(st);
+  }
+
+  function money(n) { return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + ' ₽'; }
+
+  function shelfCard(c) {
+    var a = document.createElement('a');
+    a.className = 'ngr-sc';
+    a.href = c.url || '#';
+    a.innerHTML =
+      '<div class="ngr-sc__pic" style="background-image:url(\'' + c.img + '\')">' +
+      (c.off ? '<span class="ngr-sc__off">−' + c.off + '%</span>' : '') + '</div>' +
+      '<div class="ngr-sc__b">' +
+      '<div class="ngr-sc__t"></div>' +
+      (c.n ? '<div class="ngr-sc__r">' + stars(c.avg) + '<b>' + c.avg.toFixed(1) + '</b>' +
+        '<span>' + c.n + ' ' + plural(c.n, 'отзыв', 'отзыва', 'отзывов') + '</span></div>' : '') +
+      '<div class="ngr-sc__p"><span class="ngr-sc__now">' + money(c.price) + '</span>' +
+      (c.old ? '<span class="ngr-sc__old">' + money(c.old) + '</span>' : '') + '</div></div>';
+    a.querySelector('.ngr-sc__t').textContent = c.title;
+    return a;
+  }
+
+  function buildShelf(host, list) {
+    var box = document.createElement('div');
+    box.className = 'ngr-shelf';
+    list.forEach(function (c) { box.appendChild(shelfCard(c)); });
+    host.innerHTML = '';
+    host.appendChild(box);
+  }
+
+  function fixShelves() {
+    if (!shelves) return;
+    reviewCss(); shelfCss();
+
+    // «Скидки недели» — меняем содержимое существующей полки.
+    var sale = document.querySelector('.ngr-sale-grid, .ngr-sale-cards, .ngr-section--sale .ngr-container > div:last-child');
+    if (!sale) {
+      var anySale = document.querySelector('.ngr-sale-card');
+      sale = anySale ? anySale.parentNode : null;
+    }
+    if (sale && sale.getAttribute('data-ngr-shelf') !== 'sale' && shelves.byDiscount.length) {
+      sale.setAttribute('data-ngr-shelf', 'sale');
+      buildShelf(sale, shelves.byDiscount);
+    }
+
+    // «Чаще всего берут» — новая полка перед полкой скидок.
+    if (!document.querySelector('.ngr-shelf-top') && shelves.byReviews.length && sale) {
+      var sec = sale.closest('section') || sale.parentNode;
+      var wrap = document.createElement('section');
+      wrap.className = 'ngr-section ngr-shelf-top';
+      wrap.style.cssText = 'padding:48px 0';
+      var inner = document.createElement('div');
+      inner.className = 'ngr-container';
+      inner.innerHTML = '<p style="margin:0 0 6px;font-size:12px;letter-spacing:.12em;' +
+        'text-transform:uppercase;color:#4984c4;font-weight:700">Выбор покупателей</p>' +
+        '<h2 style="margin:0 0 8px;font-size:34px;font-weight:800;letter-spacing:-1px;color:#14171c">Чаще всего берут</h2>' +
+        '<p style="margin:0 0 22px;color:#6b7280;font-size:15px">Товары с наибольшим числом отзывов на Ozon — ' +
+        'по ним видно, что покупают и как оценивают.</p>';
+      var grid = document.createElement('div');
+      inner.appendChild(grid);
+      wrap.appendChild(inner);
+      if (sec && sec.parentNode) sec.parentNode.insertBefore(wrap, sec);
+      buildShelf(grid, shelves.byReviews);
+    }
+  }
+
   /* ---------- Фильтры каталога ---------- */
 
   /**
@@ -1181,7 +1286,7 @@
   function apply() {
     fixPopup(); fixCards(); fixCart(); fixDupDelivery(); fixUnits(); fixBrands();
     initSearchGuard(); fixSearch(); fixAccountButton(); fixAuthGate();
-    fixRatings(); fixPopupReviews(); fixDescription(); fixDeliveryOrder(); fixCardPhotos(); fixPrices(); fixFilterValues(); fixRatingFilter(); applyRatingFilter(false);
+    fixRatings(); fixPopupReviews(); fixDescription(); fixDeliveryOrder(); fixCardPhotos(); fixPrices(); fixFilterValues(); fixRatingFilter(); applyRatingFilter(false); fixShelves();
   }
 
   apply();
