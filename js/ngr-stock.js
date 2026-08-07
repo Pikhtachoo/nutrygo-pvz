@@ -748,16 +748,22 @@
       [].forEach.call(now.querySelectorAll('*'), function (e) {
         e.style.setProperty('color', '#fff', 'important');
       });
-      if (old) {
-        old.style.setProperty('visibility', 'visible', 'important');
-        old.style.setProperty('color', '#a6adb6', 'important');
-        old.style.setProperty('text-decoration', 'line-through', 'important');
-        old.style.setProperty('background', 'none', 'important');
-        old.style.removeProperty('display');
-        [].forEach.call(old.querySelectorAll('*'), function (e) {
-          e.style.setProperty('color', '#a6adb6', 'important');
-          e.style.setProperty('visibility', 'visible', 'important');
-        });
+      // Свою зачёркнутую цену рисуем сами. Элемент Tilda для неё есть, текст
+      // в нём тоже есть, но она держит его скрытым, и снять это снаружи
+      // не удаётся — цена оставалась чёрточкой (Александр, 07.08).
+      var mine = w.querySelector('.ngr-oldprice');
+      if (b > a && a > 0) {
+        if (!mine) {
+          mine = document.createElement('span');
+          mine.className = 'ngr-oldprice';
+          mine.style.cssText = 'color:#a6adb6;font-size:15px;font-weight:600;' +
+            'text-decoration:line-through;white-space:nowrap';
+          if (off && off.parentNode === w) w.insertBefore(mine, off);
+          else w.appendChild(mine);
+        }
+        mine.textContent = String(b).replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + ' р.';
+      } else if (mine) {
+        mine.parentNode.removeChild(mine);
       }
     });
   }
