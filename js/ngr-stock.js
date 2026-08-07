@@ -519,6 +519,76 @@
     });
   }
 
+  /* ---------- Свидетельство о госрегистрации (СГР) ---------- */
+
+  /**
+   * У БАДов есть свидетельство о государственной регистрации. Номер —
+   * подтверждение, что товар прошёл проверку, и покупателю его видно ценно
+   * (запрос Александра 08.08). Справочник присылает Александр файлом,
+   * интегратор его раздаёт, здесь мы ставим отметку на карточке и
+   * показываем номер в развёрнутой карточке.
+   */
+  var sgrMap = null;
+
+  fetch(API + '/catalog/sgr')
+    .then(function (r) { return r.json(); })
+    .then(function (j) { if (j && j.sgr) { sgrMap = j.sgr; apply(); } })
+    .catch(function () {});
+
+  function sgrCss() {
+    if (document.getElementById('ngr-sgr-css')) return;
+    var st = document.createElement('style');
+    st.id = 'ngr-sgr-css';
+    st.textContent =
+      '.ngr-sgr{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:700;' +
+      'color:#1a8f4c;background:#eaf7ef;border-radius:20px;padding:4px 10px;margin:4px 0;white-space:nowrap}' +
+      '.ngr-sgr__num{display:block;margin-top:8px;font-size:13px;color:#6b7280}' +
+      '.ngr-sgr__num b{color:#14171c;font-weight:600}';
+    document.head.appendChild(st);
+  }
+
+  function fixSgr() {
+    if (!sgrMap) return;
+    sgrCss();
+    // Отметка в карточке каталога
+    document.querySelectorAll('.js-product').forEach(function (c) {
+      if (c.getAttribute('data-ngr-sgr') === '1') return;
+      var a = article(c);
+      if (!a) return;
+      c.setAttribute('data-ngr-sgr', '1');
+      if (!sgrMap[a]) return;
+      var host = c.querySelector('.js-catalog-price-wrapper, .t-catalog__card__price-wrapper');
+      if (!host || !host.parentNode) return;
+      var b = document.createElement('span');
+      b.className = 'ngr-sgr';
+      b.textContent = '✓ Проверен: СГР есть';
+      b.title = 'Свидетельство о государственной регистрации № ' + sgrMap[a];
+      host.parentNode.insertBefore(b, host);
+    });
+
+    // Номер в развёрнутой карточке
+    var pop = document.querySelector('.t-popup_show .t-catalog__prod-popup__container, ' +
+      '.t-catalog__prod-popup__container');
+    if (!pop || !pop.getBoundingClientRect().width) return;
+    var art = article(pop);
+    if (!art) return;
+    var box = pop.querySelector('.ngr-sgr__num');
+    var num = sgrMap[art];
+    if (!num) { if (box) box.parentNode.removeChild(box); return; }
+    if (box && box.getAttribute('data-art') === art) return;
+    if (!box) {
+      box = document.createElement('div');
+      box.className = 'ngr-sgr__num';
+      var anchor = pop.querySelector('.ngr-descwrap') || pop.querySelector('.js-catalog-prod-text');
+      if (anchor && anchor.parentNode) anchor.parentNode.insertBefore(box, anchor);
+      else pop.appendChild(box);
+    }
+    box.setAttribute('data-art', art);
+    box.innerHTML = '<span class="ngr-sgr">✓ Проверен: СГР есть</span><br>' +
+      'Свидетельство о государственной регистрации: <b></b>';
+    box.querySelector('b').textContent = num;
+  }
+
   /* ---------- Полки на главной ---------- */
 
   /**
@@ -575,29 +645,42 @@
    * Александра 08.08). Поэтому открываем товар там же, где он живёт, —
    * подставляем его артикул в поиск каталога и прокручиваем к нему.
    */
-  function openFromShelf(title) {
-    // Ищем по названию: поиск Tilda работает по названию товара, артикул
-    // он не находит — проверено (Александр, 08.08).
-    var art = String(title || '').split(/[,(]/)[0].trim().slice(0, 40);
-    // Поле поиска в каталоге — input[name=query]; общий помощник его
-    // не находил, и клик приводил просто наверх каталога.
-    var inp = document.querySelector('.t-catalog__filter input[name="query"], input[name="query"]') || searchInput();
-    if (!inp) {
-      var open = document.querySelector('.js-catalog-search-mob-btn, .t-catalog__filter__search-btn');
-      if (open) open.click();
-      inp = searchInput();
-    }
-    var block = document.querySelector('#rec2502703571');
-    if (block) block.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    if (!inp) return;
-    // Значение ставим через родной установщик: Tilda слушает своё поле, и
-    // простое присваивание она не замечает.
-    var set = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value');
-    if (set && set.set) set.set.call(inp, art); else inp.value = art;
-    ['input', 'change', 'keyup'].forEach(function (t) {
-      inp.dispatchEvent(new Event(t, { bubbles: true }));
+  /**
+   * Клик по карточке полки.
+   *
+   * Прямая ссылка не годится: страницы /tproduct/ у нас перенаправляют
+   * в каталог. Поиск тоже не подошёл — Tilda ищет по названию, а память
+   * поиска возвращала прежний запрос, и покупателя просто выбрасывало
+   * наверх страницы (замечание Александра 08.08).
+   *
+   * Открываем ту же всплывающую карточку, что и каталог: находим товар
+   * среди карточек каталога по артикулу и нажимаем на него. Если товар
+   * не отрисован (каталог грузится частями) — подгружаем, пока не найдём.
+   */
+  function openFromShelf(art, tries) {
+    tries = tries || 0;
+    var hit = null;
+    document.querySelectorAll('.js-product').forEach(function (c) {
+      if (!hit && article(c) === String(art)) hit = c;
     });
-    try { inp.focus({ preventScroll: true }); } catch (e) {}
+    if (hit) {
+      var link = [].slice.call(hit.querySelectorAll('a')).filter(function (a) {
+        return /tproduct/.test(a.getAttribute('href') || '');
+      })[0];
+      (link || hit).click();
+      return;
+    }
+    if (tries >= 12) {
+      // Не нашли — честно ведём в каталог, а не оставляем клик без действия.
+      var block = document.querySelector('#rec2502703571');
+      if (block) block.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      return;
+    }
+    // Просим каталог показать следующую порцию и пробуем снова.
+    var more = document.querySelector('.js-store-load-more-btn, .t-store__load-more-btn, ' +
+      '.js-catalog-load-more, [class*="load-more"]');
+    if (more) more.click();
+    setTimeout(function () { openFromShelf(art, tries + 1); }, 400);
   }
 
   function shelfCard(c) {
@@ -606,7 +689,7 @@
     a.href = c.url || '#';
     a.addEventListener('click', function (e) {
       e.preventDefault();
-      openFromShelf(c.title);
+      openFromShelf(c.art);
     });
     a.innerHTML =
       '<div class="ngr-sc__pic" style="background-image:url(\'' + c.img + '\')">' +
@@ -616,7 +699,8 @@
       (c.n ? '<div class="ngr-sc__r">' + stars(c.avg) + '<b>' + c.avg.toFixed(1) + '</b>' +
         '<span>' + c.n + ' ' + plural(c.n, 'отзыв', 'отзыва', 'отзывов') + '</span></div>' : '') +
       '<div class="ngr-sc__p"><span class="ngr-sc__now">' + money(c.price) + '</span>' +
-      (c.old ? '<span class="ngr-sc__old">' + money(c.old) + '</span>' : '') + '</div></div>';
+      (c.old ? '<span class="ngr-sc__old">' + money(c.old) + '</span>' : '') +
+      (c.off ? '<span class="ngr-off">−' + c.off + '%</span>' : '') + '</div></div>';
     a.querySelector('.ngr-sc__t').textContent = c.title;
     return a;
   }
