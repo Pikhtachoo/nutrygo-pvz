@@ -1824,7 +1824,19 @@
     return g;
   }
 
+  /**
+   * КОЛОНКА ФИЛЬТРОВ ПОКА ВЫКЛЮЧЕНА (08.08).
+   *
+   * Tilda отдаёт варианты фильтра в разметку только когда список раскрыт,
+   * поэтому колонка собиралась с одним пунктом в каждой группе — хуже, чем
+   * прежняя строка фильтров (замечание Александра). Правильный путь: брать
+   * полные списки значений из справочника фильтров Tilda, а нажимать —
+   * её же флажки. Это следующая работа.
+   */
+  var SIDE_FILTERS = false;
+
   function buildSideFilters() {
+    if (!SIDE_FILTERS) return;
     var bar = document.querySelector('.t-catalog__filter');
     if (!bar) return;
     var block = document.querySelector('#rec2502703571 .js-catalog-cont-w-filter, #rec2502703571 .t-catalog');
@@ -2186,8 +2198,36 @@
    */
   var GALLERY_IN_CATALOG = false;
 
+  /**
+   * Защита от серого прямоугольника при наведении.
+   *
+   * Tilda подменяет фото вторым слоем. Если картинки в нём нет или она ещё
+   * не загрузилась, карточка гаснет. Галерею мы отключили, но защиту надо
+   * оставить — иначе вернулась прежняя беда (замечание Александра 08.08).
+   */
+  function guardHoverPhoto() {
+    document.querySelectorAll('.js-product').forEach(function (c) {
+      if (c.getAttribute('data-ngr-hoverfix') === '1') return;
+      var layers = [].slice.call(c.querySelectorAll('.t-catalog__card__bgimg'));
+      if (layers.length < 2) return;
+      var first = getComputedStyle(layers[0]).backgroundImage || '';
+      if (first.indexOf('url(') !== 0) return;      // основное ещё не загружено
+      c.setAttribute('data-ngr-hoverfix', '1');
+      for (var i = 1; i < layers.length; i++) {
+        (function (l) {
+          var bg = getComputedStyle(l).backgroundImage || '';
+          var m = bg.match(/url\(["']?([^"')]+)/);
+          if (!m) { l.style.setProperty('display', 'none', 'important'); return; }
+          var probe = new Image();
+          probe.onerror = function () { l.style.setProperty('display', 'none', 'important'); };
+          probe.src = m[1];
+        })(layers[i]);
+      }
+    });
+  }
+
   function fixCardPhotos() {
-    if (!GALLERY_IN_CATALOG) return;
+    if (!GALLERY_IN_CATALOG) { guardHoverPhoto(); return; }
     document.querySelectorAll('.js-product').forEach(function (c) {
       if (c.getAttribute('data-ngr-gal')) return;
       var layers = c.querySelectorAll('.t-catalog__card__bgimg');
