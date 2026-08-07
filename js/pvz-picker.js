@@ -15,10 +15,14 @@
 (function () {
   'use strict';
 
-  var BASE = window.NG_PVZ_BASE || 'https://pikhtachoo.github.io/nutrygo-pvz';
+  var BASE_LIB = 'https://pikhtachoo.github.io/nutrygo-pvz';
+  var BASE = window.NG_PVZ_BASE || BASE_LIB;
   var API = window.NG_INTEGRATOR_BASE || 'https://nutrygo-integrator.pikhtovnikov-alieksandr.workers.dev';
-  var MAPLIB_CSS = 'https://cdn.jsdelivr.net/npm/ol@10.2.1/ol.css';
-  var MAPLIB_JS = 'https://cdn.jsdelivr.net/npm/ol@10.2.1/dist/ol.js';
+  // Библиотека карты лежит рядом со справочником пунктов — на адресе, который
+  // открывается в России без VPN. Меньше внешних доменов, меньше поводов
+  // карте не загрузиться у покупателя.
+  var MAPLIB_CSS = BASE_LIB + '/js/ol/ol.css';
+  var MAPLIB_JS = BASE_LIB + '/js/ol/ol.js';
   var TILES = 'https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
 
   var CITY_FIELD = 'city';
@@ -355,7 +359,18 @@
             if (hit && hit.get('point')) showPointCard(hit.get('point'));
           });
         }
-        setTimeout(function () { st.map.updateSize(); drawVisible(); }, 120);
+        // Карта создаётся, пока её блок ещё сворачивается анимацией, и запоминает
+        // неверную ширину — справа оставалась серая полоса. Пересчитываем размер
+        // при каждом изменении блока, а не один раз по таймеру.
+        if (!st.sizeWatch && window.ResizeObserver) {
+          st.sizeWatch = new ResizeObserver(function () {
+            if (st.map) { st.map.updateSize(); drawVisible(); }
+          });
+          st.sizeWatch.observe(mapEl);
+        }
+        [0, 120, 400, 900].forEach(function (ms) {
+          setTimeout(function () { if (st.map) { st.map.updateSize(); drawVisible(); } }, ms);
+        });
       }).catch(function () {
         wrap.classList.remove('ngpvz_map');
         mapBtn.textContent = 'Карта недоступна';
