@@ -717,8 +717,9 @@
       } else if (off) {
         off.parentNode.removeChild(off);
       }
-      // Пустую зачёркнутую цену не показываем — от неё оставалась чёрточка.
-      if (old) old.style.setProperty('display', b > 0 ? '' : 'none', 'important');
+      // Прятать пустую старую цену пробовали — в каталоге от этого пропадала
+      // и заполненная. Пусть Tilda сама решает, показывать её или нет.
+      if (old) old.style.removeProperty('display');
     });
   }
 
