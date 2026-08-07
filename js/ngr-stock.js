@@ -534,9 +534,10 @@
     st.textContent =
       // Плашка с ценой
       '.ngr-price .t-catalog__card__price:not(.t-catalog__card__price_old){' +
-      'display:inline-flex;align-items:center;gap:2px;background:#ff7a1a;color:#fff!important;' +
-      'padding:6px 12px;border-radius:10px;font-size:24px!important;font-weight:800!important;' +
-      'line-height:1.1;letter-spacing:-.5px}' +
+      'display:inline-flex!important;align-items:center;gap:2px;background:#ff7a1a!important;' +
+      'color:#fff!important;padding:6px 12px!important;border-radius:10px!important;' +
+      'font-size:24px!important;font-weight:800!important;line-height:1.15!important;' +
+      'letter-spacing:-.5px;width:auto!important}' +
       '.ngr-price .t-catalog__card__price:not(.t-catalog__card__price_old) *{color:#fff!important}' +
       // Старая цена
       '.ngr-price .t-catalog__card__price_old{color:#a6adb6!important;font-size:15px!important;' +
