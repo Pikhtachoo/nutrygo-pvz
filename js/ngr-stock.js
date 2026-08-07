@@ -539,7 +539,8 @@
     var st = document.createElement('style');
     st.id = 'ngr-shelf-css';
     st.textContent =
-      '.ngr-shelf{display:grid;grid-template-columns:repeat(4,1fr);gap:18px}' +
+      '.ngr-shelf{display:grid!important;grid-template-columns:repeat(4,1fr)!important;' +
+      'gap:18px!important;align-items:stretch!important}' +
       '.ngr-sc{display:flex;flex-direction:column;background:#fff;border:1px solid #eceff3;' +
       'border-radius:16px;overflow:hidden;text-decoration:none;color:inherit;transition:box-shadow .2s,transform .2s}' +
       '.ngr-sc:hover{box-shadow:0 12px 30px rgba(20,23,28,.10);transform:translateY(-2px)}' +
@@ -563,10 +564,37 @@
 
   function money(n) { return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + ' ₽'; }
 
+  /**
+   * Клик по карточке полки.
+   *
+   * Прямая ссылка на страницу товара не годится: страницы /tproduct/ у нас
+   * перенаправляют в каталог, и покупатель улетал непонятно куда (замечание
+   * Александра 08.08). Поэтому открываем товар там же, где он живёт, —
+   * подставляем его артикул в поиск каталога и прокручиваем к нему.
+   */
+  function openFromShelf(art) {
+    var inp = searchInput();
+    if (!inp) {
+      var open = document.querySelector('.js-catalog-search-mob-btn, .t-catalog__filter__search-btn');
+      if (open) open.click();
+      inp = searchInput();
+    }
+    var block = document.querySelector('#rec2502703571');
+    if (block) block.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (!inp) return;
+    inp.value = art;
+    inp.dispatchEvent(new Event('input', { bubbles: true }));
+    inp.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
   function shelfCard(c) {
     var a = document.createElement('a');
     a.className = 'ngr-sc';
     a.href = c.url || '#';
+    a.addEventListener('click', function (e) {
+      e.preventDefault();
+      openFromShelf(c.art);
+    });
     a.innerHTML =
       '<div class="ngr-sc__pic" style="background-image:url(\'' + c.img + '\')">' +
       (c.off ? '<span class="ngr-sc__off">−' + c.off + '%</span>' : '') + '</div>' +
@@ -580,12 +608,15 @@
     return a;
   }
 
+  /**
+   * Карточки кладём прямо в контейнер, без своей обёртки: у полки скидок
+   * контейнер сам является сеткой, и вложенная сетка схлопывалась в одну
+   * колонку — полка выглядела сплющенной (замечание Александра 08.08).
+   */
   function buildShelf(host, list) {
-    var box = document.createElement('div');
-    box.className = 'ngr-shelf';
-    list.forEach(function (c) { box.appendChild(shelfCard(c)); });
     host.innerHTML = '';
-    host.appendChild(box);
+    host.classList.add('ngr-shelf');
+    list.forEach(function (c) { host.appendChild(shelfCard(c)); });
   }
 
   function fixShelves() {
@@ -601,7 +632,7 @@
     // Скрипт главной перерисовывает полку после нас и возвращает свои
     // четыре зашитых товара. Поэтому проверяем не пометку на контейнере,
     // а наличие нашей сетки внутри — и перестраиваем, когда её снесли.
-    if (sale && shelves.byDiscount.length && !sale.querySelector('.ngr-shelf')) {
+    if (sale && shelves.byDiscount.length && !sale.querySelector('.ngr-sc')) {
       sale.setAttribute('data-ngr-shelf', 'sale');
       buildShelf(sale, shelves.byDiscount);
     }
