@@ -918,31 +918,29 @@
    */
   function buildGallery(card, photos) {
     var layers = [].slice.call(card.querySelectorAll('.t-catalog__card__bgimg'));
-    if (!layers.length) return;
+    if (!layers.length || photos.length < 2) return;
+    // Слои не прячем. У разных карточек видимым оказывается то первый, то
+    // второй — пряча «лишний», я гасил у части товаров само фото
+    // (замечание Александра 08.08). Вместо этого следим, чтобы картинка
+    // была у каждого слоя, и переключаем их все разом.
     var main = layers[0];
-    for (var i = 1; i < layers.length; i++) layers[i].style.setProperty('display', 'none', 'important');
-    if (photos.length < 2) return;
     galleryCss();
     var wrap = main.parentNode;
     if (!wrap || wrap.querySelector('.ngr-gal')) return;
     if (getComputedStyle(wrap).position === 'static') wrap.style.position = 'relative';
 
-    // Tilda подставляет фото не сразу. Если снять «исходное» до загрузки,
-    // получим пустоту — и карточка гасла в серо-фиолетовую заливку, когда
-    // курсор уходил с неё (замечание Александра 08.08). В этом случае
-    // считаем исходным первое фото из Ozon.
-    var base = getComputedStyle(main).backgroundImage;
-    if (!base || base === 'none') base = 'url("' + photos[0] + '")';
+    var base = 'url("' + photos[0] + '")';
     var gal = document.createElement('div');
     gal.className = 'ngr-gal';
     gal.innerHTML = photos.map(function (_, i) { return '<b' + (i ? '' : ' class="on"') + '></b>'; }).join('');
     var dots = [].slice.call(gal.querySelectorAll('b'));
     photos.forEach(function (u) { var im = new Image(); im.src = u; });   // подгружаем заранее
     function show(i) {
-      var img = i ? 'url("' + photos[i] + '")' : base;
-      if (img && img !== 'none') main.style.setProperty('background-image', img, 'important');
+      var img = 'url("' + photos[i] + '")';
+      layers.forEach(function (l) { l.style.setProperty('background-image', img, 'important'); });
       dots.forEach(function (d, k) { d.className = k === i ? 'on' : ''; });
     }
+    show(0);   // сразу выравниваем все слои по первому фото
     dots.forEach(function (d, i) {
       d.addEventListener('mouseenter', function () { show(i); });
       d.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); show(i); });
@@ -959,9 +957,6 @@
       var a = article(c);
       if (!a) return;
       c.setAttribute('data-ngr-gal', 'wait');
-      // Второй слой Tilda гасим сразу: даже если фото не придут, серого
-      // прямоугольника при наведении больше не будет.
-      for (var i = 1; i < layers.length; i++) layers[i].style.setProperty('display', 'none', 'important');
       if (photoCache[a]) { c.setAttribute('data-ngr-gal', '1'); buildGallery(c, photoCache[a]); return; }
       fetch(API + '/catalog/photos?offer=' + encodeURIComponent(a))
         .then(function (r) { return r.json(); })
