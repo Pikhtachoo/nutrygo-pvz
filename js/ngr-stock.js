@@ -333,9 +333,71 @@
     try { inp.focus({ preventScroll: true }); } catch (e) { inp.focus(); }
   }
 
+  /* ---------- Вход в кабинет ---------- */
+
+  /**
+   * Кнопка в шапке всегда говорила «Войти» — и до входа, и после. Покупатель
+   * не понимал, вошёл он или нет (замечание Александра 07.08). Теперь после
+   * входа на кнопке имя и кружок с инициалом, до входа — «Войти».
+   *
+   * Признак входа — токен Tilda Members; имя берём из профиля, который
+   * Members кладёт в хранилище браузера.
+   */
+  var PROJECT = '27635446';
+
+  function member() {
+    var tok = '';
+    try { tok = window.t_cart__getMembersToken ? (t_cart__getMembersToken() || '') : ''; } catch (e) {}
+    if (!tok) return null;
+    var name = '';
+    try {
+      var p = JSON.parse(localStorage.getItem('tilda_members_profile' + PROJECT) || '{}');
+      name = String(p.name || p.login || '').trim();
+    } catch (e) {}
+    return { name: name };
+  }
+
+  function fixAccountButton() {
+    var a = document.querySelector('.ngr-account-link');
+    if (!a) return;
+    var m = member();
+    var want = m ? 'in' : 'out';
+    if (a.getAttribute('data-ngr-auth') === want + (m && m.name ? m.name : '')) return;
+    a.setAttribute('data-ngr-auth', want + (m && m.name ? m.name : ''));
+
+    if (!document.getElementById('ngr-account-css')) {
+      var st = document.createElement('style');
+      st.id = 'ngr-account-css';
+      st.textContent =
+        '.ngr-account-link.ngr-account--in{background:#fff5ec;border-color:#f0c9a3}' +
+        '.ngr-account-link .ngr-ava{display:inline-flex;align-items:center;justify-content:center;' +
+        'width:22px;height:22px;border-radius:50%;background:#ff7a1a;color:#fff;font-size:11px;' +
+        'font-weight:700;margin-right:7px;flex:0 0 22px}' +
+        '.ngr-account-link .ngr-account-name{max-width:132px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}';
+      document.head.appendChild(st);
+    }
+
+    if (!m) {
+      a.classList.remove('ngr-account--in');
+      a.innerHTML = a.getAttribute('data-ngr-out') || a.innerHTML;
+      return;
+    }
+    if (!a.getAttribute('data-ngr-out')) a.setAttribute('data-ngr-out', a.innerHTML);
+    // Показываем имя, а фамилию опускаем — она не влезает и не нужна.
+    var short = (m.name.split(/\s+/)[0] || 'Кабинет');
+    var letter = (short.charAt(0) || 'К').toUpperCase();
+    a.classList.add('ngr-account--in');
+    a.innerHTML = '<span class="ngr-ava">' + letter + '</span>' +
+      '<span class="ngr-account-name">' + short + '</span>';
+    a.setAttribute('title', m.name + ' — личный кабинет');
+    a.setAttribute('aria-label', 'Личный кабинет: ' + m.name);
+  }
+
+  window.NGR_MEMBER = member;   // pvz-picker берёт отсюда признак входа
+
   function apply() {
     fixPopup(); fixCards(); fixCart(); fixDupDelivery(); fixUnits(); fixBrands();
-    initSearchGuard(); fixSearch();
+    initSearchGuard(); fixSearch(); fixAccountButton();
   }
 
   apply();

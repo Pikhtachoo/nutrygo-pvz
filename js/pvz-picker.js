@@ -232,14 +232,14 @@
       return form.querySelector('.t-submit, .t-form__submit button, button[type="submit"], input[type="submit"]');
     }
 
-    function blockCheckout(names) {
-      var btn = submitBtn();
-      if (btn) {
-        btn.setAttribute('data-ngpvz-blocked', '1');
-        btn.disabled = true;
-        btn.style.opacity = '0.45';
-        btn.style.cursor = 'not-allowed';
-      }
+    /**
+     * Причин не пускать к кассе две: товар нельзя доставить и покупатель
+     * не вошёл в кабинет. Держим их отдельно, иначе снятие одной блокировки
+     * снимало бы и вторую.
+     */
+    var gate = { stock: null, auth: null };
+
+    function stopperBox() {
       var box = form.querySelector('.ngpvz__stopper');
       if (!box) {
         box = document.createElement('div');
@@ -248,12 +248,22 @@
           'background:#fff5f5;border-radius:10px;color:#a11;font-size:14px;line-height:1.45';
         wrap.parentNode.insertBefore(box, wrap.nextSibling);
       }
-      box.innerHTML = 'Этот товар сейчас нельзя доставить: <b>' + names.join('</b>, <b>') + '</b>.' +
-        '<br>Удалите его из корзины — остальной заказ оформится как обычно.';
+      return box;
     }
 
-    function unblockCheckout() {
+    function applyGate() {
+      var msg = gate.auth || gate.stock;
       var btn = submitBtn();
+      if (msg) {
+        if (btn) {
+          btn.setAttribute('data-ngpvz-blocked', '1');
+          btn.disabled = true;
+          btn.style.opacity = '0.45';
+          btn.style.cursor = 'not-allowed';
+        }
+        stopperBox().innerHTML = msg;
+        return;
+      }
       if (btn && btn.getAttribute('data-ngpvz-blocked') === '1') {
         btn.removeAttribute('data-ngpvz-blocked');
         btn.disabled = false;
@@ -263,6 +273,42 @@
       var box = form.querySelector('.ngpvz__stopper');
       if (box) box.parentNode.removeChild(box);
     }
+
+    function blockCheckout(names) {
+      gate.stock = 'Этот товар сейчас нельзя доставить: <b>' + names.join('</b>, <b>') + '</b>.' +
+        '<br>Удалите его из корзины — остальной заказ оформится как обычно.';
+      applyGate();
+    }
+
+    function unblockCheckout() {
+      gate.stock = null;
+      applyGate();
+    }
+
+    /**
+     * Заказ только для зарегистрированных (решение Александра 07.08).
+     * Признак входа берём у Tilda Members через общий помощник из ngr-stock.
+     */
+    function loggedIn() {
+      try { if (window.NGR_MEMBER) return !!window.NGR_MEMBER(); } catch (e) {}
+      try { return !!(window.t_cart__getMembersToken && t_cart__getMembersToken()); } catch (e) {}
+      return false;
+    }
+
+    function checkAuth() {
+      if (loggedIn()) {
+        if (gate.auth) { gate.auth = null; applyGate(); }
+        return true;
+      }
+      var msg = 'Оформление заказа доступно после входа в личный кабинет.' +
+        '<br><a href="#openmembersbar" style="color:#a11;font-weight:700">Войти или зарегистрироваться</a>' +
+        ' — это займёт минуту, зато заказ и документы сохранятся в кабинете.';
+      if (gate.auth !== msg) { gate.auth = msg; applyGate(); }
+      return false;
+    }
+
+    checkAuth();
+    setInterval(checkAuth, 1500);
 
     /**
      * Пересчёт доступности при изменении корзины.
@@ -291,6 +337,14 @@
     // Если наш сервис не ответил — заказ пропускаем: своей ошибкой продажи
     // не блокируем, для этого есть проверка на стороне интегратора.
     form.addEventListener('submit', function (e) {
+      // Без входа не пускаем в любом случае — даже если пункт выдачи не выбран.
+      if (!checkAuth()) {
+        e.preventDefault();
+        e.stopPropagation();
+        var box = form.querySelector('.ngpvz__stopper');
+        if (box) box.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        return;
+      }
       if (!st.picked) return;
       // Повторная отправка после успешной проверки — пропускаем без вопросов,
       // иначе при сбое сети форма ушла бы в бесконечный круг.
