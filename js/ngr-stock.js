@@ -882,6 +882,26 @@
       });
   }
 
+  /** Открыть товар по названию — когда у позиции заказа нет артикула. */
+  function openProductByName(name) {
+    var w = prodWin();
+    document.documentElement.classList.add('ngr-own');
+    w.classList.add('ngr-pw_open');
+    document.body.style.setProperty('overflow', 'hidden');
+    w.querySelector('.ngr-pw__body').innerHTML =
+      '<div style="padding:60px 30px;text-align:center;color:#8a919b">Ищем товар…</div>';
+    fetch(API + '/catalog/find?q=' + encodeURIComponent(name.slice(0, 80)))
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (!j || !j.art) throw new Error('нет');
+        openProduct(j.art);
+      })
+      .catch(function () {
+        w.querySelector('.ngr-pw__body').innerHTML =
+          '<div style="padding:60px 30px;text-align:center;color:#a11">Этого товара уже нет в каталоге.</div>';
+      });
+  }
+
   /** Открыть товар по внутреннему номеру Tilda — так приходят товары в заказах. */
   function openProductByUid(uid) {
     var w = prodWin();
@@ -1166,16 +1186,19 @@
             el.innerHTML = '<i style="background-image:url(\'' + (it.img || it.image || '') + '\')"></i><span></span>';
             el.querySelector('span').textContent = (it.name || it.title || '') +
               (Number(it.quantity) > 1 ? ' ×' + it.quantity : '');
+            // Открываем товар как получится: по артикулу, по внутреннему
+            // номеру Tilda, а если их нет — по названию (в заказах Tilda
+            // позиции приходят без опознавательных знаков).
             var sku = String(it.sku || it.article || '');
             var uid = String(it.uid || it.lid || it.externalid || it.product_id || '');
-            if (sku || uid) {
-              el.style.cursor = 'pointer';
-              el.addEventListener('click', function () {
-                if (sku) openProduct(sku); else openProductByUid(uid);
-              });
-            } else {
-              el.style.cursor = 'default';
-            }
+            var nm = String(it.name || it.title || '');
+            el.style.cursor = 'pointer';
+            el.title = 'Открыть товар';
+            el.addEventListener('click', function () {
+              if (sku) { openProduct(sku); return; }
+              if (uid) { openProductByUid(uid); return; }
+              if (nm.length > 3) openProductByName(nm);
+            });
             box.appendChild(el);
           });
           c.appendChild(box);
@@ -1197,7 +1220,11 @@
           el.className = 'ngr-cab__it';
           el.innerHTML = '<i style="background-image:url(\'' + (b.img || '') + '\')"></i><span></span>';
           el.querySelector('span').textContent = b.name || '';
-          if (b.sku) el.addEventListener('click', function () { openProduct(String(b.sku)); });
+          el.style.cursor = 'pointer';
+          el.addEventListener('click', function () {
+            if (b.sku) openProduct(String(b.sku));
+            else if (b.name) openProductByName(String(b.name));
+          });
           box.appendChild(el);
         });
         host.appendChild(box);
