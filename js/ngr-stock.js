@@ -519,6 +519,74 @@
     });
   }
 
+  /* ---------- Фото в карточке каталога ---------- */
+
+  /**
+   * При наведении на карточку Tilda подменяет фото вторым — и покупатель
+   * видел серый прямоугольник (замечание Александра 07.08). Причина: второй
+   * слой показывается сразу, а картинка в нём к этому моменту ещё не
+   * загружена, а иногда не открывается вовсе.
+   *
+   * Чиним так: заранее проверяем второе фото. Загрузилось — включаем
+   * листание точками, как на маркетплейсах. Не загрузилось — прячем слой,
+   * и при наведении остаётся основное фото вместо серой заливки.
+   */
+  function galleryCss() {
+    if (document.getElementById('ngr-gal-css')) return;
+    var st = document.createElement('style');
+    st.id = 'ngr-gal-css';
+    st.textContent =
+      '.ngr-gal{position:absolute;left:0;right:0;bottom:8px;display:flex;gap:5px;' +
+      'justify-content:center;z-index:3;pointer-events:auto}' +
+      '.ngr-gal b{width:22px;height:4px;border-radius:3px;background:rgba(20,23,28,.22);cursor:pointer;transition:background .15s}' +
+      '.ngr-gal b.on{background:#ff7a1a}' +
+      '.ngr-gal b:hover{background:rgba(20,23,28,.45)}' +
+      '@media(max-width:640px){.ngr-gal b{width:26px;height:5px}}';
+    document.head.appendChild(st);
+  }
+
+  function fixCardPhotos() {
+    document.querySelectorAll('.js-product').forEach(function (c) {
+      if (c.getAttribute('data-ngr-gal') === '1') return;
+      var layers = [].slice.call(c.querySelectorAll('.t-catalog__card__bgimg'));
+      if (layers.length < 2) return;
+      c.setAttribute('data-ngr-gal', '1');
+      var second = layers[1];
+      var bg = getComputedStyle(second).backgroundImage || '';
+      var m = bg.match(/url\(["']?([^"')]+)/);
+      if (!m) { second.style.display = 'none'; return; }
+
+      var probe = new Image();
+      probe.onerror = function () {
+        // Второго фото на деле нет — убираем слой, иначе серый экран.
+        second.style.display = 'none';
+      };
+      probe.onload = function () {
+        galleryCss();
+        var wrap = layers[0].parentNode;
+        if (!wrap || wrap.querySelector('.ngr-gal')) return;
+        if (getComputedStyle(wrap).position === 'static') wrap.style.position = 'relative';
+        var gal = document.createElement('div');
+        gal.className = 'ngr-gal';
+        gal.innerHTML = '<b class="on"></b><b></b>';
+        var dots = gal.querySelectorAll('b');
+        function show(i) {
+          second.style.opacity = i ? '1' : '';
+          second.style.visibility = i ? 'visible' : '';
+          dots[0].className = i ? '' : 'on';
+          dots[1].className = i ? 'on' : '';
+        }
+        [].forEach.call(dots, function (d, i) {
+          d.addEventListener('mouseenter', function () { show(i); });
+          d.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); show(i); });
+        });
+        wrap.addEventListener('mouseleave', function () { show(0); });
+        wrap.appendChild(gal);
+      };
+      probe.src = m[1];
+    });
+  }
+
   /* ---------- Описание товара ---------- */
 
   /**
@@ -817,7 +885,7 @@
   function apply() {
     fixPopup(); fixCards(); fixCart(); fixDupDelivery(); fixUnits(); fixBrands();
     initSearchGuard(); fixSearch(); fixAccountButton(); fixAuthGate();
-    fixRatings(); fixPopupReviews(); fixDescription();
+    fixRatings(); fixPopupReviews(); fixDescription(); fixCardPhotos();
   }
 
   apply();
