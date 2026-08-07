@@ -47,6 +47,7 @@
     .then(function (j) {
       if (!j || !j.stock || !j.updated) return;   // снимок ещё строится
       liveStock = j.stock;
+      skuOf = j.sku || null;      // связка «артикул → SKU» для отзывов
       // Числа изменились — пересматриваем и уже показанные карточки.
       document.querySelectorAll('[data-ngr-hidden]').forEach(function (c) {
         c.removeAttribute('data-ngr-hidden');
@@ -396,6 +397,148 @@
   window.NGR_MEMBER = member;
   window.NGR_LOGGED_IN = function () { return !!member(); };
 
+  /* ---------- Отзывы покупателей ---------- */
+
+  /**
+   * Оценки и отзывы приходят из кабинета Ozon через интегратор: сводка на все
+   * товары (звёзды в карточке каталога) и тексты по одному товару (когда
+   * карточка раскрыта). Артикул на витрине — наш, у Ozon свой SKU, поэтому
+   * нужна связка: её отдаёт тот же снимок остатков.
+   */
+  var rating = null;    // sku -> [сколько отзывов, средняя×10]
+  var skuOf = null;     // артикул -> sku
+  var texts = {};       // sku -> отзывы, подгружаются по требованию
+
+  fetch(API + '/catalog/reviews')
+    .then(function (r) { return r.json(); })
+    .then(function (j) { if (j && j.rating) { rating = j.rating; apply(); } })
+    .catch(function () {});
+
+  function stars(v) {
+    var out = '';
+    for (var i = 1; i <= 5; i++) {
+      var fill = v >= i ? 1 : (v > i - 1 ? (v - i + 1) : 0);
+      out += '<span class="ngr-star"><span class="ngr-star__on" style="width:' +
+        Math.round(fill * 100) + '%">★</span>★</span>';
+    }
+    return out;
+  }
+
+  function plural(n, one, few, many) {
+    var a = n % 100, b = n % 10;
+    if (a > 10 && a < 20) return many;
+    if (b === 1) return one;
+    if (b >= 2 && b <= 4) return few;
+    return many;
+  }
+
+  function reviewCss() {
+    if (document.getElementById('ngr-rev-css')) return;
+    var st = document.createElement('style');
+    st.id = 'ngr-rev-css';
+    st.textContent =
+      '.ngr-star{position:relative;display:inline-block;color:#dfe3e8;font-size:15px;line-height:1;letter-spacing:1px}' +
+      '.ngr-star__on{position:absolute;left:0;top:0;overflow:hidden;color:#ffab2e;white-space:nowrap}' +
+      '.ngr-rate{display:flex;align-items:center;gap:6px;margin:6px 0 2px;font-size:13px;color:#6b7280}' +
+      '.ngr-rate b{color:#111;font-weight:700;font-size:13px}' +
+      '.ngr-revbox{margin:22px 0 6px;padding-top:18px;border-top:1px solid #eceff3}' +
+      '.ngr-revbox h4{margin:0 0 14px;font-size:17px;font-weight:700;color:#111}' +
+      '.ngr-revhead{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:16px}' +
+      '.ngr-revbig{font-size:34px;font-weight:800;line-height:1;color:#111}' +
+      '.ngr-revbars{flex:1;min-width:170px}' +
+      '.ngr-revbar{display:flex;align-items:center;gap:8px;font-size:12px;color:#8a919b;margin:3px 0}' +
+      '.ngr-revbar i{flex:1;height:6px;border-radius:4px;background:#eef1f5;overflow:hidden;font-style:normal}' +
+      '.ngr-revbar i s{display:block;height:100%;background:#ffab2e;text-decoration:none}' +
+      '.ngr-rev{padding:12px 0;border-top:1px solid #f2f4f7}' +
+      '.ngr-rev:first-of-type{border-top:0}' +
+      '.ngr-rev__top{display:flex;align-items:center;gap:9px;margin-bottom:5px}' +
+      '.ngr-rev__date{font-size:12px;color:#9aa1ab}' +
+      '.ngr-rev__text{font-size:14px;line-height:1.55;color:#2b2f36;white-space:pre-line}' +
+      '.ngr-rev__more{display:inline-block;margin-top:10px;font-size:13px;color:#ff7a1a;cursor:pointer}' +
+      '.ngr-revnote{font-size:12px;color:#9aa1ab;margin-top:12px}';
+    document.head.appendChild(st);
+  }
+
+  /** Звёзды в карточке каталога — коротко, одной строкой. */
+  function fixRatings() {
+    if (!rating || !skuOf) return;
+    reviewCss();
+    document.querySelectorAll('.js-product').forEach(function (c) {
+      if (c.getAttribute('data-ngr-rate') === '1') return;
+      var a = article(c);
+      if (!a) return;
+      c.setAttribute('data-ngr-rate', '1');
+      var r = rating[skuOf[a]];
+      if (!r || !r[0]) return;
+      var avg = r[1] / 10;
+      var host = c.querySelector('.t-store__card__price-wrapper, .t-catalog__card__price, .js-store-price-wrapper');
+      var box = document.createElement('div');
+      box.className = 'ngr-rate';
+      box.innerHTML = stars(avg) + '<b>' + avg.toFixed(1) + '</b><span>' + r[0] + ' ' +
+        plural(r[0], 'отзыв', 'отзыва', 'отзывов') + '</span>';
+      if (host && host.parentNode) host.parentNode.insertBefore(box, host);
+      else c.appendChild(box);
+    });
+  }
+
+  function renderReviews(box, sku, data) {
+    var n = data.n || 0;
+    if (!n) { box.innerHTML = ''; return; }
+    var dist = [0, 0, 0, 0, 0];
+    (data.list || []).forEach(function (r) { if (r.r >= 1 && r.r <= 5) dist[r.r - 1]++; });
+    var shown = (data.list || []).length;
+    var bars = '';
+    for (var s = 5; s >= 1; s--) {
+      var part = shown ? Math.round(dist[s - 1] / shown * 100) : 0;
+      bars += '<div class="ngr-revbar">' + s + ' <i><s style="width:' + part + '%"></s></i></div>';
+    }
+    var list = (data.list || []).map(function (r) {
+      return '<div class="ngr-rev"><div class="ngr-rev__top">' + stars(r.r) +
+        '<span class="ngr-rev__date">' + (r.d || '').split('-').reverse().join('.') + '</span></div>' +
+        '<div class="ngr-rev__text"></div></div>';
+    }).join('');
+    box.innerHTML =
+      '<h4>Отзывы покупателей</h4>' +
+      '<div class="ngr-revhead"><div><div class="ngr-revbig">' + (data.avg || 0).toFixed(1) + '</div>' +
+      '<div>' + stars(data.avg || 0) + '</div>' +
+      '<div class="ngr-rev__date">' + n + ' ' + plural(n, 'отзыв', 'отзыва', 'отзывов') + '</div></div>' +
+      (shown ? '<div class="ngr-revbars">' + bars + '</div>' : '') + '</div>' + list +
+      (shown ? '' : '<div class="ngr-revnote">Покупатели поставили оценки, но не оставили текст.</div>') +
+      '<div class="ngr-revnote">Оценки и отзывы покупателей Ozon по этому товару.</div>';
+    // Текст вставляем как текст, а не разметку: он приходит от покупателей.
+    var nodes = box.querySelectorAll('.ngr-rev__text');
+    (data.list || []).forEach(function (r, i) { if (nodes[i]) nodes[i].textContent = r.x || ''; });
+  }
+
+  /** Развёрнутая карточка товара: сводка, распределение оценок и тексты. */
+  function fixPopupReviews() {
+    if (!rating || !skuOf) return;
+    var pop = document.querySelector('.t-popup_show .t-store__prod-popup__container, ' +
+      '.t-store__prod-popup__container, .t-catalog__prod-popup__container');
+    if (!pop || !pop.getBoundingClientRect().width) return;
+    var a = article(pop);
+    if (!a) return;
+    var sku = skuOf[a];
+    var box = pop.querySelector('.ngr-revbox');
+    if (box && box.getAttribute('data-sku') === String(sku)) return;
+    reviewCss();
+    if (!box) {
+      box = document.createElement('div');
+      box.className = 'ngr-revbox';
+      var host = pop.querySelector('.t-store__prod-popup__text, .t-store__prod-popup__info, .js-store-prod-text') || pop;
+      host.appendChild(box);
+    }
+    box.setAttribute('data-sku', String(sku));
+    var r = rating[sku];
+    if (!r || !r[0]) { box.innerHTML = ''; return; }
+    box.innerHTML = '<h4>Отзывы покупателей</h4><div class="ngr-revnote">Загружаем…</div>';
+    if (texts[sku]) { renderReviews(box, sku, texts[sku]); return; }
+    fetch(API + '/catalog/reviews?sku=' + encodeURIComponent(sku))
+      .then(function (x) { return x.json(); })
+      .then(function (j) { texts[sku] = j; if (box.getAttribute('data-sku') === String(sku)) renderReviews(box, sku, j); })
+      .catch(function () { box.innerHTML = ''; });
+  }
+
   /**
    * Заказ только для зарегистрированных (решение Александра 07.08).
    *
@@ -489,6 +632,7 @@
   function apply() {
     fixPopup(); fixCards(); fixCart(); fixDupDelivery(); fixUnits(); fixBrands();
     initSearchGuard(); fixSearch(); fixAccountButton(); fixAuthGate();
+    fixRatings(); fixPopupReviews();
   }
 
   apply();
