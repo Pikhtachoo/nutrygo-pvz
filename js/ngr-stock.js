@@ -730,9 +730,31 @@
       } else if (off) {
         off.parentNode.removeChild(off);
       }
-      // Прятать пустую старую цену пробовали — в каталоге от этого пропадала
-      // и заполненная. Пусть Tilda сама решает, показывать её или нет.
-      if (old) old.style.removeProperty('display');
+      // Стили ставим прямо на элемент. Через таблицу стилей не получалось:
+      // в каталоге правило перебивалось собственными стилями Tilda, а старой
+      // цене она вдобавок ставит visibility:hidden — текст есть, но не виден.
+      now.style.setProperty('display', 'inline-flex', 'important');
+      now.style.setProperty('align-items', 'center', 'important');
+      now.style.setProperty('background', '#4984c4', 'important');
+      now.style.setProperty('color', '#fff', 'important');
+      now.style.setProperty('padding', '6px 12px', 'important');
+      now.style.setProperty('border-radius', '10px', 'important');
+      now.style.setProperty('line-height', '1.15', 'important');
+      now.style.setProperty('width', 'auto', 'important');
+      [].forEach.call(now.querySelectorAll('*'), function (e) {
+        e.style.setProperty('color', '#fff', 'important');
+      });
+      if (old) {
+        old.style.setProperty('visibility', 'visible', 'important');
+        old.style.setProperty('color', '#a6adb6', 'important');
+        old.style.setProperty('text-decoration', 'line-through', 'important');
+        old.style.setProperty('background', 'none', 'important');
+        old.style.removeProperty('display');
+        [].forEach.call(old.querySelectorAll('*'), function (e) {
+          e.style.setProperty('color', '#a6adb6', 'important');
+          e.style.setProperty('visibility', 'visible', 'important');
+        });
+      }
     });
   }
 
