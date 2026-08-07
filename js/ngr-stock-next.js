@@ -40,7 +40,13 @@
       if (u.indexOf('filters%5Bquantity%5D') < 0 && u.indexOf('filters[quantity]') < 0) {
         u += (u.indexOf('?') < 0 ? '?' : '&') + 'filters%5Bquantity%5D=y';
       }
-      if (/sort%5B|sort\[/.test(u)) u = u.replace(/([?&])size=\d+/, '$1size=300');
+      // Размер страницы увеличиваем только при смене сортировки на самой
+      // странице. На первой загрузке (getallparts) Tilda из большого ответа
+      // рисовала восемь карточек вместо ста шестидесяти — её отрисовка
+      // рассчитывает на тот размер, который просила сама.
+      if (/sort%5B|sort\[/.test(u) && u.indexOf('getallparts') < 0) {
+        u = u.replace(/([?&])size=\d+/, '$1size=300');
+      }
       return u;
     }
     var of = window.fetch;
@@ -1994,6 +2000,32 @@
     if (host && !host.classList.contains('ngr-withside')) host.classList.add('ngr-withside');
   }
 
+  /**
+   * Ссылка с сортировкой в адресе (её выдаёт сама Tilda, когда покупатель
+   * делится страницей) грузила восемь товаров вместо полутора сотен: первая
+   * загрузка каталога идёт другим путём, и отрисовка обрывается. Лечим
+   * тем же способом, каким сортировку меняет покупатель, — один раз, когда
+   * каталог отрисован скудно (замечание Александра 08.08).
+   */
+  var sortRetried = false;
+
+  function fixUrlSort() {
+    if (sortRetried) return;
+    if (!/tfc_sort/.test(location.search)) return;
+    var sel = document.querySelector('#rec2502703571 select, .t-catalog select');
+    if (!sel || !sel.value) return;
+    var cards = document.querySelectorAll('#rec2502703571 .js-product').length;
+    if (!cards || cards > 24) return;         // отрисовалось нормально
+    sortRetried = true;
+    var v = sel.value;
+    sel.value = '';
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+    setTimeout(function () {
+      sel.value = v;
+      sel.dispatchEvent(new Event('change', { bubbles: true }));
+    }, 600);
+  }
+
   function buildSideFilters() {
     if (!SIDE_FILTERS) return;
     var bar = document.querySelector('.t-catalog__filter');
@@ -2739,7 +2771,7 @@
   function apply() {
     fixPopup(); fixCards(); fixCart(); fixDupDelivery(); fixUnits(); fixBrands();
     initSearchGuard(); fixSearch(); fixAccountButton(); fixAuthGate();
-    fixRatings(); fixPopupReviews(); fixDescription(); fixDeliveryOrder(); fixCardPhotos(); fixPrices(); fixFilterValues(); fixRatingFilter(); applyRatingFilter(false); fixShelves(); fixSgr(); fixFav(); cartCss(); buildSideFilters(); syncSideFilters();
+    fixRatings(); fixPopupReviews(); fixDescription(); fixDeliveryOrder(); fixCardPhotos(); fixPrices(); fixFilterValues(); fixRatingFilter(); applyRatingFilter(false); fixShelves(); fixSgr(); fixFav(); cartCss(); buildSideFilters(); syncSideFilters(); fixUrlSort();
   }
 
   apply();
