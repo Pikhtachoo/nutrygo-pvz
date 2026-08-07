@@ -20,6 +20,19 @@
   var blocked = null;          // Set артикулов, пока не загружен — null
   var LABEL = 'Нет в наличии';
 
+  /**
+   * Живые остатки.
+   *
+   * Синхронизацию каталога Tilda пришлось выключить — внешний сборщик ломал
+   * карточки. Остатки в Tilda теперь заливаются файлом раз в неделю и к концу
+   * недели врут: покупатель кладёт в корзину то, чего уже нет, и упирается
+   * в отказ на последнем шаге. Поэтому наличие берём прямо у Ozon, а числа
+   * из вёрстки Tilda используем только пока снимок не пришёл.
+   *
+   * Артикула нет в снимке — значит остаток нулевой.
+   */
+  var liveStock = null;
+
   fetch(API + '/catalog/unavailable')
     .then(function (r) { return r.json(); })
     .then(function (j) {
@@ -28,6 +41,26 @@
       apply();
     })
     .catch(function () { blocked = {}; });
+
+  fetch(API + '/catalog/stock')
+    .then(function (r) { return r.json(); })
+    .then(function (j) {
+      if (!j || !j.stock || !j.updated) return;   // снимок ещё строится
+      liveStock = j.stock;
+      // Числа изменились — пересматриваем и уже показанные карточки.
+      document.querySelectorAll('[data-ngr-hidden]').forEach(function (c) {
+        c.removeAttribute('data-ngr-hidden');
+        c.style.removeProperty('display');
+      });
+      apply();
+    })
+    .catch(function () {});
+
+  /** Остаток товара: живой, если снимок пришёл, иначе число из вёрстки Tilda. */
+  function stockOf(article, invAttr) {
+    if (liveStock && article) return Number(liveStock[article] || 0);
+    return invAttr === null || invAttr === undefined ? null : Number(invAttr);
+  }
 
   /** Артикул товара из вёрстки Tilda: «Артикул: 32550». */
   function article(root) {
@@ -38,8 +71,11 @@
   }
 
   function unavailable(root, invAttr) {
-    if (String(invAttr) === '0') return true;
     var a = article(root);
+    // Живой остаток важнее числа из вёрстки: карточка могла быть отрисована
+    // с прошлой недельной заливки.
+    var inv = stockOf(a, invAttr);
+    if (inv !== null && inv <= 0) return true;
     return !!(a && blocked && blocked[a]);
   }
 
@@ -110,9 +146,9 @@
     if (!blocked) return;
     document.querySelectorAll('.js-product').forEach(function (c) {
       if (c.getAttribute('data-ngr-hidden') === '1') return;
-      var inv = c.getAttribute('data-product-inv');
       var a = article(c);
-      var bad = (inv !== null && Number(inv) < MIN_STOCK) || !!(a && blocked[a]);
+      var inv = stockOf(a, c.getAttribute('data-product-inv'));
+      var bad = (inv !== null && inv < MIN_STOCK) || !!(a && blocked[a]);
       if (!bad) return;
       c.setAttribute('data-ngr-hidden', '1');
       c.style.setProperty('display', 'none', 'important');
