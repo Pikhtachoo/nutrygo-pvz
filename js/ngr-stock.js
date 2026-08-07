@@ -17,6 +17,47 @@
   window.NGR_STOCK_GUARD = 1;
 
   var API = 'https://nutrygo-integrator.pikhtovnikov-alieksandr.workers.dev';
+
+  /**
+   * Просим у Tilda сразу только то, что есть на складе.
+   *
+   * Tilda листает и сортирует по всему каталогу, включая товар без остатка,
+   * а наш заслон прячет такие карточки уже на странице. При сортировке
+   * по убыванию цены она отдавала одиннадцать самых дорогих, из которых
+   * в наличии оказывалось четыре — покупатель видел четыре карточки и решал,
+   * что каталог кончился (замечание Александра 08.08). Измерено: с этой
+   * поправкой на той же сортировке доступных товаров 125 вместо четырёх.
+   *
+   * Со включённой сортировкой Tilda вдобавок не отдаёт признак следующей
+   * страницы, и подгрузка обрывается на первой — поэтому просим страницу
+   * побольше.
+   */
+  function askOnlyInStock() {
+    if (window.NGR_STOCK_QUERY) return;
+    window.NGR_STOCK_QUERY = 1;
+    function fix(u) {
+      if (typeof u !== 'string' || u.indexOf('getproductslist') < 0) return u;
+      if (u.indexOf('filters%5Bquantity%5D') < 0 && u.indexOf('filters[quantity]') < 0) {
+        u += (u.indexOf('?') < 0 ? '?' : '&') + 'filters%5Bquantity%5D=y';
+      }
+      if (/sort%5B|sort\[/.test(u)) u = u.replace(/([?&])size=\d+/, '$1size=300');
+      return u;
+    }
+    var of = window.fetch;
+    if (of) {
+      window.fetch = function (u, o) {
+        try { u = fix(u); } catch (e) {}
+        return of.call(this, u, o);
+      };
+    }
+    var ox = XMLHttpRequest.prototype.open;
+    XMLHttpRequest.prototype.open = function (m, u) {
+      var rest = [].slice.call(arguments, 2);
+      try { u = fix(u); } catch (e) {}
+      return ox.apply(this, [m, u].concat(rest));
+    };
+  }
+  askOnlyInStock();
   var blocked = null;          // Set артикулов, пока не загружен — null
   var LABEL = 'Нет в наличии';
 
@@ -1972,6 +2013,8 @@
     items.forEach(function (it) {
       var title = ((it.querySelector('.t-catalog__filter__item-title') || {}).textContent || '').trim();
       if (!title || /сортировка/i.test(title)) return;
+      // «Только товары в наличии» включено всегда — выбирать нечего.
+      if (/наличие/i.test(title)) return;
       // Варианты фильтра лежат в разметке как label — контейнер один на всю
       // группу, и раньше колонка собиралась с одним пунктом (замечание
       // Александра 08.08).
