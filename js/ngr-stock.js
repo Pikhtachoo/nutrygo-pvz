@@ -819,14 +819,20 @@
     if (!wrap || wrap.querySelector('.ngr-gal')) return;
     if (getComputedStyle(wrap).position === 'static') wrap.style.position = 'relative';
 
+    // Tilda подставляет фото не сразу. Если снять «исходное» до загрузки,
+    // получим пустоту — и карточка гасла в серо-фиолетовую заливку, когда
+    // курсор уходил с неё (замечание Александра 08.08). В этом случае
+    // считаем исходным первое фото из Ozon.
     var base = getComputedStyle(main).backgroundImage;
+    if (!base || base === 'none') base = 'url("' + photos[0] + '")';
     var gal = document.createElement('div');
     gal.className = 'ngr-gal';
     gal.innerHTML = photos.map(function (_, i) { return '<b' + (i ? '' : ' class="on"') + '></b>'; }).join('');
     var dots = [].slice.call(gal.querySelectorAll('b'));
     photos.forEach(function (u) { var im = new Image(); im.src = u; });   // подгружаем заранее
     function show(i) {
-      main.style.setProperty('background-image', i ? 'url("' + photos[i] + '")' : base, 'important');
+      var img = i ? 'url("' + photos[i] + '")' : base;
+      if (img && img !== 'none') main.style.setProperty('background-image', img, 'important');
       dots.forEach(function (d, k) { d.className = k === i ? 'on' : ''; });
     }
     dots.forEach(function (d, i) {
