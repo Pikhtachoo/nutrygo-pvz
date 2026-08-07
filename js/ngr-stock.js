@@ -619,6 +619,11 @@
     var st = document.createElement('style');
     st.id = 'ngr-prod-css';
     st.textContent =
+      // Старая карточка Tilda успевала мелькнуть на полсекунды, пока мы её
+      // закрывали — покупателю это неприятно (замечание Александра 08.08).
+      // Теперь она не показывается вовсе, пока открыто наше окно.
+      'html.ngr-own .t-popup:not(.ngr-pw){opacity:0!important;pointer-events:none!important;' +
+      'visibility:hidden!important}' +
       '.ngr-pw{position:fixed;inset:0;z-index:100000;display:none}' +
       '.ngr-pw_open{display:block}' +
       '.ngr-pw__bg{position:absolute;inset:0;background:rgba(20,23,28,.55)}' +
@@ -680,6 +685,7 @@
   function closeProduct() {
     var w = document.querySelector('.ngr-pw');
     if (w) w.classList.remove('ngr-pw_open');
+    document.documentElement.classList.remove('ngr-own');
     document.body.style.removeProperty('overflow');
     if (/[?&]ngprod=/.test(location.search)) {
       history.replaceState(null, '', location.pathname);
@@ -830,6 +836,7 @@
   }
 
   function openProduct(art) {
+    document.documentElement.classList.add('ngr-own');
     killTildaPopup();
     [80, 250, 500, 900, 1400].forEach(function (ms) { setTimeout(killTildaPopup, ms); });
     var w = prodWin();
@@ -909,8 +916,9 @@
   // заблокированным.
   setInterval(function () {
     var open = document.querySelector('.ngr-pw_open');
-    if (!open && document.body.style.overflow === 'hidden') {
-      document.body.style.removeProperty('overflow');
+    if (!open) {
+      if (document.body.style.overflow === 'hidden') document.body.style.removeProperty('overflow');
+      document.documentElement.classList.remove('ngr-own');
     }
   }, 1000);
 
@@ -980,11 +988,36 @@
 
   var cabData = { profile: null, dash: null };
 
-  /** Статус заказа Tilda приходит то строкой, то объектом — приводим к тексту. */
+  /**
+   * Статус заказа. Tilda отдаёт его то строкой, то объектом, и по-английски —
+   * покупателю показывались «delivery» и «cancelled» (замечание Александра
+   * 08.08). Переводим на человеческий язык.
+   */
+  var STATUS_RU = {
+    new: 'Новый', inprocess: 'В обработке', processing: 'В обработке',
+    paid: 'Оплачен', payed: 'Оплачен', awaiting_payment: 'Ожидает оплаты',
+    delivery: 'В доставке', shipped: 'Отправлен', done: 'Выполнен',
+    completed: 'Выполнен', cancelled: 'Отменён', canceled: 'Отменён',
+    refunded: 'Возврат', undeliverable: 'Доставка невозможна'
+  };
+
   function orderStatus(o) {
     var s = o.status_name || o.status || o.state || '';
     if (s && typeof s === 'object') s = s.name || s.title || s.text || s.value || '';
-    return String(s || 'Оформлен');
+    s = String(s || '');
+    var key = s.toLowerCase().replace(/[\s-]/g, '_');
+    return STATUS_RU[key] || (s ? s : 'Оформлен');
+  }
+
+  /** Номер заказа: у Tilda он лежит под разными именами. */
+  function orderNo(o) {
+    return String(o.id || o.orderid || o.order_id || o.number || o.num ||
+      o.uid || o.paymentid || '').trim();
+  }
+
+  function orderItems(o) {
+    var a = o.products || o.items || o.goods || o.positions || [];
+    return Array.isArray(a) ? a : [];
   }
 
   function cabSection(name) {
@@ -1004,10 +1037,28 @@
       orders.forEach(function (o) {
         var c = document.createElement('div');
         c.className = 'ngr-cab__card';
-        c.innerHTML = '<div class="ngr-cab__row"><div><b>Заказ № ' + (o.id || o.orderid || '') + '</b>' +
-          '<div class="ngr-cab__mail">' + String(o.date || o.created || '').slice(0, 16) + '</div></div>' +
+        var no = orderNo(o);
+        var items = orderItems(o);
+        c.innerHTML = '<div class="ngr-cab__row"><div><b>' +
+          (no ? 'Заказ № ' + no : 'Заказ') + '</b>' +
+          '<div class="ngr-cab__mail">' + String(o.date || o.created || o.datetime || '').slice(0, 16) + '</div></div>' +
           '<div style="text-align:right"><div class="ngr-cab__sum">' + money(Number(o.amount) || 0) + '</div>' +
           '<div class="ngr-cab__st">' + orderStatus(o) + '</div></div></div>';
+        if (items.length) {
+          var box = document.createElement('div');
+          box.className = 'ngr-cab__items';
+          items.forEach(function (it) {
+            var el = document.createElement('div');
+            el.className = 'ngr-cab__it';
+            el.innerHTML = '<i style="background-image:url('' + (it.img || it.image || '') + '')"></i><span></span>';
+            el.querySelector('span').textContent = (it.name || it.title || '') +
+              (Number(it.quantity) > 1 ? ' ×' + it.quantity : '');
+            var sku = String(it.sku || it.article || '');
+            if (sku) el.addEventListener('click', function () { openProduct(sku); });
+            box.appendChild(el);
+          });
+          c.appendChild(box);
+        }
         host.appendChild(c);
       });
       return;
@@ -1079,6 +1130,7 @@
 
   function openCabinet() {
     if (!memberToken()) { location.href = '#openmembersbar'; return; }
+    document.documentElement.classList.add('ngr-own');
     cabCss();
     var w = prodWin();
     w.classList.add('ngr-pw_open');
