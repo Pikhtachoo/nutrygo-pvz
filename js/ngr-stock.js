@@ -519,6 +519,111 @@
     });
   }
 
+  /* ---------- Описание товара ---------- */
+
+  /**
+   * В карточке описание шло сплошной портянкой: несколько экранов текста,
+   * а под ним списком характеристики. Читать невозможно (замечание
+   * Александра 07.08). Разбираем на два раскрывающихся блока, как на Ozon:
+   * «Описание» и «Характеристики» таблицей.
+   *
+   * Исходный текст не выбрасываем — прячем рядом, чтобы ничего не потерять.
+   */
+  function descCss() {
+    if (document.getElementById('ngr-desc-css')) return;
+    var st = document.createElement('style');
+    st.id = 'ngr-desc-css';
+    st.textContent =
+      '.ngr-acc{border:1px solid #e8ecf1;border-radius:16px;background:#fff;margin:14px 0;overflow:hidden}' +
+      '.ngr-acc__head{display:flex;align-items:center;justify-content:space-between;gap:12px;' +
+      'padding:16px 18px;cursor:pointer;user-select:none;font-size:16px;font-weight:700;color:#14171c}' +
+      '.ngr-acc__head:hover{background:#fafbfc}' +
+      '.ngr-acc__sign{flex:0 0 auto;width:22px;height:22px;border-radius:50%;background:#f3f5f8;' +
+      'display:flex;align-items:center;justify-content:center;font-size:13px;color:#6b7280;transition:transform .2s}' +
+      '.ngr-acc_open .ngr-acc__sign{transform:rotate(180deg)}' +
+      '.ngr-acc__body{display:none;padding:0 18px 18px;font-size:14.5px;line-height:1.65;color:#2b2f36}' +
+      '.ngr-acc_open .ngr-acc__body{display:block}' +
+      '.ngr-acc__body p{margin:0 0 10px;color:#2b2f36}' +
+      '.ngr-spec{width:100%;border-collapse:collapse}' +
+      '.ngr-spec tr{border-top:1px solid #f0f2f5}' +
+      '.ngr-spec tr:first-child{border-top:0}' +
+      '.ngr-spec td{padding:9px 0;font-size:14px;vertical-align:top}' +
+      '.ngr-spec td:first-child{color:#8a919b;width:46%;padding-right:14px}' +
+      '.ngr-spec td:last-child{color:#14171c}' +
+      '@media(max-width:640px){' +
+      '.ngr-acc__head{padding:14px;font-size:15px}' +
+      '.ngr-acc__body{padding:0 14px 14px;font-size:14px}' +
+      '.ngr-spec td{font-size:13.5px}' +
+      '.ngr-spec td:first-child{width:42%}}';
+    document.head.appendChild(st);
+  }
+
+  function accordion(title, openByDefault) {
+    var a = document.createElement('div');
+    a.className = 'ngr-acc' + (openByDefault ? ' ngr-acc_open' : '');
+    a.innerHTML = '<div class="ngr-acc__head">' + title +
+      '<span class="ngr-acc__sign">▾</span></div><div class="ngr-acc__body"></div>';
+    a.querySelector('.ngr-acc__head').addEventListener('click', function () {
+      a.classList.toggle('ngr-acc_open');
+    });
+    return a;
+  }
+
+  function fixDescription() {
+    var pop = document.querySelector('.t-popup_show .t-catalog__prod-popup__container, ' +
+      '.t-catalog__prod-popup__container');
+    if (!pop || !pop.getBoundingClientRect().width) return;
+    var el = pop.querySelector('.js-catalog-prod-text, .t-catalog__prod-popup__text');
+    if (!el || el.getAttribute('data-ngr-desc') === '1') return;
+    var raw = (el.innerText || '').replace(/ /g, ' ').trim();
+    if (raw.length < 60) return;
+    el.setAttribute('data-ngr-desc', '1');
+    descCss();
+
+    // Характеристики — строки вида «Название: значение» в конце текста.
+    var lines = raw.split(/\n+/).map(function (s) { return s.trim(); }).filter(Boolean);
+    var specs = [];
+    while (lines.length) {
+      var last = lines[lines.length - 1];
+      var m = last.match(/^([^:]{2,45}):\s*(.+)$/);
+      if (!m || m[1].split(' ').length > 6) break;
+      specs.unshift([m[1], m[2]]);
+      lines.pop();
+    }
+    var body = lines.join('\n\n');
+    if (!specs.length && body.length < 400) { el.removeAttribute('data-ngr-desc'); return; }
+
+    var wrap = document.createElement('div');
+    wrap.className = 'ngr-descwrap';
+
+    if (body) {
+      var a1 = accordion('Описание', false);
+      var b1 = a1.querySelector('.ngr-acc__body');
+      body.split('\n\n').forEach(function (p) {
+        var el2 = document.createElement('p');
+        el2.textContent = p;          // текст, а не разметка
+        b1.appendChild(el2);
+      });
+      wrap.appendChild(a1);
+    }
+    if (specs.length) {
+      var a2 = accordion('Характеристики', true);
+      var tb = document.createElement('table');
+      tb.className = 'ngr-spec';
+      specs.forEach(function (s) {
+        var tr = document.createElement('tr');
+        var td1 = document.createElement('td'); td1.textContent = s[0];
+        var td2 = document.createElement('td'); td2.textContent = s[1];
+        tr.appendChild(td1); tr.appendChild(td2); tb.appendChild(tr);
+      });
+      a2.querySelector('.ngr-acc__body').appendChild(tb);
+      wrap.appendChild(a2);
+    }
+
+    el.style.display = 'none';        // исходный текст прячем, но оставляем
+    el.parentNode.insertBefore(wrap, el);
+  }
+
   var FIRST_SHOWN = 3;   // остальные — по кнопке, чтобы карточка не растягивалась
 
   function renderReviews(box, sku, data) {
@@ -712,7 +817,7 @@
   function apply() {
     fixPopup(); fixCards(); fixCart(); fixDupDelivery(); fixUnits(); fixBrands();
     initSearchGuard(); fixSearch(); fixAccountButton(); fixAuthGate();
-    fixRatings(); fixPopupReviews();
+    fixRatings(); fixPopupReviews(); fixDescription();
   }
 
   apply();
