@@ -349,16 +349,38 @@
    */
   var PROJECT = '27635446';
 
+  /**
+   * Признак входа.
+   *
+   * Раньше опирались только на функцию корзины Tilda. Но на страницах без
+   * корзины — «Документы», «Доставка», «Оплата» — её нет, и покупатель видел
+   * в шапке «Войти», хотя был внутри (замечание Александра 08.08). Поэтому
+   * запасной признак — профиль, который Tilda кладёт в хранилище браузера
+   * при входе; он есть на любой странице сайта.
+   */
+  function memberProfile() {
+    try {
+      var raw = localStorage.getItem('tilda_members_profile' + PROJECT);
+      if (!raw) return null;
+      var ts = Number(localStorage.getItem('tilda_members_profile' + PROJECT + '_timestamp') || 0);
+      // Просроченный слепок не считаем входом: неделя — с запасом.
+      if (ts && (Date.now() / 1000 - ts) > 7 * 24 * 3600) return null;
+      var p = JSON.parse(raw);
+      return (p && (p.name || p.login)) ? p : null;
+    } catch (e) { return null; }
+  }
+
   function member() {
     var tok = '';
     try { tok = window.t_cart__getMembersToken ? (t_cart__getMembersToken() || '') : ''; } catch (e) {}
-    if (!tok) return null;
-    var name = '';
-    try {
-      var p = JSON.parse(localStorage.getItem('tilda_members_profile' + PROJECT) || '{}');
-      name = String(p.name || p.login || '').trim();
-    } catch (e) {}
-    return { name: name };
+    var p = memberProfile();
+    if (!tok && !p) return null;
+    return {
+      name: p ? String(p.name || p.login || '').trim() : '',
+      login: p ? String(p.login || '') : '',
+      phone: p ? String(p.phone || '') : '',
+      hasToken: !!tok
+    };
   }
 
   function fixAccountButton() {
@@ -860,6 +882,28 @@
       });
   }
 
+  /** Открыть товар по внутреннему номеру Tilda — так приходят товары в заказах. */
+  function openProductByUid(uid) {
+    var w = prodWin();
+    document.documentElement.classList.add('ngr-own');
+    w.classList.add('ngr-pw_open');
+    document.body.style.setProperty('overflow', 'hidden');
+    w.querySelector('.ngr-pw__body').innerHTML =
+      '<div style="padding:60px 30px;text-align:center;color:#8a919b">Загружаем карточку…</div>';
+    fetch(API + '/catalog/product?uid=' + encodeURIComponent(uid))
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (!j || j.error) throw new Error('нет данных');
+        prodCache[j.art] = j;
+        history.replaceState(null, '', location.pathname + '?ngprod=' + encodeURIComponent(j.art));
+        renderProduct(j);
+      })
+      .catch(function () {
+        w.querySelector('.ngr-pw__body').innerHTML =
+          '<div style="padding:60px 30px;text-align:center;color:#a11">Этого товара уже нет в каталоге.</div>';
+      });
+  }
+
   window.NGR_OPEN_PRODUCT = openProduct;
 
   /**
@@ -977,6 +1021,24 @@
       '.ngr-cab__field{margin-bottom:14px}' +
       '.ngr-cab__field u{display:block;text-decoration:none;font-size:12px;color:#8a919b;margin-bottom:3px}' +
       '.ngr-cab__field b{font-size:15px;color:#14171c;font-weight:600}' +
+      '.ngr-cab__inp{width:100%;box-sizing:border-box;padding:11px 13px;border:1px solid #e3e8ee;' +
+      'border-radius:10px;font-size:15px;color:#14171c;font-family:inherit;background:#fff}' +
+      '.ngr-cab__inp:focus{outline:none;border-color:#4984c4}' +
+      '.ngr-cab__ems{display:flex;gap:8px;flex-wrap:wrap}' +
+      '.ngr-cab__em{width:42px;height:42px;border-radius:12px;border:1px solid #e3e8ee;background:#fff;' +
+      'font-size:20px;cursor:pointer;line-height:1}' +
+      '.ngr-cab__em:hover{background:#f5f7fa}' +
+      '.ngr-cab__em.on{border-color:#4984c4;background:#eef4fb;box-shadow:0 0 0 2px rgba(73,132,196,.18)}' +
+      '.ngr-cab__save{padding:11px 20px;border:0;border-radius:10px;background:#4984c4;color:#fff;' +
+      'font-size:14px;font-weight:700;cursor:pointer}' +
+      '.ngr-cab__save:hover{background:#3d74b0}' +
+      '.ngr-cab__saved{margin-left:10px;font-size:13px;color:#1a8f4c;font-weight:700}' +
+      '.ngr-cab__ref{display:flex;gap:8px;flex-wrap:wrap}' +
+      '.ngr-cab__ref .ngr-cab__inp{flex:1;min-width:200px}' +
+      '.ngr-cab__copy{padding:11px 16px;border:1px solid #e3e8ee;border-radius:10px;background:#fff;' +
+      'font-size:14px;font-weight:600;color:#14171c;cursor:pointer;white-space:nowrap}' +
+      '.ngr-cab__copy:hover{background:#f5f7fa}' +
+      '.ngr-cab__hint{font-size:12.5px;color:#8a919b;line-height:1.5;margin-top:8px}' +
       '@media(max-width:860px){' +
       '.ngr-cab{grid-template-columns:1fr;gap:16px;padding:12px 16px 26px}' +
       '.ngr-cab__side{position:static}' +
@@ -987,6 +1049,41 @@
   }
 
   var cabData = { profile: null, dash: null };
+
+  /** Личные настройки покупателя — псевдоним и значок. Хранятся у него же. */
+  function profileSettings() {
+    try { return JSON.parse(localStorage.getItem('ngr_me') || '{}'); } catch (e) { return {}; }
+  }
+  function saveProfileSettings(v) {
+    var cur = profileSettings();
+    cur.nick = v.nick; cur.emoji = v.emoji;
+    try { localStorage.setItem('ngr_me', JSON.stringify(cur)); } catch (e) {}
+  }
+
+  /**
+   * Реферальная ссылка. Код выводим из почты — он один и тот же на любом
+   * устройстве и ничего о покупателе не выдаёт.
+   */
+  function refCode(login) {
+    var s = String(login || '').toLowerCase(), h = 5381;
+    for (var i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0;
+    return h.toString(36).slice(0, 7);
+  }
+  function refLink(login) {
+    return login ? 'https://nutry-go.ru/?ref=' + refCode(login) : 'Войдите, чтобы получить ссылку';
+  }
+
+  /** Значок и подпись покупателя — из его настроек, иначе из профиля. */
+  function paintMe() {
+    var p = cabData.profile || {};
+    var me = profileSettings();
+    var box = document.querySelector('.ngr-cab__me');
+    if (!box) return;
+    var nm = me.nick || p.name || 'Покупатель';
+    box.querySelector('.ngr-cab__ava').textContent = me.emoji || (nm.charAt(0) || 'П').toUpperCase();
+    box.querySelector('.ngr-cab__name').textContent = nm;
+    box.querySelector('.ngr-cab__mail').textContent = p.login || '';
+  }
 
   /**
    * Статус заказа. Tilda отдаёт его то строкой, то объектом, и по-английски —
@@ -1032,8 +1129,11 @@
     if (name === 'orders') {
       var orders = d.last_orders || [];
       host.innerHTML = '<h2>Заказы</h2>' + (orders.length ? '' :
-        '<div class="ngr-cab__empty">Здесь появятся ваши заказы с сайта.<br>' +
-        'Заказы, оформленные до входа в кабинет, сюда не попадают.</div>');
+        (cabData.noToken
+          ? '<div class="ngr-cab__empty">Заказы видны на страницах каталога.<br>' +
+            '<a href="/" style="color:#2f6ba8">Перейти на главную</a></div>'
+          : '<div class="ngr-cab__empty">Здесь появятся ваши заказы с сайта.<br>' +
+            'Заказы, оформленные до входа в кабинет, сюда не попадают.</div>'));
       orders.forEach(function (o) {
         var c = document.createElement('div');
         c.className = 'ngr-cab__card';
@@ -1054,7 +1154,15 @@
             el.querySelector('span').textContent = (it.name || it.title || '') +
               (Number(it.quantity) > 1 ? ' ×' + it.quantity : '');
             var sku = String(it.sku || it.article || '');
-            if (sku) el.addEventListener('click', function () { openProduct(sku); });
+            var uid = String(it.uid || it.lid || it.externalid || it.product_id || '');
+            if (sku || uid) {
+              el.style.cursor = 'pointer';
+              el.addEventListener('click', function () {
+                if (sku) openProduct(sku); else openProductByUid(uid);
+              });
+            } else {
+              el.style.cursor = 'default';
+            }
             box.appendChild(el);
           });
           c.appendChild(box);
@@ -1108,28 +1216,68 @@
       return;
     }
 
-    if (name === 'docs') {
-      host.innerHTML = '<h2>Документы на товары</h2>' +
-        '<div class="ngr-cab__card">Каждый товар в каталоге отмечен свидетельством ' +
-        'о государственной регистрации. Номер виден в карточке товара — откройте её и ' +
-        'найдите отметку «Проверен: СГР есть».</div>' +
-        '<div class="ngr-cab__card"><b>Всего товаров со свидетельством: ' +
-        (sgrMap ? Object.keys(sgrMap).length : '…') + '</b></div>';
-      return;
-    }
-
+    // Профиль с персонализацией: покупатель выбирает значок и псевдоним,
+    // рядом — его реферальная ссылка (запрос Александра 08.08).
+    var me = profileSettings();
     host.innerHTML = '<h2>Профиль</h2>' +
       '<div class="ngr-cab__card">' +
-      '<div class="ngr-cab__field"><u>Имя</u><b>' + (p.name || '—') + '</b></div>' +
+      '<div class="ngr-cab__field"><u>Как вас показывать</u>' +
+      '<input class="ngr-cab__inp" id="ngrNick" maxlength="24" placeholder="' +
+      (p.name || 'Псевдоним') + '" value="' + (me.nick || '') + '"></div>' +
+      '<div class="ngr-cab__field"><u>Значок</u><div class="ngr-cab__ems"></div></div>' +
+      '<button type="button" class="ngr-cab__save">Сохранить</button>' +
+      '<span class="ngr-cab__saved"></span>' +
+      '</div>' +
+      '<div class="ngr-cab__card">' +
+      '<div class="ngr-cab__field"><u>Ваша реферальная ссылка</u>' +
+      '<div class="ngr-cab__ref"><input class="ngr-cab__inp" id="ngrRef" readonly value="' +
+      refLink(p.login || '') + '"><button type="button" class="ngr-cab__copy">Скопировать</button></div></div>' +
+      '<div class="ngr-cab__hint">Поделитесь ссылкой — мы увидим, что покупатель пришёл от вас.</div>' +
+      '</div>' +
+      '<div class="ngr-cab__card">' +
+      '<div class="ngr-cab__field"><u>Имя в документах</u><b>' + (p.name || '—') + '</b></div>' +
       '<div class="ngr-cab__field"><u>Электронная почта</u><b>' + (p.login || '—') + '</b></div>' +
       '<div class="ngr-cab__field"><u>Телефон</u><b>' + (p.phone || '—') + '</b></div>' +
-      '</div>' +
-      '<div class="ngr-cab__card">Изменить данные и пароль можно в ' +
-      '<a href="/members/profile/" style="color:#2f6ba8">настройках профиля</a>.</div>';
+      '<div class="ngr-cab__hint">Эти данные используются для заказов. Изменить их и пароль можно в ' +
+      '<a href="/members/profile/" style="color:#2f6ba8">настройках профиля</a>.</div>' +
+      '</div>';
+
+    var ems = host.querySelector('.ngr-cab__ems');
+    ['🙂', '💪', '🌿', '⚡', '🧡', '🏃', '🧘', '🔥'].forEach(function (e) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'ngr-cab__em' + (me.emoji === e ? ' on' : '');
+      b.textContent = e;
+      b.addEventListener('click', function () {
+        host.querySelectorAll('.ngr-cab__em').forEach(function (x) { x.className = 'ngr-cab__em'; });
+        b.className = 'ngr-cab__em on';
+      });
+      ems.appendChild(b);
+    });
+
+    host.querySelector('.ngr-cab__save').addEventListener('click', function () {
+      var sel = host.querySelector('.ngr-cab__em.on');
+      saveProfileSettings({
+        nick: (host.querySelector('#ngrNick').value || '').trim(),
+        emoji: sel ? sel.textContent : ''
+      });
+      host.querySelector('.ngr-cab__saved').textContent = '✓ Сохранено';
+      paintMe();
+      fixAccountButton();
+    });
+
+    host.querySelector('.ngr-cab__copy').addEventListener('click', function () {
+      var f = host.querySelector('#ngrRef');
+      f.select();
+      try { document.execCommand('copy'); } catch (e) {}
+      host.querySelector('.ngr-cab__copy').textContent = '✓ Скопировано';
+      setTimeout(function () { host.querySelector('.ngr-cab__copy').textContent = 'Скопировать'; }, 1800);
+    });
   }
 
   function openCabinet() {
-    if (!memberToken()) { location.href = '#openmembersbar'; return; }
+    var me = member();
+    if (!me) { location.href = '#openmembersbar'; return; }
     document.documentElement.classList.add('ngr-own');
     cabCss();
     var w = prodWin();
@@ -1143,7 +1291,6 @@
       '<b data-s="orders" class="on">Заказы</b>' +
       '<b data-s="purchases">Купленные товары</b>' +
       '<b data-s="fav">Избранное</b>' +
-      '<b data-s="docs">Документы</b>' +
       '<b data-s="profile">Профиль</b>' +
       '</div></div><div class="ngr-cab__main"><div class="ngr-cab__empty">Загружаем…</div></div></div>';
 
@@ -1151,16 +1298,17 @@
       b.addEventListener('click', function () { cabSection(b.getAttribute('data-s')); });
     });
 
+    var noToken = !memberToken();
     Promise.all([
-      tildaPost('https://members.tildaapi.com/api/getprofile/').catch(function () { return null; }),
-      tildaPost('https://store.tildaapi.com/api/orders/getdashboard/').catch(function () { return null; })
+      noToken ? Promise.resolve(null) : tildaPost('https://members.tildaapi.com/api/getprofile/').catch(function () { return null; }),
+      noToken ? Promise.resolve(null) : tildaPost('https://store.tildaapi.com/api/orders/getdashboard/').catch(function () { return null; })
     ]).then(function (res) {
-      cabData.profile = (res[0] && res[0].data) || {};
+      // На страницах без корзины Tilda не выдаёт токен — показываем то,
+      // что знаем из профиля, и честно говорим про заказы.
+      cabData.profile = (res[0] && res[0].data) || memberProfile() || {};
       cabData.dash = res[1] || {};
-      var nm = cabData.profile.name || 'Покупатель';
-      body.querySelector('.ngr-cab__ava').textContent = (nm.charAt(0) || 'П').toUpperCase();
-      body.querySelector('.ngr-cab__name').textContent = nm;
-      body.querySelector('.ngr-cab__mail').textContent = cabData.profile.login || '';
+      cabData.noToken = noToken;
+      paintMe();
       cabSection('orders');
     });
   }
