@@ -33,6 +33,9 @@
    * побольше.
    */
   function askOnlyInStock() {
+    // Выключатель для проверки: с ?ngr=off страница работает так, будто
+    // поправки нет. Нужен, чтобы отличать наши поломки от чужих.
+    if (/[?&]ngr=off/.test(location.search)) return;
     if (window.NGR_STOCK_QUERY) return;
     window.NGR_STOCK_QUERY = 1;
     function fix(u) {
@@ -2007,23 +2010,38 @@
    * тем же способом, каким сортировку меняет покупатель, — один раз, когда
    * каталог отрисован скудно (замечание Александра 08.08).
    */
-  var sortRetried = false;
+  var wantSort = '';
+  var sortApplied = false;
+
+  /**
+   * Сортировку из адреса Tilda применяет на первой загрузке каталога — и
+   * рисует горстку товаров: без наших поправок по такой ссылке было четыре
+   * карточки, с ними шесть, тогда как со страницы та же сортировка даёт
+   * полторы сотни. Поэтому сортировку из адреса вынимаем до того, как Tilda
+   * его прочитает, и применяем её потом обычным способом — списком выбора.
+   */
+  function takeUrlSort() {
+    var m = location.search.match(/tfc_sort(?:%5B|\[)\d+(?:%5D|\])=([^&]+)/);
+    if (!m) return;
+    wantSort = decodeURIComponent(m[1]);
+    var clean = location.search.replace(/tfc_sort(?:%5B|\[)\d+(?:%5D|\])=[^&]*/, '')
+      .replace(/&&+/g, '&').replace(/[?&]$/, '').replace(/^&/, '?');
+    if (clean === '?') clean = '';
+    try { history.replaceState(null, '', location.pathname + clean + location.hash); } catch (e) {}
+  }
+  takeUrlSort();
 
   function fixUrlSort() {
-    if (sortRetried) return;
-    if (!/tfc_sort/.test(location.search)) return;
+    if (sortApplied || !wantSort) return;
     var sel = document.querySelector('#rec2502703571 select, .t-catalog select');
-    if (!sel || !sel.value) return;
-    var cards = document.querySelectorAll('#rec2502703571 .js-product').length;
-    if (!cards || cards > 24) return;         // отрисовалось нормально
-    sortRetried = true;
-    var v = sel.value;
-    sel.value = '';
+    if (!sel) return;
+    if (!document.querySelectorAll('#rec2502703571 .js-product').length) return;
+    var has = false;
+    [].slice.call(sel.options).forEach(function (o) { if (o.value === wantSort) has = true; });
+    if (!has) { sortApplied = true; return; }
+    sortApplied = true;
+    sel.value = wantSort;
     sel.dispatchEvent(new Event('change', { bubbles: true }));
-    setTimeout(function () {
-      sel.value = v;
-      sel.dispatchEvent(new Event('change', { bubbles: true }));
-    }, 600);
   }
 
   function buildSideFilters() {
