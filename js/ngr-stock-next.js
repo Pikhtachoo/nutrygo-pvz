@@ -2044,8 +2044,14 @@
     sel.dispatchEvent(new Event('change', { bubbles: true }));
   }
 
+  // Колонка фильтров — только в каталоге. На главной должна оставаться
+  // витрина «В наличии сейчас» без фильтра (решение Александра 08.08).
+  function onCatalogPage() {
+    return /[?&]catalog=/.test(location.search) || /ngr-catalog/.test(location.hash);
+  }
+
   function buildSideFilters() {
-    if (!SIDE_FILTERS) return;
+    if (!SIDE_FILTERS || !onCatalogPage()) return;
     var bar = document.querySelector('.t-catalog__filter');
     if (!bar) return;
     // Без списка доступных значений колонку не собираем: иначе она мигнёт
