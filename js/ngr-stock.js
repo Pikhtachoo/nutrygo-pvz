@@ -564,8 +564,16 @@
     document.head.appendChild(st);
   }
 
-  function applyRatingFilter() {
+  var lastRating = null;
+
+  function applyRatingFilter(force) {
     if (!rating || !skuOf) return;
+    // Раньше это выполнялось на каждое изменение страницы и трогало стили всех
+    // карточек. Tilda видела правку сетки и закрывала открытый список фильтра
+    // через секунду после нажатия (замечание Александра 07.08). Теперь
+    // работаем, только когда выбор действительно изменился.
+    if (!force && lastRating === minRating) return;
+    lastRating = minRating;
     document.querySelectorAll('.js-product').forEach(function (c) {
       var a = article(c);
       var r = rating[skuOf[a]];
@@ -586,6 +594,9 @@
     var bar = document.querySelector('.t-catalog__filter__options');
     if (!bar || bar.querySelector('.ngr-rf')) return;
     if (!rating || !skuOf) return;
+    // Пока покупатель держит открытым чужой список — не трогаем панель,
+    // иначе Tilda пересоберёт её и список схлопнется.
+    if (bar.querySelector('.t-catalog__filter__item.active, .t-catalog__filter__item_opened')) return;
     ratingCss();
     var sample = bar.querySelector('.t-catalog__filter__item');
     if (!sample) return;
@@ -1101,7 +1112,7 @@
   function apply() {
     fixPopup(); fixCards(); fixCart(); fixDupDelivery(); fixUnits(); fixBrands();
     initSearchGuard(); fixSearch(); fixAccountButton(); fixAuthGate();
-    fixRatings(); fixPopupReviews(); fixDescription(); fixDeliveryOrder(); fixCardPhotos(); fixPrices(); fixFilterValues(); fixRatingFilter(); applyRatingFilter();
+    fixRatings(); fixPopupReviews(); fixDescription(); fixDeliveryOrder(); fixCardPhotos(); fixPrices(); fixFilterValues(); fixRatingFilter(); applyRatingFilter(false);
   }
 
   apply();
