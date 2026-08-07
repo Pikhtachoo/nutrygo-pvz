@@ -519,6 +519,112 @@
     });
   }
 
+  /* ---------- Фильтры каталога ---------- */
+
+  /**
+   * «Страна-изготовитель: Россия» — у 18 товаров, но российского товара
+   * в ассортименте нет: это ошибка в данных карточек (Александр, 07.08).
+   * Пока данные не поправлены, убираем вариант из фильтра, чтобы покупатель
+   * не выбирал заведомо неверную подборку.
+   */
+  var HIDE_FILTER_VALUES = ['Россия'];
+
+  function fixFilterValues() {
+    document.querySelectorAll('.t-catalog__filter__item-controls-wrap label, ' +
+      '.t-catalog__filter__item-controls-container label').forEach(function (l) {
+      if (l.getAttribute('data-ngr-hid')) return;
+      var t = (l.textContent || '').trim();
+      if (HIDE_FILTER_VALUES.indexOf(t) === -1) return;
+      l.setAttribute('data-ngr-hid', '1');
+      l.style.setProperty('display', 'none', 'important');
+    });
+  }
+
+  /**
+   * Фильтр по оценке. У Tilda его нет — оценки приходят от нас, поэтому
+   * и фильтр наш: добавляем кнопку в общий ряд и прячем карточки с оценкой
+   * ниже выбранной (запрос Александра 07.08).
+   */
+  var minRating = 0;
+
+  function ratingCss() {
+    if (document.getElementById('ngr-rf-css')) return;
+    var st = document.createElement('style');
+    st.id = 'ngr-rf-css';
+    st.textContent =
+      '.ngr-rf{position:relative}' +
+      '.ngr-rf__list{position:absolute;top:100%;left:0;z-index:1001;min-width:190px;margin-top:6px;' +
+      'background:#fff;border:1px solid #e3e8ee;border-radius:12px;box-shadow:0 10px 30px rgba(20,23,28,.12);' +
+      'padding:6px;display:none}' +
+      '.ngr-rf_open .ngr-rf__list{display:block}' +
+      '.ngr-rf__list b{display:block;padding:9px 12px;border-radius:8px;font-size:14px;font-weight:500;' +
+      'color:#14171c;cursor:pointer;white-space:nowrap}' +
+      '.ngr-rf__list b:hover{background:#f5f7fa}' +
+      '.ngr-rf__list b.on{background:#fff3e8;color:#c2560a;font-weight:700}';
+    document.head.appendChild(st);
+  }
+
+  function applyRatingFilter() {
+    if (!rating || !skuOf) return;
+    document.querySelectorAll('.js-product').forEach(function (c) {
+      var a = article(c);
+      var r = rating[skuOf[a]];
+      var v = r ? r[1] / 10 : 0;
+      var hide = minRating > 0 && v < minRating;
+      if (hide) {
+        c.setAttribute('data-ngr-rate-hidden', '1');
+        c.style.setProperty('display', 'none', 'important');
+      } else if (c.getAttribute('data-ngr-rate-hidden') === '1') {
+        c.removeAttribute('data-ngr-rate-hidden');
+        // Не воскрешаем то, что скрыто по остатку.
+        if (c.getAttribute('data-ngr-hidden') !== '1') c.style.removeProperty('display');
+      }
+    });
+  }
+
+  function fixRatingFilter() {
+    var bar = document.querySelector('.t-catalog__filter__options');
+    if (!bar || bar.querySelector('.ngr-rf')) return;
+    if (!rating || !skuOf) return;
+    ratingCss();
+    var sample = bar.querySelector('.t-catalog__filter__item');
+    if (!sample) return;
+    var box = sample.cloneNode(true);
+    box.className = sample.className + ' ngr-rf';
+    box.removeAttribute('data-ngr-price');
+    var title = box.querySelector('.t-catalog__filter__item-title');
+    var drop = box.querySelector('.t-catalog__filter__item-controls-wrap');
+    if (!title || !drop) return;
+    title.textContent = 'Оценка';
+    drop.parentNode.removeChild(drop);
+
+    var list = document.createElement('div');
+    list.className = 'ngr-rf__list';
+    var opts = [[0, 'Любая'], [4, 'от 4,0'], [4.5, 'от 4,5'], [4.8, 'от 4,8']];
+    list.innerHTML = opts.map(function (o) {
+      return '<b data-v="' + o[0] + '"' + (o[0] === minRating ? ' class="on"' : '') + '>' + o[1] + '</b>';
+    }).join('');
+    box.appendChild(list);
+
+    title.addEventListener('click', function (e) {
+      e.preventDefault(); e.stopPropagation();
+      box.classList.toggle('ngr-rf_open');
+    });
+    list.querySelectorAll('b').forEach(function (b) {
+      b.addEventListener('click', function (e) {
+        e.preventDefault(); e.stopPropagation();
+        minRating = Number(b.getAttribute('data-v')) || 0;
+        list.querySelectorAll('b').forEach(function (x) { x.className = ''; });
+        b.className = 'on';
+        title.textContent = minRating ? 'Оценка: ' + String(minRating).replace('.', ',') + '+' : 'Оценка';
+        box.classList.remove('ngr-rf_open');
+        applyRatingFilter();
+      });
+    });
+    document.addEventListener('click', function () { box.classList.remove('ngr-rf_open'); });
+    bar.appendChild(box);
+  }
+
   /* ---------- Цена ---------- */
 
   /**
@@ -620,45 +726,63 @@
     document.head.appendChild(st);
   }
 
+  var photoCache = {};
+
+  /**
+   * Галерея как на маркетплейсах: все фото товара, точки под снимком,
+   * переключение наведением. Подмену вторым фото от Tilda выключаем совсем —
+   * именно она давала серый экран (замечание Александра 07.08). Фото берём
+   * из Ozon через интегратор, для открытого товара и один раз.
+   */
+  function buildGallery(card, photos) {
+    var layers = [].slice.call(card.querySelectorAll('.t-catalog__card__bgimg'));
+    if (!layers.length) return;
+    var main = layers[0];
+    for (var i = 1; i < layers.length; i++) layers[i].style.setProperty('display', 'none', 'important');
+    if (photos.length < 2) return;
+    galleryCss();
+    var wrap = main.parentNode;
+    if (!wrap || wrap.querySelector('.ngr-gal')) return;
+    if (getComputedStyle(wrap).position === 'static') wrap.style.position = 'relative';
+
+    var base = getComputedStyle(main).backgroundImage;
+    var gal = document.createElement('div');
+    gal.className = 'ngr-gal';
+    gal.innerHTML = photos.map(function (_, i) { return '<b' + (i ? '' : ' class="on"') + '></b>'; }).join('');
+    var dots = [].slice.call(gal.querySelectorAll('b'));
+    photos.forEach(function (u) { var im = new Image(); im.src = u; });   // подгружаем заранее
+    function show(i) {
+      main.style.setProperty('background-image', i ? 'url("' + photos[i] + '")' : base, 'important');
+      dots.forEach(function (d, k) { d.className = k === i ? 'on' : ''; });
+    }
+    dots.forEach(function (d, i) {
+      d.addEventListener('mouseenter', function () { show(i); });
+      d.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); show(i); });
+    });
+    wrap.addEventListener('mouseleave', function () { show(0); });
+    wrap.appendChild(gal);
+  }
+
   function fixCardPhotos() {
     document.querySelectorAll('.js-product').forEach(function (c) {
-      if (c.getAttribute('data-ngr-gal') === '1') return;
-      var layers = [].slice.call(c.querySelectorAll('.t-catalog__card__bgimg'));
-      if (layers.length < 2) return;
-      c.setAttribute('data-ngr-gal', '1');
-      var second = layers[1];
-      var bg = getComputedStyle(second).backgroundImage || '';
-      var m = bg.match(/url\(["']?([^"')]+)/);
-      if (!m) { second.style.display = 'none'; return; }
-
-      var probe = new Image();
-      probe.onerror = function () {
-        // Второго фото на деле нет — убираем слой, иначе серый экран.
-        second.style.display = 'none';
-      };
-      probe.onload = function () {
-        galleryCss();
-        var wrap = layers[0].parentNode;
-        if (!wrap || wrap.querySelector('.ngr-gal')) return;
-        if (getComputedStyle(wrap).position === 'static') wrap.style.position = 'relative';
-        var gal = document.createElement('div');
-        gal.className = 'ngr-gal';
-        gal.innerHTML = '<b class="on"></b><b></b>';
-        var dots = gal.querySelectorAll('b');
-        function show(i) {
-          second.style.opacity = i ? '1' : '';
-          second.style.visibility = i ? 'visible' : '';
-          dots[0].className = i ? '' : 'on';
-          dots[1].className = i ? 'on' : '';
-        }
-        [].forEach.call(dots, function (d, i) {
-          d.addEventListener('mouseenter', function () { show(i); });
-          d.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); show(i); });
-        });
-        wrap.addEventListener('mouseleave', function () { show(0); });
-        wrap.appendChild(gal);
-      };
-      probe.src = m[1];
+      if (c.getAttribute('data-ngr-gal')) return;
+      var layers = c.querySelectorAll('.t-catalog__card__bgimg');
+      if (!layers.length) return;
+      var a = article(c);
+      if (!a) return;
+      c.setAttribute('data-ngr-gal', 'wait');
+      // Второй слой Tilda гасим сразу: даже если фото не придут, серого
+      // прямоугольника при наведении больше не будет.
+      for (var i = 1; i < layers.length; i++) layers[i].style.setProperty('display', 'none', 'important');
+      if (photoCache[a]) { c.setAttribute('data-ngr-gal', '1'); buildGallery(c, photoCache[a]); return; }
+      fetch(API + '/catalog/photos?offer=' + encodeURIComponent(a))
+        .then(function (r) { return r.json(); })
+        .then(function (j) {
+          photoCache[a] = (j && j.photos) || [];
+          c.setAttribute('data-ngr-gal', '1');
+          buildGallery(c, photoCache[a]);
+        })
+        .catch(function () { c.setAttribute('data-ngr-gal', '1'); });
     });
   }
 
@@ -977,7 +1101,7 @@
   function apply() {
     fixPopup(); fixCards(); fixCart(); fixDupDelivery(); fixUnits(); fixBrands();
     initSearchGuard(); fixSearch(); fixAccountButton(); fixAuthGate();
-    fixRatings(); fixPopupReviews(); fixDescription(); fixDeliveryOrder(); fixCardPhotos(); fixPrices();
+    fixRatings(); fixPopupReviews(); fixDescription(); fixDeliveryOrder(); fixCardPhotos(); fixPrices(); fixFilterValues(); fixRatingFilter(); applyRatingFilter();
   }
 
   apply();
