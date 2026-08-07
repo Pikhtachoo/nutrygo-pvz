@@ -672,7 +672,9 @@
       // Процент выгоды
       '.ngr-off{display:inline-block;background:#eaf7ef;color:#1a8f4c;font-size:12px;font-weight:800;' +
       'padding:4px 8px;border-radius:8px;white-space:nowrap}' +
-      '.ngr-price{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:8px 0}' +
+      '.ngr-price{display:flex!important;align-items:center!important;gap:9px!important;' +
+      'flex-wrap:wrap!important;justify-content:flex-start!important;margin:8px 0}' +
+      '.ngr-price > *{margin:0!important}' +
       // В раскрытой карточке — рамка вокруг цены, как на Ozon
       '.t-catalog__prod-popup__container .ngr-price{border:1px solid #e8ecf1;border-radius:16px;' +
       'padding:14px 16px;background:#fff;margin:12px 0}' +
@@ -751,6 +753,10 @@
       // Свою зачёркнутую цену рисуем сами. Элемент Tilda для неё есть, текст
       // в нём тоже есть, но она держит его скрытым, и снять это снаружи
       // не удаётся — цена оставалась чёрточкой (Александр, 07.08).
+      // Чужой элемент убираем совсем: он скрыт, но продолжал занимать место —
+      // между ценой и скидкой зиял провал, а процент срывался на вторую
+      // строку (Александр, 08.08).
+      if (old) old.style.setProperty('display', 'none', 'important');
       var mine = w.querySelector('.ngr-oldprice');
       if (b > a && a > 0) {
         if (!mine) {
