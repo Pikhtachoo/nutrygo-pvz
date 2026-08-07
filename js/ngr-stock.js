@@ -573,8 +573,15 @@
 
     var more = box.querySelector('.ngr-revmore');
     if (more) more.addEventListener('click', function () {
-      box.querySelectorAll('[data-extra]').forEach(function (e) { e.style.display = ''; });
-      more.parentNode.removeChild(more);
+      // Кнопка переключает, а не исчезает: развернув список, покупатель
+      // должен иметь возможность его свернуть (замечание Александра 07.08).
+      var open = more.getAttribute('data-open') === '1';
+      box.querySelectorAll('[data-extra]').forEach(function (e) { e.style.display = open ? 'none' : ''; });
+      more.setAttribute('data-open', open ? '0' : '1');
+      more.textContent = open
+        ? 'Показать ещё ' + hidden + ' ' + plural(hidden, 'отзыв', 'отзыва', 'отзывов')
+        : 'Свернуть отзывы';
+      if (open) box.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     });
   }
 
