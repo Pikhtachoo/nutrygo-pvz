@@ -2144,6 +2144,8 @@
    * покупатель выбрал не первый кадр. Первый кадр — всегда фото Tilda,
    * значит пустой карточка стать не может.
    */
+  var NGR_GALLERY_ON = true;   // карусель в каталоге
+
   function buildGallery(card, photos) {
     var layers = [].slice.call(card.querySelectorAll('.t-catalog__card__bgimg'));
     if (!layers.length || !photos.length) return false;
@@ -2192,7 +2194,7 @@
   }
 
   function fixCardPhotos() {
-    if (!GALLERY_IN_CATALOG) { guardHoverPhoto(); return; }
+    if (!NGR_GALLERY_ON) { guardHoverPhoto(); return; }
     document.querySelectorAll('.js-product').forEach(function (c) {
       if (c.getAttribute('data-ngr-gal')) return;
       var layers = c.querySelectorAll('.t-catalog__card__bgimg');
