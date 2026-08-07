@@ -393,6 +393,16 @@
     a.classList.add('ngr-account--in');
     a.innerHTML = '<span class="ngr-ava">' + letter + '</span>' +
       '<span class="ngr-account-name">' + short + '</span>';
+    // Вошедшего ведём в наш кабинет, а не в кабинет Tilda.
+    if (!a.getAttribute('data-ngr-cab')) {
+      a.setAttribute('data-ngr-cab', '1');
+      a.addEventListener('click', function (e) {
+        if (!member()) return;
+        e.preventDefault();
+        e.stopPropagation();
+        openCabinet();
+      }, true);
+    }
     a.setAttribute('title', m.name + ' — личный кабинет');
     a.setAttribute('aria-label', 'Личный кабинет: ' + m.name);
   }
@@ -847,6 +857,217 @@
     var m = location.search.match(/[?&]ngprod=([\w-]+)/);
     if (m) setTimeout(function () { openProduct(m[1]); }, 400);
   })();
+
+  /* ---------- Личный кабинет ---------- */
+
+  /**
+   * Свой кабинет на основном сайте.
+   *
+   * Кабинет Tilda переделать нельзя: страницы /members/ — отдельное
+   * приложение, туда не попадают ни наши скрипты, ни стили (проверено
+   * 08.08). Поэтому собираем свой, а данные покупателя берём прямо
+   * в его браузере у Tilda: токен кабинета действует только там, наружу
+   * Tilda его не признаёт. Персональные данные к нам не попадают.
+   */
+  var TP = '27635446';
+
+  function memberToken() {
+    try { return (window.t_cart__getMembersToken && t_cart__getMembersToken()) || ''; } catch (e) { return ''; }
+  }
+
+  function tildaPost(path, extra) {
+    var body = 'projectid=' + TP + '&token=' + encodeURIComponent(memberToken()) + (extra || '');
+    return fetch(path, {
+      method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: body
+    }).then(function (r) { return r.json(); });
+  }
+
+  function cabCss() {
+    if (document.getElementById('ngr-cab-css')) return;
+    var st = document.createElement('style');
+    st.id = 'ngr-cab-css';
+    st.textContent =
+      '.ngr-cab{display:grid;grid-template-columns:236px minmax(0,1fr);gap:26px;padding:26px 30px 40px}' +
+      '.ngr-cab__side{position:sticky;top:16px;align-self:start}' +
+      '.ngr-cab__me{display:flex;align-items:center;gap:12px;margin-bottom:18px}' +
+      '.ngr-cab__ava{width:48px;height:48px;border-radius:50%;background:#4984c4;color:#fff;' +
+      'display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:800}' +
+      '.ngr-cab__name{font-size:16px;font-weight:700;color:#14171c;line-height:1.2}' +
+      '.ngr-cab__mail{font-size:12px;color:#8a919b;word-break:break-all}' +
+      '.ngr-cab__nav b{display:block;padding:11px 13px;border-radius:10px;font-size:14.5px;' +
+      'font-weight:500;color:#14171c;cursor:pointer}' +
+      '.ngr-cab__nav b:hover{background:#f5f7fa}' +
+      '.ngr-cab__nav b.on{background:#eef4fb;color:#2f6ba8;font-weight:700}' +
+      '.ngr-cab h2{margin:0 0 16px;font-size:26px;font-weight:800;letter-spacing:-.6px;color:#14171c}' +
+      '.ngr-cab__card{border:1px solid #e8ecf1;border-radius:16px;padding:18px;margin-bottom:14px}' +
+      '.ngr-cab__row{display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:10px}' +
+      '.ngr-cab__st{font-size:13px;font-weight:700;color:#1a8f4c}' +
+      '.ngr-cab__sum{font-size:18px;font-weight:800;color:#14171c}' +
+      '.ngr-cab__items{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}' +
+      '.ngr-cab__it{width:74px;text-align:center;cursor:pointer}' +
+      '.ngr-cab__it i{display:block;width:74px;height:74px;border-radius:10px;border:1px solid #eef1f5;' +
+      'background:#fff center/contain no-repeat}' +
+      '.ngr-cab__it span{display:block;font-size:11px;color:#6b7280;margin-top:4px;overflow:hidden;' +
+      'text-overflow:ellipsis;white-space:nowrap}' +
+      '.ngr-cab__empty{padding:40px 20px;text-align:center;color:#8a919b;border:1px dashed #dfe4ea;border-radius:16px}' +
+      '.ngr-cab__field{margin-bottom:14px}' +
+      '.ngr-cab__field u{display:block;text-decoration:none;font-size:12px;color:#8a919b;margin-bottom:3px}' +
+      '.ngr-cab__field b{font-size:15px;color:#14171c;font-weight:600}' +
+      '@media(max-width:860px){' +
+      '.ngr-cab{grid-template-columns:1fr;gap:16px;padding:12px 16px 26px}' +
+      '.ngr-cab__side{position:static}' +
+      '.ngr-cab__nav{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px}' +
+      '.ngr-cab__nav b{white-space:nowrap;padding:9px 14px;border:1px solid #e8ecf1}' +
+      '.ngr-cab h2{font-size:21px}}';
+    document.head.appendChild(st);
+  }
+
+  var cabData = { profile: null, dash: null };
+
+  function cabSection(name) {
+    var host = document.querySelector('.ngr-cab__main');
+    if (!host) return;
+    document.querySelectorAll('.ngr-cab__nav b').forEach(function (b) {
+      b.className = b.getAttribute('data-s') === name ? 'on' : '';
+    });
+    var d = cabData.dash || {};
+    var p = cabData.profile || {};
+
+    if (name === 'orders') {
+      var orders = d.last_orders || [];
+      host.innerHTML = '<h2>Заказы</h2>' + (orders.length ? '' :
+        '<div class="ngr-cab__empty">Здесь появятся ваши заказы с сайта.<br>' +
+        'Заказы, оформленные до входа в кабинет, сюда не попадают.</div>');
+      orders.forEach(function (o) {
+        var c = document.createElement('div');
+        c.className = 'ngr-cab__card';
+        c.innerHTML = '<div class="ngr-cab__row"><div><b>Заказ № ' + (o.id || o.orderid || '') + '</b>' +
+          '<div class="ngr-cab__mail">' + String(o.date || o.created || '').slice(0, 16) + '</div></div>' +
+          '<div style="text-align:right"><div class="ngr-cab__sum">' + money(Number(o.amount) || 0) + '</div>' +
+          '<div class="ngr-cab__st">' + (o.status_name || o.status || '') + '</div></div></div>';
+        host.appendChild(c);
+      });
+      return;
+    }
+
+    if (name === 'purchases') {
+      var buys = d.last_purchases || [];
+      host.innerHTML = '<h2>Купленные товары</h2>' + (buys.length ? '' :
+        '<div class="ngr-cab__empty">Здесь появятся товары из ваших заказов.</div>');
+      if (buys.length) {
+        var box = document.createElement('div');
+        box.className = 'ngr-cab__items';
+        buys.forEach(function (b) {
+          var el = document.createElement('div');
+          el.className = 'ngr-cab__it';
+          el.innerHTML = '<i style="background-image:url(\'' + (b.img || '') + '\')"></i><span></span>';
+          el.querySelector('span').textContent = b.name || '';
+          if (b.sku) el.addEventListener('click', function () { openProduct(String(b.sku)); });
+          box.appendChild(el);
+        });
+        host.appendChild(box);
+      }
+      return;
+    }
+
+    if (name === 'fav') {
+      var list = favList();
+      host.innerHTML = '<h2>Избранное</h2>' + (list.length ? '' :
+        '<div class="ngr-cab__empty">Пока пусто. Нажмите ♡ на карточке товара, чтобы сохранить его сюда.</div>');
+      if (list.length) {
+        var fb = document.createElement('div');
+        fb.className = 'ngr-shelf';
+        host.appendChild(fb);
+        Promise.all(list.map(function (a) {
+          return fetch(API + '/catalog/product?offer=' + encodeURIComponent(a))
+            .then(function (r) { return r.json(); }).catch(function () { return null; });
+        })).then(function (arr) {
+          arr.filter(Boolean).filter(function (x) { return !x.error; }).forEach(function (x) {
+            fb.appendChild(shelfCard({
+              art: x.art, title: x.title, img: (x.photos || [])[0] || '',
+              price: x.price, old: x.old, off: x.off,
+              n: x.reviews ? x.reviews.n : 0, avg: x.reviews ? x.reviews.avg : 0, url: ''
+            }));
+          });
+        });
+      }
+      return;
+    }
+
+    if (name === 'docs') {
+      host.innerHTML = '<h2>Документы на товары</h2>' +
+        '<div class="ngr-cab__card">Каждый товар в каталоге отмечен свидетельством ' +
+        'о государственной регистрации. Номер виден в карточке товара — откройте её и ' +
+        'найдите отметку «Проверен: СГР есть».</div>' +
+        '<div class="ngr-cab__card"><b>Всего товаров со свидетельством: ' +
+        (sgrMap ? Object.keys(sgrMap).length : '…') + '</b></div>';
+      return;
+    }
+
+    host.innerHTML = '<h2>Профиль</h2>' +
+      '<div class="ngr-cab__card">' +
+      '<div class="ngr-cab__field"><u>Имя</u><b>' + (p.name || '—') + '</b></div>' +
+      '<div class="ngr-cab__field"><u>Электронная почта</u><b>' + (p.login || '—') + '</b></div>' +
+      '<div class="ngr-cab__field"><u>Телефон</u><b>' + (p.phone || '—') + '</b></div>' +
+      '</div>' +
+      '<div class="ngr-cab__card">Изменить данные и пароль можно в ' +
+      '<a href="/members/profile/" style="color:#2f6ba8">настройках профиля</a>.</div>';
+  }
+
+  function openCabinet() {
+    if (!memberToken()) { location.href = '#openmembersbar'; return; }
+    cabCss();
+    var w = prodWin();
+    w.classList.add('ngr-pw_open');
+    document.body.style.setProperty('overflow', 'hidden');
+    var body = w.querySelector('.ngr-pw__body');
+    body.innerHTML = '<div class="ngr-cab"><div class="ngr-cab__side">' +
+      '<div class="ngr-cab__me"><div class="ngr-cab__ava">·</div><div>' +
+      '<div class="ngr-cab__name">Личный кабинет</div><div class="ngr-cab__mail"></div></div></div>' +
+      '<div class="ngr-cab__nav">' +
+      '<b data-s="orders" class="on">Заказы</b>' +
+      '<b data-s="purchases">Купленные товары</b>' +
+      '<b data-s="fav">Избранное</b>' +
+      '<b data-s="docs">Документы</b>' +
+      '<b data-s="profile">Профиль</b>' +
+      '</div></div><div class="ngr-cab__main"><div class="ngr-cab__empty">Загружаем…</div></div></div>';
+
+    body.querySelectorAll('.ngr-cab__nav b').forEach(function (b) {
+      b.addEventListener('click', function () { cabSection(b.getAttribute('data-s')); });
+    });
+
+    Promise.all([
+      tildaPost('https://members.tildaapi.com/api/getprofile/').catch(function () { return null; }),
+      tildaPost('https://store.tildaapi.com/api/orders/getdashboard/').catch(function () { return null; })
+    ]).then(function (res) {
+      cabData.profile = (res[0] && res[0].data) || {};
+      cabData.dash = res[1] || {};
+      var nm = cabData.profile.name || 'Покупатель';
+      body.querySelector('.ngr-cab__ava').textContent = (nm.charAt(0) || 'П').toUpperCase();
+      body.querySelector('.ngr-cab__name').textContent = nm;
+      body.querySelector('.ngr-cab__mail').textContent = cabData.profile.login || '';
+      cabSection('orders');
+    });
+  }
+
+  window.NGR_OPEN_CABINET = openCabinet;
+
+  /* ---------- Избранное ---------- */
+
+  /**
+   * Избранное храним в браузере покупателя: отдельного хранилища на нашей
+   * стороне не требуется, а личные данные никуда не уходят.
+   */
+  function favList() {
+    try { return JSON.parse(localStorage.getItem('ngr_fav') || '[]'); } catch (e) { return []; }
+  }
+  function favHas(a) { return favList().indexOf(String(a)) > -1; }
+  function favToggle(a) {
+    var l = favList(), i = l.indexOf(String(a));
+    if (i > -1) l.splice(i, 1); else l.push(String(a));
+    try { localStorage.setItem('ngr_fav', JSON.stringify(l)); } catch (e) {}
+    return favHas(a);
+  }
 
   /* ---------- Полки на главной ---------- */
 
