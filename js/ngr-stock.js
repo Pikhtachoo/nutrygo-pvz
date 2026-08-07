@@ -414,9 +414,28 @@
     return f.querySelector('.t-submit, .t-form__submit button, button[type="submit"], input[type="submit"]');
   }
 
+  /**
+   * Кладём токен кабинета в форму заказа: интегратор подтвердит его у Tilda
+   * и не примет заказ без входа. Запрет на сайте обходится, серверный — нет.
+   */
+  function stampToken(f) {
+    var tok = '';
+    try { tok = window.t_cart__getMembersToken ? (t_cart__getMembersToken() || '') : ''; } catch (e) {}
+    var input = f.querySelector('input[name="ngmember"]');
+    if (!tok) { if (input) input.parentNode.removeChild(input); return; }
+    if (!input) {
+      input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = 'ngmember';
+      f.appendChild(input);
+    }
+    if (input.value !== tok) input.value = tok;
+  }
+
   function fixAuthGate() {
     var ok = !!member();
     cartForms().forEach(function (f) {
+      stampToken(f);
       var btn = formSubmitBtn(f);
       var box = f.querySelector('.ngr-auth-stopper');
       if (ok) {
