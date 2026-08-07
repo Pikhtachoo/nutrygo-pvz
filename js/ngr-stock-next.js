@@ -32,6 +32,26 @@
    * страницы, и подгрузка обрывается на первой — поэтому просим страницу
    * побольше.
    */
+  // Все бренды магазина. Список подхватывается из фильтров Tilda, как только
+  // страница их отдаст, — если появится новый бренд, его товары не пропадут.
+  var ALL_BRANDS = ['NOW', 'OstroVit', 'Olimp', 'Ultimate Nutrition', 'VPLAB',
+    'California Gold Nutrition', 'NaturesPlus', 'Swanson', 'Doctors Best', 'SAN',
+    'Life Extension', 'Thorne', 'SFD Nutrition', 'UltraVit', 'Solaray', 'Smartlife',
+    'Nutrex', 'AllNutrition', 'Sambucol', '21st Century', 'Promensil'];
+
+  function refreshBrands() {
+    var items = document.querySelectorAll('.t-catalog__filter__item');
+    for (var i = 0; i < items.length; i++) {
+      var title = ((items[i].querySelector('.t-catalog__filter__item-title') || {}).textContent || '').trim();
+      if (!/бренд/i.test(title)) continue;
+      var labs = items[i].querySelectorAll('label.t-checkbox__control');
+      for (var k = 0; k < labs.length; k++) {
+        var v = (labs[k].textContent || '').trim();
+        if (v && ALL_BRANDS.indexOf(v) < 0) ALL_BRANDS.push(v);
+      }
+    }
+  }
+
   function askOnlyInStock() {
     // Выключатель для проверки: с ?ngr=off страница работает так, будто
     // поправки нет. Нужен, чтобы отличать наши поломки от чужих.
@@ -40,6 +60,19 @@
     window.NGR_STOCK_QUERY = 1;
     function fix(u) {
       if (typeof u !== 'string' || u.indexOf('getproductslist') < 0) return u;
+      /*
+       * Список раздела у Tilda застрял: он отдаёт 601 карточку из 1343,
+       * которые лежат в магазине, и не обновляется даже публикацией сайта.
+       * Поиск по брендам при этом ходит по свежим данным. Поэтому в каждый
+       * запрос без выбранного бренда кладём все бренды магазина разом —
+       * Tilda уходит в свежий указатель и отдаёт каталог целиком.
+       * Измерено 09.08: было 277 товаров в наличии, стало 729.
+       */
+      if (u.indexOf('filters%5Bbrand%5D') < 0 && u.indexOf('filters[brand]') < 0) {
+        for (var b = 0; b < ALL_BRANDS.length; b++) {
+          u += '&filters%5Bbrand%5D%5B' + b + '%5D=' + encodeURIComponent(ALL_BRANDS[b]);
+        }
+      }
       if (u.indexOf('filters%5Bquantity%5D') < 0 && u.indexOf('filters[quantity]') < 0) {
         u += (u.indexOf('?') < 0 ? '?' : '&') + 'filters%5Bquantity%5D=y';
       }
@@ -2795,7 +2828,7 @@
   function apply() {
     fixPopup(); fixCards(); fixCart(); fixDupDelivery(); fixUnits(); fixBrands();
     initSearchGuard(); fixSearch(); fixAccountButton(); fixAuthGate();
-    fixRatings(); fixPopupReviews(); fixDescription(); fixDeliveryOrder(); fixCardPhotos(); fixPrices(); fixFilterValues(); fixRatingFilter(); applyRatingFilter(false); fixShelves(); fixSgr(); fixFav(); cartCss(); buildSideFilters(); syncSideFilters(); fixUrlSort();
+    fixRatings(); fixPopupReviews(); fixDescription(); fixDeliveryOrder(); fixCardPhotos(); fixPrices(); fixFilterValues(); fixRatingFilter(); applyRatingFilter(false); fixShelves(); fixSgr(); fixFav(); cartCss(); refreshBrands(); buildSideFilters(); syncSideFilters(); fixUrlSort();
   }
 
   apply();
