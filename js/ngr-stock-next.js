@@ -1361,7 +1361,7 @@
       '<div class="ngr-cab__card">' +
       '<div class="ngr-cab__field"><u>Ваша реферальная ссылка</u>' +
       '<div class="ngr-cab__ref"><input class="ngr-cab__inp" id="ngrRef" readonly value="' +
-      refLink(p.login || '') + '"><button type="button" class="ngr-cab__copy">Скопировать</button></div></div>' +
+      refLink(p.login || '') + '"><button type="button" class="ngr-cab__copy ngr-cab__copyref">Скопировать</button></div></div>' +
       '<div class="ngr-cab__hint">Поделитесь ссылкой — мы увидим, что покупатель пришёл от вас.</div>' +
       '</div>' +
       '<div class="ngr-cab__card">' +
@@ -1434,13 +1434,19 @@
       fixAccountButton();
     });
 
-    host.querySelector('.ngr-cab__copy').addEventListener('click', function () {
-      var f = host.querySelector('#ngrRef');
-      f.select();
-      try { document.execCommand('copy'); } catch (e) {}
-      host.querySelector('.ngr-cab__copy').textContent = '✓ Скопировано';
-      setTimeout(function () { host.querySelector('.ngr-cab__copy').textContent = 'Скопировать'; }, 1800);
-    });
+    // Раньше подпись искалась по общему классу и доставалась первой кнопке —
+    // загрузке фотографии: вместо «Загрузить фото» там оказывалось
+    // «Скопировать» (замечание Александра 09.08).
+    var copyRef = host.querySelector('.ngr-cab__copyref');
+    if (copyRef) {
+      copyRef.addEventListener('click', function () {
+        var f = host.querySelector('#ngrRef');
+        f.select();
+        try { document.execCommand('copy'); } catch (e) {}
+        copyRef.textContent = '✓ Скопировано';
+        setTimeout(function () { copyRef.textContent = 'Скопировать'; }, 1800);
+      });
+    }
   }
 
   function openCabinet() {
