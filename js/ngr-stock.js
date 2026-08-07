@@ -393,11 +393,83 @@
     a.setAttribute('aria-label', 'Личный кабинет: ' + m.name);
   }
 
-  window.NGR_MEMBER = member;   // pvz-picker берёт отсюда признак входа
+  window.NGR_MEMBER = member;
+  window.NGR_LOGGED_IN = function () { return !!member(); };
+
+  /**
+   * Заказ только для зарегистрированных (решение Александра 07.08).
+   *
+   * Держим проверку здесь, а не в виджете пунктов выдачи: тот включается
+   * только на шаге с адресом, а запрет должен работать на всём оформлении.
+   * Кнопку гасим и объясняем, почему, — молча запрещать нельзя.
+   */
+  function cartForms() {
+    var out = [];
+    document.querySelectorAll('.t-store__cart-form, .t706__cartwin form, form[name*="cart"]')
+      .forEach(function (f) { if (f.getBoundingClientRect().width > 0) out.push(f); });
+    return out;
+  }
+
+  function formSubmitBtn(f) {
+    return f.querySelector('.t-submit, .t-form__submit button, button[type="submit"], input[type="submit"]');
+  }
+
+  function fixAuthGate() {
+    var ok = !!member();
+    cartForms().forEach(function (f) {
+      var btn = formSubmitBtn(f);
+      var box = f.querySelector('.ngr-auth-stopper');
+      if (ok) {
+        if (box) box.parentNode.removeChild(box);
+        if (btn && btn.getAttribute('data-ngr-auth-blocked') === '1') {
+          btn.removeAttribute('data-ngr-auth-blocked');
+          // Не воскрешаем кнопку, если её погасил виджет доставки.
+          if (btn.getAttribute('data-ngpvz-blocked') !== '1') {
+            btn.disabled = false;
+            btn.style.opacity = '';
+            btn.style.cursor = '';
+          }
+        }
+        return;
+      }
+      if (btn) {
+        btn.setAttribute('data-ngr-auth-blocked', '1');
+        btn.disabled = true;
+        btn.style.opacity = '0.45';
+        btn.style.cursor = 'not-allowed';
+      }
+      if (!box) {
+        box = document.createElement('div');
+        box.className = 'ngr-auth-stopper';
+        box.style.cssText = 'margin:12px 0;padding:14px 16px;border:1px solid #f0c9a3;' +
+          'background:#fff7ef;border-radius:12px;color:#7a4a12;font-size:14px;line-height:1.5';
+        box.innerHTML = '<b>Заказ оформляется из личного кабинета.</b><br>' +
+          'Так заказ, документы и история покупок останутся у вас под рукой.<br>' +
+          '<a href="#openmembersbar" style="display:inline-block;margin-top:8px;padding:9px 16px;' +
+          'background:#ff7a1a;color:#fff;border-radius:9px;font-weight:700;text-decoration:none">' +
+          'Войти или зарегистрироваться</a>';
+        if (btn && btn.parentNode) btn.parentNode.insertBefore(box, btn);
+        else f.insertBefore(box, f.firstChild);
+      }
+    });
+  }
+
+  // Последний рубеж: если кнопку кто-то включит обратно, отправку всё равно
+  // не пропустим.
+  document.addEventListener('submit', function (e) {
+    var f = e.target;
+    if (!f || !f.matches || !f.matches('.t-store__cart-form, .t706__cartwin form, form[name*="cart"]')) return;
+    if (member()) return;
+    e.preventDefault();
+    e.stopPropagation();
+    fixAuthGate();
+    var box = f.querySelector('.ngr-auth-stopper');
+    if (box) box.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }, true);
 
   function apply() {
     fixPopup(); fixCards(); fixCart(); fixDupDelivery(); fixUnits(); fixBrands();
-    initSearchGuard(); fixSearch(); fixAccountButton();
+    initSearchGuard(); fixSearch(); fixAccountButton(); fixAuthGate();
   }
 
   apply();
