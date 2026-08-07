@@ -1050,7 +1050,7 @@
           items.forEach(function (it) {
             var el = document.createElement('div');
             el.className = 'ngr-cab__it';
-            el.innerHTML = '<i style="background-image:url('' + (it.img || it.image || '') + '')"></i><span></span>';
+            el.innerHTML = '<i style="background-image:url(\'' + (it.img || it.image || '') + '\')"></i><span></span>';
             el.querySelector('span').textContent = (it.name || it.title || '') +
               (Number(it.quantity) > 1 ? ' ×' + it.quantity : '');
             var sku = String(it.sku || it.article || '');
