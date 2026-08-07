@@ -1721,6 +1721,232 @@
     bar.appendChild(box);
   }
 
+  /* ---------- Корзина ---------- */
+
+  /**
+   * Корзина на телефоне обрезалась сверху: Tilda задаёт окну высоту в 100 %
+   * экрана, а на телефоне адресная строка эту высоту съедает — заголовок
+   * «Ваш заказ» уходил под верхний край (замечание Александра 08.08).
+   * Берём динамическую высоту окна и добавляем отступ под вырез экрана.
+   *
+   * Заодно приводим состав заказа к нормальному виду: крупная картинка,
+   * читаемое название, заметная цена.
+   */
+  function cartCss() {
+    if (document.getElementById('ngr-cart-css')) return;
+    var st = document.createElement('style');
+    st.id = 'ngr-cart-css';
+    st.textContent =
+      '@supports (height:100dvh){' +
+      '.t706__cartwin{height:100dvh!important;max-height:100dvh!important}}' +
+      '.t706__cartwin-content{-webkit-overflow-scrolling:touch}' +
+      // Позиция заказа
+      '.t706__product{align-items:flex-start!important}' +
+      '.t706__product-thumb{width:74px!important;height:74px!important;border-radius:10px!important;' +
+      'background-size:contain!important;background-repeat:no-repeat!important;background-position:center!important;' +
+      'border:1px solid #eef1f5!important}' +
+      '.t706__product-title{font-size:14px!important;line-height:1.45!important;color:#14171c!important}' +
+      '.t706__product-amount,.t706__product-price{font-size:15px!important;font-weight:700!important;color:#14171c!important}' +
+      '.t706__cartwin-prodamount-wrap{font-size:18px!important;font-weight:800!important;color:#14171c!important}' +
+      '@media(max-width:640px){' +
+      '.t706__cartwin-content{padding-top:calc(env(safe-area-inset-top, 0px) + 22px)!important;' +
+      'padding-bottom:calc(env(safe-area-inset-bottom, 0px) + 26px)!important;max-height:100dvh!important}' +
+      '.t706__cartwin-heading,.t706__cartwin-top{position:sticky;top:0;z-index:3;background:#fff;' +
+      'padding-top:6px!important;padding-bottom:8px!important}' +
+      '.t706__product{gap:12px!important}' +
+      '.t706__product-thumb{width:62px!important;height:62px!important;flex:0 0 62px!important}' +
+      '.t706__product-title{font-size:13.5px!important}' +
+      '.t706__product-plusminus{margin-top:8px!important}' +
+      '.t706__cartwin-bottom .t-form__submit button,.t706__cartwin-bottom .t-submit{' +
+      'position:sticky;bottom:0;font-size:16px!important;padding:16px!important}}';
+    document.head.appendChild(st);
+  }
+
+  /* ---------- Боковая колонка фильтров ---------- */
+
+  /**
+   * Фильтры вынесены в боковую колонку, как на маркетплейсах (запрос
+   * Александра 08.08). Своих фильтров не изобретаем: колонка отражает
+   * настоящие фильтры Tilda и нажимает их флажки — значит отбор работает
+   * ровно так же, как раньше, и ничего не ломается.
+   */
+  var BRAND_LOGO = {
+    'NOW': 'brand-now.jpg', 'Life Extension': 'brand-life-extension.jpg',
+    'Olimp': 'brand-olimp.jpg', 'Swanson': 'brand-swanson.jpg',
+    'Solaray': 'brand-solaray.jpg', 'Ultimate Nutrition': 'brand-ultimate.jpg',
+    'OstroVit': 'brand-ostrovit.jpg', 'VPLAB': 'brand-vplab.jpg'
+  };
+
+  function sideCss() {
+    if (document.getElementById('ngr-side-css')) return;
+    var st = document.createElement('style');
+    st.id = 'ngr-side-css';
+    st.textContent =
+      '.ngr-withside{display:grid;grid-template-columns:262px minmax(0,1fr);gap:24px;align-items:start}' +
+      '.ngr-side{position:sticky;top:14px;background:#fff;border:1px solid #e8ecf1;border-radius:16px;' +
+      'padding:6px 4px;max-height:calc(100vh - 28px);overflow:auto}' +
+      '.ngr-side__g{border-bottom:1px solid #f1f4f7;padding:14px 14px 12px}' +
+      '.ngr-side__g:last-child{border-bottom:0}' +
+      '.ngr-side__t{font-size:15px;font-weight:700;color:#14171c;margin-bottom:10px}' +
+      '.ngr-side__o{display:flex;align-items:center;gap:9px;padding:6px 0;cursor:pointer;font-size:14px;color:#2b2f36}' +
+      '.ngr-side__o:hover{color:#14171c}' +
+      '.ngr-side__box{flex:0 0 18px;width:18px;height:18px;border:1.5px solid #cfd6de;border-radius:5px;' +
+      'display:flex;align-items:center;justify-content:center;font-size:12px;color:#fff;background:#fff}' +
+      '.ngr-side__o.on .ngr-side__box{background:#4984c4;border-color:#4984c4}' +
+      '.ngr-side__logo{flex:0 0 24px;width:24px;height:24px;border-radius:6px;border:1px solid #eef1f5;' +
+      'background:#fff center/contain no-repeat}' +
+      '.ngr-side__more{display:inline-block;margin-top:6px;font-size:13px;color:#2f6ba8;cursor:pointer}' +
+      '.ngr-side__price{display:flex;gap:8px;align-items:center}' +
+      '.ngr-side__price input{width:100%;min-width:0;padding:9px 10px;border:1px solid #e3e8ee;' +
+      'border-radius:9px;font-size:14px;font-family:inherit;color:#14171c}' +
+      '.ngr-side__reset{display:block;width:100%;margin:10px 0 4px;padding:11px;border:1px solid #e3e8ee;' +
+      'background:#fff;border-radius:10px;font-size:14px;font-weight:600;color:#14171c;cursor:pointer}' +
+      '.ngr-side__reset:hover{background:#f6f8fa}' +
+      '.ngr-sidebtn{display:none}' +
+      '@media(max-width:1000px){' +
+      '.ngr-withside{grid-template-columns:1fr}' +
+      '.ngr-side{position:fixed;inset:0;z-index:99998;border-radius:0;max-height:none;display:none;padding:10px}' +
+      '.ngr-side_open{display:block}' +
+      '.ngr-sidebtn{display:inline-flex;align-items:center;gap:8px;margin:0 0 12px;padding:11px 18px;' +
+      'border:1px solid #e3e8ee;background:#fff;border-radius:12px;font-size:14px;font-weight:700;' +
+      'color:#14171c;cursor:pointer}' +
+      '.ngr-side__close{display:block;width:100%;margin-top:8px;padding:13px;border:0;border-radius:12px;' +
+      'background:#4984c4;color:#fff;font-size:15px;font-weight:700;cursor:pointer}}' +
+      '@media(min-width:1001px){.ngr-side__close{display:none}}';
+    document.head.appendChild(st);
+  }
+
+  function sideGroup(title) {
+    var g = document.createElement('div');
+    g.className = 'ngr-side__g';
+    g.innerHTML = '<div class="ngr-side__t"></div>';
+    g.querySelector('.ngr-side__t').textContent = title;
+    return g;
+  }
+
+  function buildSideFilters() {
+    var bar = document.querySelector('.t-catalog__filter');
+    if (!bar) return;
+    var block = document.querySelector('#rec2502703571 .js-catalog-cont-w-filter, #rec2502703571 .t-catalog');
+    if (!block || block.querySelector('.ngr-side')) return;
+    var items = [].slice.call(document.querySelectorAll('.t-catalog__filter__item'));
+    if (items.length < 3) return;
+    sideCss();
+
+    var side = document.createElement('aside');
+    side.className = 'ngr-side';
+
+    items.forEach(function (it) {
+      var title = ((it.querySelector('.t-catalog__filter__item-title') || {}).textContent || '').trim();
+      if (!title || /сортировка/i.test(title)) return;
+      var opts = [].slice.call(it.querySelectorAll('.t-catalog__filter__item-controls-container'));
+      var range = it.querySelector('input[type="range"], input[name="price_range"]');
+
+      // Цена — два поля «от» и «до», связанные с полями Tilda.
+      if (range || /цена/i.test(title)) {
+        var nums = [].slice.call(it.querySelectorAll('input[type="text"], input[type="number"]'));
+        if (nums.length < 2) return;
+        var g = sideGroup(title);
+        var row = document.createElement('div');
+        row.className = 'ngr-side__price';
+        row.innerHTML = '<input inputmode="numeric" placeholder="от"><span>—</span><input inputmode="numeric" placeholder="до">';
+        var mine = row.querySelectorAll('input');
+        mine[0].value = nums[0].value; mine[1].value = nums[1].value;
+        [0, 1].forEach(function (k) {
+          mine[k].addEventListener('change', function () {
+            nums[k].value = mine[k].value;
+            nums[k].dispatchEvent(new Event('input', { bubbles: true }));
+            nums[k].dispatchEvent(new Event('change', { bubbles: true }));
+          });
+        });
+        g.appendChild(row);
+        side.appendChild(g);
+        return;
+      }
+
+      if (!opts.length) return;
+      var g2 = sideGroup(title);
+      var shown = 0;
+      opts.forEach(function (o, i) {
+        var inp = o.querySelector('input[type="checkbox"], input[type="radio"]');
+        var lab = o.querySelector('label');
+        var text = ((lab && lab.textContent) || '').trim();
+        if (!inp || !text) return;
+        var row = document.createElement('div');
+        row.className = 'ngr-side__o' + (inp.checked ? ' on' : '');
+        var logo = BRAND_LOGO[text];
+        row.innerHTML = '<span class="ngr-side__box">✓</span>' +
+          (logo ? '<span class="ngr-side__logo" style="background-image:url(' + FILES + logo + ')"></span>' : '') +
+          '<span class="ngr-side__lbl"></span>';
+        row.querySelector('.ngr-side__lbl').textContent = text;
+        if (i >= 8) { row.setAttribute('data-extra', '1'); row.style.display = 'none'; }
+        row.addEventListener('click', function () {
+          inp.click();
+          setTimeout(function () { row.className = 'ngr-side__o' + (inp.checked ? ' on' : ''); }, 60);
+        });
+        g2.appendChild(row);
+        shown++;
+      });
+      if (shown > 8) {
+        var more = document.createElement('span');
+        more.className = 'ngr-side__more';
+        more.textContent = 'Показать все';
+        more.addEventListener('click', function () {
+          var hidden = g2.querySelectorAll('[data-extra]');
+          var open = more.textContent !== 'Показать все';
+          hidden.forEach(function (h) { h.style.display = open ? 'none' : ''; });
+          more.textContent = open ? 'Показать все' : 'Свернуть';
+        });
+        g2.appendChild(more);
+      }
+      side.appendChild(g2);
+    });
+
+    if (!side.children.length) return;
+
+    var reset = document.createElement('button');
+    reset.type = 'button';
+    reset.className = 'ngr-side__reset';
+    reset.textContent = 'Сбросить фильтры';
+    reset.addEventListener('click', function () {
+      document.querySelectorAll('.t-catalog__filter__item input:checked').forEach(function (i) { i.click(); });
+      setTimeout(function () {
+        side.querySelectorAll('.ngr-side__o').forEach(function (r) { r.className = 'ngr-side__o'; });
+      }, 120);
+    });
+    side.appendChild(reset);
+
+    var close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'ngr-side__close';
+    close.textContent = 'Показать товары';
+    close.addEventListener('click', function () { side.classList.remove('ngr-side_open'); });
+    side.appendChild(close);
+
+    // Ставим колонку слева от сетки товаров.
+    var grid = block.querySelector('.t-catalog__products, .js-catalog-products') ||
+      (document.querySelector('.js-product') || {}).parentNode;
+    if (!grid) return;
+    var host = grid.parentNode;
+    host.classList.add('ngr-withside');
+    host.insertBefore(side, grid);
+
+    // На телефоне колонка открывается кнопкой.
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'ngr-sidebtn';
+    btn.textContent = '☰ Фильтры';
+    btn.addEventListener('click', function () { side.classList.add('ngr-side_open'); });
+    host.parentNode.insertBefore(btn, host);
+
+    // Старую строку фильтров прячем — поиск и сортировка остаются.
+    document.querySelectorAll('.t-catalog__filter__item').forEach(function (it) {
+      var t = ((it.querySelector('.t-catalog__filter__item-title') || {}).textContent || '').trim();
+      if (/сортировка/i.test(t)) return;
+      it.style.setProperty('display', 'none', 'important');
+    });
+  }
+
   /* ---------- Цена ---------- */
 
   /**
@@ -1949,7 +2175,19 @@
     return true;
   }
 
+  /**
+   * ГАЛЕРЕЯ В КАТАЛОГЕ ВЫКЛЮЧЕНА (08.08).
+   *
+   * Она подменяла фон карточки снимками Ozon и в итоге все карточки
+   * оставались размытыми заглушками Tilda — покупатель не видел товар
+   * (замечание Александра). Фотографии важнее карусели, поэтому возвращаем
+   * штатное поведение Tilda. Все снимки товара по-прежнему доступны
+   * в карточке товара, там галерея работает и ничего не ломает.
+   */
+  var GALLERY_IN_CATALOG = false;
+
   function fixCardPhotos() {
+    if (!GALLERY_IN_CATALOG) return;
     document.querySelectorAll('.js-product').forEach(function (c) {
       if (c.getAttribute('data-ngr-gal')) return;
       var layers = c.querySelectorAll('.t-catalog__card__bgimg');
@@ -2290,7 +2528,7 @@
   function apply() {
     fixPopup(); fixCards(); fixCart(); fixDupDelivery(); fixUnits(); fixBrands();
     initSearchGuard(); fixSearch(); fixAccountButton(); fixAuthGate();
-    fixRatings(); fixPopupReviews(); fixDescription(); fixDeliveryOrder(); fixCardPhotos(); fixPrices(); fixFilterValues(); fixRatingFilter(); applyRatingFilter(false); fixShelves(); fixSgr(); fixFav();
+    fixRatings(); fixPopupReviews(); fixDescription(); fixDeliveryOrder(); fixCardPhotos(); fixPrices(); fixFilterValues(); fixRatingFilter(); applyRatingFilter(false); fixShelves(); fixSgr(); fixFav(); cartCss(); buildSideFilters();
   }
 
   apply();
