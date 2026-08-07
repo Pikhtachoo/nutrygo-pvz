@@ -814,7 +814,24 @@
     }
   }
 
+  /**
+   * Гасим всплывающую карточку Tilda.
+   *
+   * Запретить ей открыться не выходит: она успевает раньше, и покупатель
+   * видел сначала наше окно, а поверх — старое (замечание Александра 08.08).
+   * Поэтому просто закрываем её, если открылась.
+   */
+  function killTildaPopup() {
+    document.querySelectorAll('.t-popup_show').forEach(function (p) {
+      if (p.closest && p.closest('.ngr-pw')) return;
+      var x = p.querySelector('.t-popup__close, .t-popup__close-wrapper, .js-catalog-close-text');
+      if (x) x.click(); else p.classList.remove('t-popup_show');
+    });
+  }
+
   function openProduct(art) {
+    killTildaPopup();
+    [80, 250, 500, 900, 1400].forEach(function (ms) { setTimeout(killTildaPopup, ms); });
     var w = prodWin();
     w.classList.add('ngr-pw_open');
     document.body.style.setProperty('overflow', 'hidden');
