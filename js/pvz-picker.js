@@ -10,16 +10,15 @@
  * открывается мгновенно и не зависит от доступности API Ozon. Срок доставки
  * спрашивается у интегратора уже после выбора точки.
  *
- * Карта — бесплатная схема без ключей и лимитов. Яндекс включается заданием
- * window.NG_YMAPS_KEY (у него 100 обращений в сутки на бесплатном тарифе).
+ * Карта — бесплатная схема без ключей и лимитов, на библиотеке OpenLayers.
  */
 (function () {
   'use strict';
 
   var BASE = window.NG_PVZ_BASE || 'https://pikhtachoo.github.io/nutrygo-pvz';
   var API = window.NG_INTEGRATOR_BASE || 'https://nutrygo-integrator.pikhtovnikov-alieksandr.workers.dev';
-  var LEAFLET_CSS = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
-  var LEAFLET_JS = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+  var MAPLIB_CSS = 'https://cdn.jsdelivr.net/npm/ol@10.2.1/ol.css';
+  var MAPLIB_JS = 'https://cdn.jsdelivr.net/npm/ol@10.2.1/dist/ol.js';
   var TILES = 'https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
 
   var CITY_FIELD = 'city';
@@ -29,7 +28,7 @@
   var MAX_IN_LIST = 40;
 
   var cities = null;
-  var leafletLoading = null;
+  var mapLibLoading = null;
 
   var css = document.createElement('style');
   css.textContent =
@@ -41,9 +40,8 @@
     '.ngpvz__search{width:100%;box-sizing:border-box;padding:11px 14px;border:1px solid #ddd;border-radius:12px;font-size:15px;margin-top:8px;font-family:inherit}' +
     '.ngpvz__map{height:300px;border:1px solid #e6e6e6;border-radius:14px;margin-top:8px;overflow:hidden;display:none}' +
     '.ngpvz_map .ngpvz__map{display:block}' +
-    // Вторая страховка от значка библиотеки в подписи карты: свежие версии
-    // Leaflet выводят его отдельным элементом, и одной настройки мало.
-    '.leaflet-attribution-flag,.leaflet-control-attribution svg{display:none!important}' +
+    // подпись карты держим компактной: сама библиотека логотипов не рисует
+    '.ol-attribution{font-size:11px}.ol-attribution ul{color:#666}' +
     '.ngpvz__list{display:none;max-height:260px;overflow-y:auto;border:1px solid #e6e6e6;border-radius:14px;margin-top:8px;background:#fff;-webkit-overflow-scrolling:touch}' +
     '.ngpvz_open .ngpvz__list{display:block}' +
     '.ngpvz_open .ngpvz__search{display:block}' +
@@ -105,20 +103,28 @@
     return best;
   }
 
-  function loadLeaflet() {
-    if (window.L) return Promise.resolve();
-    if (leafletLoading) return leafletLoading;
-    leafletLoading = new Promise(function (res, rej) {
+  /**
+   * Библиотека карты — OpenLayers (европейский проект).
+   *
+   * Раньше использовался Leaflet, но он украинского происхождения и рисует
+   * в подписи под картой украинский флаг прямо из своего кода. Для
+   * российского магазина это неуместно, поэтому библиотека заменена целиком,
+   * а не просто спрятан значок.
+   */
+  function loadMapLib() {
+    if (window.ol) return Promise.resolve();
+    if (mapLibLoading) return mapLibLoading;
+    mapLibLoading = new Promise(function (res, rej) {
       var link = document.createElement('link');
-      link.rel = 'stylesheet'; link.href = LEAFLET_CSS;
+      link.rel = 'stylesheet'; link.href = MAPLIB_CSS;
       document.head.appendChild(link);
       var js = document.createElement('script');
-      js.src = LEAFLET_JS;
+      js.src = MAPLIB_JS;
       js.onload = function () { res(); };
       js.onerror = function () { rej(new Error('map lib failed')); };
       document.head.appendChild(js);
     });
-    return leafletLoading;
+    return mapLibLoading;
   }
 
   function hoursText(p) { return p.h ? p.h.replace('-', '–') : ''; }
@@ -325,52 +331,84 @@
 
     /** На карте — точки видимой области, а не первые попавшиеся из списка. */
     function drawMap() {
-      loadLeaflet().then(function () {
+      loadMapLib().then(function () {
         if (!st.map) {
-          st.map = L.map(mapEl, { attributionControl: true, scrollWheelZoom: false });
-          // Подпись карты — без значка библиотеки: Leaflet рисует там флаг,
-          // неуместный на российском магазине. Ссылки на источники карты
-          // сохраняем, этого требуют их условия использования.
-          if (st.map.attributionControl && st.map.attributionControl.setPrefix) {
-            st.map.attributionControl.setPrefix('');
-          }
-          L.tileLayer(TILES, { maxZoom: 20, subdomains: 'abcd', attribution: '© OpenStreetMap, © CARTO' }).addTo(st.map);
-          st.layer = L.layerGroup().addTo(st.map);
-          var start = st.userPos ? [st.userPos.lat, st.userPos.lon] : [st.city.y, st.city.x];
-          st.map.setView(start, st.userPos ? 14 : 11);
+          var start = st.userPos ? [st.userPos.lon, st.userPos.lat] : [st.city.x, st.city.y];
+          st.layer = new ol.source.Vector();
+          st.map = new ol.Map({
+            target: mapEl,
+            controls: ol.control.defaults.defaults({ attribution: true, rotate: false }),
+            layers: [
+              new ol.layer.Tile({
+                source: new ol.source.XYZ({ url: TILES, attributions: '© OpenStreetMap, © CARTO', maxZoom: 20 })
+              }),
+              new ol.layer.Vector({ source: st.layer })
+            ],
+            view: new ol.View({
+              center: ol.proj.fromLonLat(start),
+              zoom: st.userPos ? 14 : 11
+            })
+          });
           st.map.on('moveend', drawVisible);
+          st.map.on('click', function (e) {
+            var hit = st.map.forEachFeatureAtPixel(e.pixel, function (f) { return f; });
+            if (hit && hit.get('point')) showPointCard(hit.get('point'));
+          });
         }
-        setTimeout(function () { st.map.invalidateSize(); drawVisible(); }, 120);
+        setTimeout(function () { st.map.updateSize(); drawVisible(); }, 120);
       }).catch(function () {
         wrap.classList.remove('ngpvz_map');
         mapBtn.textContent = 'Карта недоступна';
       });
     }
 
+    /** Карточка пункта под картой: у OpenLayers нет всплывающих окон «из коробки». */
+    function showPointCard(p) {
+      var box = wrap.querySelector('.ngpvz__mapcard');
+      if (!box) {
+        box = document.createElement('div');
+        box.className = 'ngpvz__mapcard';
+        box.style.cssText = 'margin-top:8px;padding:12px 14px;border:1px solid #e6e6e6;' +
+          'border-radius:12px;background:#fff;font-size:14px;line-height:1.45';
+        mapEl.parentNode.insertBefore(box, mapEl.nextSibling);
+      }
+      box.innerHTML = '<b>' + kindText(p) + '</b><br>' + p.a +
+        (hoursText(p) ? '<br>' + hoursText(p) : '') +
+        '<br>Хранение: ' + p.k + ' дн.' + (p.r ? ' · ★ ' + p.r : '') +
+        '<div style="margin-top:8px"><button type="button" class="ngpvz__pickmap" ' +
+        'style="padding:9px 16px;border:0;border-radius:8px;background:#f28c28;color:#fff;' +
+        'font-size:14px;cursor:pointer">Выбрать этот пункт</button></div>';
+      box.querySelector('.ngpvz__pickmap').onclick = function () {
+        pick(p);
+        if (box.parentNode) box.parentNode.removeChild(box);
+      };
+    }
+
+    function marker(lon, lat, fill, data) {
+      var f = new ol.Feature({ geometry: new ol.geom.Point(ol.proj.fromLonLat([lon, lat])) });
+      f.setStyle(new ol.style.Style({
+        image: new ol.style.Circle({
+          radius: 8,
+          fill: new ol.style.Fill({ color: fill }),
+          stroke: new ol.style.Stroke({ color: '#fff', width: 2 })
+        })
+      }));
+      if (data) f.set('point', data);
+      return f;
+    }
+
     function drawVisible() {
       if (!st.map) return;
-      var b = st.map.getBounds();
-      var inView = st.points.filter(function (p) { return b.contains([p.y, p.x]); }).slice(0, MAX_ON_MAP);
-      st.layer.clearLayers();
+      var ext = ol.proj.transformExtent(
+        st.map.getView().calculateExtent(st.map.getSize()), 'EPSG:3857', 'EPSG:4326');
+      var inView = st.points.filter(function (p) {
+        return p.x >= ext[0] && p.x <= ext[2] && p.y >= ext[1] && p.y <= ext[3];
+      }).slice(0, MAX_ON_MAP);
+      st.layer.clear();
       inView.forEach(function (p) {
-        var m = L.circleMarker([p.y, p.x], {
-          radius: 8, weight: 2, color: '#fff',
-          fillColor: p.p ? '#7c5cd6' : '#1f8a3b', fillOpacity: 1
-        });
-        m.bindPopup('<b>' + kindText(p) + '</b><br>' + p.a +
-          (hoursText(p) ? '<br>' + hoursText(p) : '') +
-          '<br>Хранение: ' + p.k + ' дн.' + (p.r ? ' · ★ ' + p.r : '') +
-          '<br><button type="button" class="ngpvz__pickmap" style="margin-top:8px;padding:8px 14px;border:0;border-radius:8px;background:#f28c28;color:#fff;font-size:13px;cursor:pointer">Выбрать этот пункт</button>');
-        m.on('popupopen', function (e) {
-          var btn = e.popup.getElement().querySelector('.ngpvz__pickmap');
-          if (btn) btn.onclick = function () { pick(p); st.map.closePopup(); };
-        });
-        st.layer.addLayer(m);
+        st.layer.addFeature(marker(p.x, p.y, p.p ? '#7c5cd6' : '#1f8a3b', p));
       });
-      if (st.userPos) {
-        st.layer.addLayer(L.circleMarker([st.userPos.lat, st.userPos.lon],
-          { radius: 8, weight: 3, color: '#fff', fillColor: '#1976d2', fillOpacity: 1 }).bindPopup('Вы здесь'));
-      }
+      if (st.userPos) st.layer.addFeature(marker(st.userPos.lon, st.userPos.lat, '#1976d2'));
       countEl.textContent = 'Пунктов в городе: ' + st.points.length + ' · на карте: ' + inView.length;
     }
 
