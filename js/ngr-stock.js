@@ -539,8 +539,11 @@
     var st = document.createElement('style');
     st.id = 'ngr-shelf-css';
     st.textContent =
+      // justify-items у чужого контейнера прижимал карточки к содержимому —
+      // полка выглядела сплющенной в узкие столбики (Александр, 08.08).
       '.ngr-shelf{display:grid!important;grid-template-columns:repeat(4,1fr)!important;' +
-      'gap:18px!important;align-items:stretch!important}' +
+      'gap:18px!important;align-items:stretch!important;justify-items:stretch!important}' +
+      '.ngr-shelf > .ngr-sc{width:100%!important;max-width:none!important;min-width:0!important}' +
       '.ngr-sc{display:flex;flex-direction:column;background:#fff;border:1px solid #eceff3;' +
       'border-radius:16px;overflow:hidden;text-decoration:none;color:inherit;transition:box-shadow .2s,transform .2s}' +
       '.ngr-sc:hover{box-shadow:0 12px 30px rgba(20,23,28,.10);transform:translateY(-2px)}' +
