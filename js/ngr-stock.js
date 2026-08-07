@@ -66,8 +66,11 @@
   /** Артикул товара из вёрстки Tilda: «Артикул: 32550». */
   function article(root) {
     var el = root.querySelector('.t-catalog__card__sku, .t-store__prod-popup__sku, [class*="__sku"]');
-    if (!el) return '';
-    var m = (el.textContent || '').match(/(\d{3,})/);
+    var m = el && (el.textContent || '').match(/(\d{3,})/);
+    if (m) return m[1];
+    // В раскрытой карточке артикула в отдельном поле нет — в этой вёрстке под
+    // «__sku» лежит бренд. Берём из подписи «Артикул: 31983».
+    m = (root.textContent || '').match(/Артикул:\s*([\w-]*\d[\w-]*)/i);
     return m ? m[1] : '';
   }
 
@@ -513,8 +516,8 @@
   /** Развёрнутая карточка товара: сводка, распределение оценок и тексты. */
   function fixPopupReviews() {
     if (!rating || !skuOf) return;
-    var pop = document.querySelector('.t-popup_show .t-store__prod-popup__container, ' +
-      '.t-store__prod-popup__container, .t-catalog__prod-popup__container');
+    var pop = document.querySelector('.t-popup_show .t-catalog__prod-popup__container, ' +
+      '.t-catalog__prod-popup__container, .t-store__prod-popup__container');
     if (!pop || !pop.getBoundingClientRect().width) return;
     var a = article(pop);
     if (!a) return;
@@ -525,7 +528,8 @@
     if (!box) {
       box = document.createElement('div');
       box.className = 'ngr-revbox';
-      var host = pop.querySelector('.t-store__prod-popup__text, .t-store__prod-popup__info, .js-store-prod-text') || pop;
+      var host = pop.querySelector('.t-catalog__prod-popup__info, .t-catalog__prod-popup__text, ' +
+        '.t-store__prod-popup__text, .t-store__prod-popup__info') || pop;
       host.appendChild(box);
     }
     box.setAttribute('data-sku', String(sku));
