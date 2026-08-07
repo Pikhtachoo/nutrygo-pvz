@@ -2116,6 +2116,8 @@
     var st = document.createElement('style');
     st.id = 'ngr-gal-css';
     st.textContent =
+      '.ngr-galimg{position:absolute;inset:0;background:#fff center/contain no-repeat;'+
+      'opacity:0;transition:opacity .12s;pointer-events:none;z-index:2}' +
       '.ngr-gal{position:absolute;left:0;right:0;bottom:8px;display:flex;gap:5px;' +
       'justify-content:center;z-index:3;pointer-events:auto}' +
       '.ngr-gal b{width:22px;height:4px;border-radius:3px;background:rgba(20,23,28,.22);cursor:pointer;transition:background .15s}' +
@@ -2133,99 +2135,60 @@
    * именно она давала серый экран (замечание Александра 07.08). Фото берём
    * из Ozon через интегратор, для открытого товара и один раз.
    */
+  /**
+   * Карусель фотографий в карточке каталога — как на маркетплейсах.
+   *
+   * Прошлые попытки подменяли фон карточки, спорили с ленивой загрузкой
+   * Tilda и оставляли покупателя с размытыми заглушками. Теперь фон Tilda
+   * не трогаем вовсе: рисуем СВОЙ слой поверх и показываем его только когда
+   * покупатель выбрал не первый кадр. Первый кадр — всегда фото Tilda,
+   * значит пустой карточка стать не может.
+   */
   function buildGallery(card, photos) {
     var layers = [].slice.call(card.querySelectorAll('.t-catalog__card__bgimg'));
     if (!layers.length || !photos.length) return false;
-    // Фото Tilda уже загружено и лежит в кеше браузера, а снимки Ozon весят
-    // по мегабайту и приезжают не сразу. Раньше я подменял картинку сразу —
-    // и карточка стояла пустой, пока фото едет (замечание Александра 08.08).
-    // Теперь снимок Tilda остаётся первым кадром, Ozon идёт следом.
-    var orig = getComputedStyle(layers[0]).backgroundImage;
-    // Пока фото не загрузилось, Tilda рисует цветную заглушку — это не 'none',
-    // а градиент. Раньше он попадал в галерею первым кадром, и карточка
-    // навсегда оставалась размытым пятном (замечание Александра 08.08).
-    if (!orig || orig.indexOf('url(') !== 0) return false;
-    var slides = [orig];
-    photos.forEach(function (u) {
-      var s = 'url("' + u + '")';
-      if (slides.indexOf(s) === -1) slides.push(s);
-    });
-    if (slides.length < 2) return true;
-    // Слои не прячем. У разных карточек видимым оказывается то первый, то
-    // второй — пряча «лишний», я гасил у части товаров само фото
-    // (замечание Александра 08.08). Вместо этого следим, чтобы картинка
-    // была у каждого слоя, и переключаем их все разом.
-    galleryCss();
     var wrap = layers[0].parentNode;
     if (!wrap || wrap.querySelector('.ngr-gal')) return true;
+
+    galleryCss();
     if (getComputedStyle(wrap).position === 'static') wrap.style.position = 'relative';
 
+    // Свой слой поверх фотографии Tilda.
+    var over = document.createElement('div');
+    over.className = 'ngr-galimg';
+    wrap.appendChild(over);
+
+    var frames = photos.slice(0, 5);          // 0 — фото Tilda, дальше Ozon
     var gal = document.createElement('div');
     gal.className = 'ngr-gal';
-    gal.innerHTML = slides.map(function (_, i) { return '<b' + (i ? '' : ' class="on"') + '></b>'; }).join('');
+    gal.innerHTML = '<b class="on"></b>' + frames.map(function () { return '<b></b>'; }).join('');
     var dots = [].slice.call(gal.querySelectorAll('b'));
+
     var loaded = false;
     function preload() {
       if (loaded) return;
       loaded = true;
-      slides.slice(1).forEach(function (s) {
-        var im = new Image();
-        im.src = s.replace(/^url\(\"?|\"?\)$/g, '');
-      });
+      frames.forEach(function (u) { var im = new Image(); im.src = u; });
     }
+
     function show(i) {
-      layers.forEach(function (l) { l.style.setProperty('background-image', slides[i], 'important'); });
+      if (i === 0) {
+        over.style.opacity = '0';
+      } else {
+        over.style.backgroundImage = 'url("' + frames[i - 1] + '")';
+        over.style.opacity = '1';
+      }
       dots.forEach(function (d, k) { d.className = k === i ? 'on' : ''; });
     }
+
     dots.forEach(function (d, i) {
-      d.addEventListener('mouseenter', function () { show(i); });
-      d.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); show(i); });
+      d.addEventListener('mouseenter', function () { preload(); show(i); });
+      d.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); preload(); show(i); });
     });
-    // Остальные снимки тянем только когда покупатель навёл на карточку —
-    // иначе главная тащит десятки мегабайт впустую.
     wrap.addEventListener('mouseenter', preload);
     wrap.addEventListener('mouseleave', function () { show(0); });
     wrap.appendChild(gal);
     return true;
-  }
-
-  /**
-   * ГАЛЕРЕЯ В КАТАЛОГЕ ВЫКЛЮЧЕНА (08.08).
-   *
-   * Она подменяла фон карточки снимками Ozon и в итоге все карточки
-   * оставались размытыми заглушками Tilda — покупатель не видел товар
-   * (замечание Александра). Фотографии важнее карусели, поэтому возвращаем
-   * штатное поведение Tilda. Все снимки товара по-прежнему доступны
-   * в карточке товара, там галерея работает и ничего не ломает.
-   */
-  var GALLERY_IN_CATALOG = false;
-
-  /**
-   * Защита от серого прямоугольника при наведении.
-   *
-   * Tilda подменяет фото вторым слоем. Если картинки в нём нет или она ещё
-   * не загрузилась, карточка гаснет. Галерею мы отключили, но защиту надо
-   * оставить — иначе вернулась прежняя беда (замечание Александра 08.08).
-   */
-  function guardHoverPhoto() {
-    document.querySelectorAll('.js-product').forEach(function (c) {
-      if (c.getAttribute('data-ngr-hoverfix') === '1') return;
-      var layers = [].slice.call(c.querySelectorAll('.t-catalog__card__bgimg'));
-      if (layers.length < 2) return;
-      var first = getComputedStyle(layers[0]).backgroundImage || '';
-      if (first.indexOf('url(') !== 0) return;      // основное ещё не загружено
-      c.setAttribute('data-ngr-hoverfix', '1');
-      for (var i = 1; i < layers.length; i++) {
-        (function (l) {
-          var bg = getComputedStyle(l).backgroundImage || '';
-          var m = bg.match(/url\(["']?([^"')]+)/);
-          if (!m) { l.style.setProperty('display', 'none', 'important'); return; }
-          var probe = new Image();
-          probe.onerror = function () { l.style.setProperty('display', 'none', 'important'); };
-          probe.src = m[1];
-        })(layers[i]);
-      }
-    });
   }
 
   function fixCardPhotos() {
