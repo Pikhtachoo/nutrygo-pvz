@@ -496,7 +496,13 @@
     var short = (m.name.split(/\s+/)[0] || 'Кабинет');
     var letter = (short.charAt(0) || 'К').toUpperCase();
     a.classList.add('ngr-account--in');
-    a.innerHTML = '<span class="ngr-ava">' + letter + '</span>' +
+    // В шапке показываем выбранный аватар, а буква имени остаётся
+    // запасным вариантом для тех, кто ничего не выбирал.
+    var mine = profileSettings();
+    var face = mine.photo || (mine.avatar ? avaFile(mine.avatar) : '');
+    a.innerHTML = '<span class="ngr-ava"' +
+      (face ? ' style="background-image:url(' + face + ');background-size:cover;background-position:center;color:transparent"' : '') +
+      '>' + letter + '</span>' +
       '<span class="ngr-account-name">' + short + '</span>';
     // Вошедшего ведём в наш кабинет, а не в кабинет Tilda.
     if (!a.getAttribute('data-ngr-cab')) {
@@ -1157,13 +1163,217 @@
 
   var cabData = { profile: null, dash: null };
 
+  /**
+   * Фирменные аватары (60 штук, шесть наборов). Файлы лежат в статике
+   * проекта, а в профиле хранится только устойчивый код вида nutrygo-31 —
+   * не адрес картинки, чтобы переезд файлов не обнулял выбор
+   * (требование Александра 09.08).
+   */
+  var AVA_URL = 'https://pikhtachoo.github.io/nutrygo-pvz/img/avatars/';
+  var AVATARS = [["nutrygo-01","01-energy-woman.webp","Персонажи","Энергичная женщина"],["nutrygo-02","02-reliable-man.webp","Персонажи","Надёжный мужчина"],["nutrygo-03","03-smart-woman.webp","Персонажи","Умная и спокойная"],["nutrygo-04","04-active-mature-man.webp","Персонажи","Активный зрелый мужчина"],["nutrygo-05","05-creative-woman.webp","Персонажи","Творческая женщина"],["nutrygo-06","06-music-introvert.webp","Персонажи","Меломан-интроверт"],["nutrygo-07","07-balanced-person.webp","Персонажи","Спокойный характер"],["nutrygo-08","08-strong-woman.webp","Персонажи","Сильная женщина"],["nutrygo-09","09-focused-professional.webp","Персонажи","Собранный профессионал"],["nutrygo-10","10-wise-woman.webp","Персонажи","Мудрая женщина"],["nutrygo-11","11-fox.webp","Животные","Лис"],["nutrygo-12","12-dog.webp","Животные","Пёс"],["nutrygo-13","13-cat.webp","Животные","Кот"],["nutrygo-14","14-owl.webp","Животные","Сова"],["nutrygo-15","15-bear.webp","Животные","Медведь"],["nutrygo-16","16-squirrel.webp","Животные","Белка"],["nutrygo-17","17-rabbit.webp","Животные","Кролик"],["nutrygo-18","18-raccoon.webp","Животные","Енот"],["nutrygo-19","19-deer.webp","Животные","Олень"],["nutrygo-20","20-capybara.webp","Животные","Капибара"],["nutrygo-21","21-energy.webp","Абстракции","Энергия"],["nutrygo-22","22-calm.webp","Абстракции","Спокойствие"],["nutrygo-23","23-growth.webp","Абстракции","Рост"],["nutrygo-24","24-focus.webp","Абстракции","Фокус"],["nutrygo-25","25-freedom.webp","Абстракции","Свобода"],["nutrygo-26","26-balance.webp","Абстракции","Баланс"],["nutrygo-27","27-optimism.webp","Абстракции","Оптимизм"],["nutrygo-28","28-flow.webp","Абстракции","Поток"],["nutrygo-29","29-resilience.webp","Абстракции","Устойчивость"],["nutrygo-30","30-curiosity.webp","Абстракции","Любознательность"],["nutrygo-31","31-runner.webp","Спорт","Бег"],["nutrygo-32","32-strength-athlete.webp","Спорт","Силовой спорт"],["nutrygo-33","33-cyclist.webp","Спорт","Велоспорт"],["nutrygo-34","34-swimmer.webp","Спорт","Плавание"],["nutrygo-35","35-yoga.webp","Спорт","Йога"],["nutrygo-36","36-tennis.webp","Спорт","Теннис"],["nutrygo-37","37-boxer.webp","Спорт","Бокс"],["nutrygo-38","38-basketball.webp","Спорт","Баскетбол"],["nutrygo-39","39-hiker.webp","Спорт","Хайкинг"],["nutrygo-40","40-winter-athlete.webp","Спорт","Зимний спорт"],["nutrygo-41","41-family-doctor.webp","Медицина","Семейный врач"],["nutrygo-42","42-pediatric-doctor.webp","Медицина","Педиатр"],["nutrygo-43","43-cardiologist.webp","Медицина","Кардиолог"],["nutrygo-44","44-neurologist.webp","Медицина","Невролог"],["nutrygo-45","45-nutrition-doctor.webp","Медицина","Врач-нутрициолог"],["nutrygo-46","46-sports-doctor.webp","Медицина","Спортивный врач"],["nutrygo-47","47-pharmacist.webp","Медицина","Фармацевт"],["nutrygo-48","48-nurse-practitioner.webp","Медицина","Медицинский специалист"],["nutrygo-49","49-dentist.webp","Медицина","Стоматолог"],["nutrygo-50","50-laboratory-doctor.webp","Медицина","Врач лабораторной диагностики"],["nutrygo-51","51-music.webp","Интересы","Музыка"],["nutrygo-52","52-reading.webp","Интересы","Чтение"],["nutrygo-53","53-travel.webp","Интересы","Путешествия"],["nutrygo-54","54-photography.webp","Интересы","Фотография"],["nutrygo-55","55-art.webp","Интересы","Творчество"],["nutrygo-56","56-gaming.webp","Интересы","Игры"],["nutrygo-57","57-home.webp","Интересы","Дом и уют"],["nutrygo-58","58-morning-coffee.webp","Интересы","Утренний ритуал"],["nutrygo-59","59-explorer.webp","Интересы","Исследователь"],["nutrygo-60","60-future.webp","Интересы","Мечтатель"]];
+  var AVA_CATS = ["Персонажи", "Животные", "Абстракции", "Спорт", "Медицина", "Интересы"];
+
+  function avaFile(id) {
+    for (var i = 0; i < AVATARS.length; i++) if (AVATARS[i][0] === id) return AVA_URL + AVATARS[i][1];
+    return '';
+  }
+  function avaTitle(id) {
+    for (var i = 0; i < AVATARS.length; i++) if (AVATARS[i][0] === id) return AVATARS[i][3];
+    return '';
+  }
+
+
+  /* ---------- Выбор фирменного аватара ---------- */
+
+  function avaCss() {
+    if (document.getElementById('ngr-ava-css')) return;
+    var st = document.createElement('style');
+    st.id = 'ngr-ava-css';
+    st.textContent =
+      // Кружок аватара: круглая обрезка, синяя обводка у выбранного
+      // и небольшая оранжевая отметка — фирменные цвета магазина.
+      '.ngr-avc{width:56px;height:56px;padding:0;border:2px solid #e8ecf1;border-radius:50%;' +
+      'background:#fbf9f6;overflow:hidden;cursor:pointer;position:relative;flex:0 0 auto;' +
+      'transition:border-color .15s,transform .15s}' +
+      '.ngr-avc img{width:100%;height:100%;object-fit:cover;display:block;border-radius:50%}' +
+      '.ngr-avc:hover{transform:translateY(-1px);border-color:#c9d6e6}' +
+      '.ngr-avc:focus-visible{outline:3px solid #4984c4;outline-offset:2px}' +
+      '.ngr-avc.on{border-color:#4984c4;border-width:3px}' +
+      '.ngr-avc.on::after{content:"";position:absolute;right:1px;bottom:1px;width:13px;height:13px;' +
+      'border-radius:50%;background:#f0871f;border:2px solid #fff}' +
+      '.ngr-avc__row{display:flex;flex-wrap:wrap;gap:10px;margin:6px 0 10px}' +
+      '.ngr-avc__more{padding:9px 16px;border:1px solid #e3e8ee;background:#fff;border-radius:10px;' +
+      'font-size:14px;font-weight:600;color:#14171c;cursor:pointer;font-family:inherit}' +
+      '.ngr-avc__more:hover{background:#f6f8fa}' +
+      '.ngr-avc__more:focus-visible{outline:3px solid #4984c4;outline-offset:2px}' +
+      // Окно выбора
+      '.ngr-avm{position:fixed;inset:0;z-index:100000;background:rgba(20,23,28,.45);' +
+      'display:flex;align-items:center;justify-content:center;padding:18px}' +
+      '.ngr-avm__box{background:#fffdfa;border-radius:18px;width:min(760px,100%);' +
+      'max-height:min(86vh,760px);display:flex;flex-direction:column;overflow:hidden;' +
+      'box-shadow:0 18px 60px rgba(20,23,28,.28)}' +
+      '.ngr-avm__top{display:flex;align-items:center;justify-content:space-between;' +
+      'padding:18px 20px 12px;border-bottom:1px solid #f1ece4}' +
+      '.ngr-avm__ttl{font-size:19px;font-weight:800;color:#14171c}' +
+      '.ngr-avm__x{width:36px;height:36px;border:0;background:#f4f1ec;border-radius:50%;' +
+      'font-size:17px;color:#14171c;cursor:pointer;line-height:1}' +
+      '.ngr-avm__x:hover{background:#ece8e1}' +
+      '.ngr-avm__x:focus-visible{outline:3px solid #4984c4;outline-offset:2px}' +
+      '.ngr-avm__tabs{display:flex;gap:8px;overflow-x:auto;padding:12px 20px;border-bottom:1px solid #f1ece4}' +
+      '.ngr-avm__tab{white-space:nowrap;padding:8px 14px;border:1px solid #e8e3da;background:#fff;' +
+      'border-radius:999px;font-size:13.5px;font-weight:600;color:#3a4048;cursor:pointer;font-family:inherit}' +
+      '.ngr-avm__tab.on{background:#4984c4;border-color:#4984c4;color:#fff}' +
+      '.ngr-avm__tab:focus-visible{outline:3px solid #4984c4;outline-offset:2px}' +
+      '.ngr-avm__grid{display:grid;gap:16px 12px;padding:18px 20px;overflow:auto;' +
+      'grid-template-columns:repeat(7,1fr)}' +
+      '.ngr-avm__cell{display:flex;flex-direction:column;align-items:center;gap:6px}' +
+      '.ngr-avm__cell .ngr-avc{width:68px;height:68px}' +
+      '.ngr-avm__nm{font-size:11.5px;line-height:1.25;color:#5b6470;text-align:center}' +
+      '.ngr-avm__foot{padding:12px 20px 18px;border-top:1px solid #f1ece4;display:flex;' +
+      'align-items:center;justify-content:space-between;gap:12px}' +
+      '.ngr-avm__ok{padding:12px 22px;border:0;border-radius:12px;background:#4984c4;color:#fff;' +
+      'font-size:15px;font-weight:700;cursor:pointer;font-family:inherit}' +
+      '.ngr-avm__ok:hover{background:#3d74ad}' +
+      '.ngr-avm__ok:focus-visible{outline:3px solid #f0871f;outline-offset:2px}' +
+      '.ngr-avm__pick{font-size:13.5px;color:#2f7a4f}' +
+      '@media(max-width:900px){.ngr-avm__grid{grid-template-columns:repeat(5,1fr)}}' +
+      '@media(max-width:560px){.ngr-avm__grid{grid-template-columns:repeat(4,1fr)}' +
+      '.ngr-avm__cell .ngr-avc{width:60px;height:60px}}' +
+      '@media(max-width:380px){.ngr-avm__grid{grid-template-columns:repeat(3,1fr)}}';
+    document.head.appendChild(st);
+  }
+
+  /**
+   * Окно со всеми аватарами. Наборы переключаются вкладками, выбор
+   * подтверждается кнопкой, окно закрывается Escape или щелчком по фону.
+   * Стрелками можно ходить по кружкам, пробелом и Enter — выбирать.
+   */
+  function openAvaPicker(current, onPick) {
+    avaCss();
+    var back = document.activeElement;
+    var picked = current || '';
+    var cat = '';
+    for (var i = 0; i < AVATARS.length; i++) if (AVATARS[i][0] === picked) cat = AVATARS[i][2];
+    if (!cat) cat = AVA_CATS[0];
+
+    var wrap = document.createElement('div');
+    wrap.className = 'ngr-avm';
+    wrap.setAttribute('role', 'dialog');
+    wrap.setAttribute('aria-modal', 'true');
+    wrap.setAttribute('aria-label', 'Выбор аватара');
+    wrap.innerHTML =
+      '<div class="ngr-avm__box">' +
+      '<div class="ngr-avm__top"><div class="ngr-avm__ttl">Выберите аватар</div>' +
+      '<button type="button" class="ngr-avm__x" aria-label="Закрыть">✕</button></div>' +
+      '<div class="ngr-avm__tabs" role="tablist"></div>' +
+      '<div class="ngr-avm__grid" role="radiogroup" aria-label="Аватары"></div>' +
+      '<div class="ngr-avm__foot"><span class="ngr-avm__pick"></span>' +
+      '<button type="button" class="ngr-avm__ok">Готово</button></div></div>';
+    document.body.appendChild(wrap);
+
+    var tabs = wrap.querySelector('.ngr-avm__tabs');
+    var grid = wrap.querySelector('.ngr-avm__grid');
+    var note = wrap.querySelector('.ngr-avm__pick');
+
+    function say() {
+      note.textContent = picked ? '✓ ' + avaTitle(picked) : 'Аватар не выбран';
+    }
+
+    function drawGrid() {
+      grid.innerHTML = '';
+      AVATARS.filter(function (a) { return a[2] === cat; }).forEach(function (a) {
+        var cell = document.createElement('div');
+        cell.className = 'ngr-avm__cell';
+        var b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'ngr-avc' + (a[0] === picked ? ' on' : '');
+        b.setAttribute('role', 'radio');
+        b.setAttribute('aria-checked', a[0] === picked ? 'true' : 'false');
+        b.setAttribute('aria-label', a[3]);
+        b.title = a[3];
+        b.setAttribute('data-id', a[0]);
+        var im = document.createElement('img');
+        im.loading = 'lazy';
+        im.decoding = 'async';
+        im.alt = '';
+        im.src = AVA_URL + a[1];
+        b.appendChild(im);
+        b.addEventListener('click', function () {
+          picked = a[0];
+          grid.querySelectorAll('.ngr-avc').forEach(function (x) {
+            var on = x.getAttribute('data-id') === picked;
+            x.classList.toggle('on', on);
+            x.setAttribute('aria-checked', on ? 'true' : 'false');
+          });
+          say();
+        });
+        var nm = document.createElement('span');
+        nm.className = 'ngr-avm__nm';
+        nm.textContent = a[3];
+        cell.appendChild(b);
+        cell.appendChild(nm);
+        grid.appendChild(cell);
+      });
+    }
+
+    AVA_CATS.forEach(function (c) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'ngr-avm__tab' + (c === cat ? ' on' : '');
+      b.setAttribute('role', 'tab');
+      b.textContent = c;
+      b.addEventListener('click', function () {
+        cat = c;
+        tabs.querySelectorAll('.ngr-avm__tab').forEach(function (x) {
+          x.classList.toggle('on', x.textContent === c);
+        });
+        drawGrid();
+      });
+      tabs.appendChild(b);
+    });
+    drawGrid();
+    say();
+
+    function close() {
+      document.removeEventListener('keydown', onKey, true);
+      if (wrap.parentNode) wrap.parentNode.removeChild(wrap);
+      if (back && back.focus) back.focus();
+    }
+    function onKey(e) {
+      if (e.key === 'Escape') { e.preventDefault(); close(); return; }
+      var cells = [].slice.call(grid.querySelectorAll('.ngr-avc'));
+      var at = cells.indexOf(document.activeElement);
+      if (at < 0) return;
+      var cols = Math.max(1, Math.round(grid.clientWidth / (cells[0].getBoundingClientRect().width + 12)));
+      var to = -1;
+      if (e.key === 'ArrowRight') to = at + 1;
+      else if (e.key === 'ArrowLeft') to = at - 1;
+      else if (e.key === 'ArrowDown') to = at + cols;
+      else if (e.key === 'ArrowUp') to = at - cols;
+      else if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); cells[at].click(); return; }
+      if (to >= 0 && to < cells.length) { e.preventDefault(); cells[to].focus(); }
+    }
+    document.addEventListener('keydown', onKey, true);
+
+    wrap.querySelector('.ngr-avm__x').addEventListener('click', close);
+    wrap.addEventListener('click', function (e) { if (e.target === wrap) close(); });
+    wrap.querySelector('.ngr-avm__ok').addEventListener('click', function () {
+      if (picked && onPick) onPick(picked);
+      close();
+    });
+    var first = grid.querySelector('.ngr-avc.on') || grid.querySelector('.ngr-avc');
+    if (first) first.focus();
+  }
+
   /** Личные настройки покупателя — псевдоним и значок. Хранятся у него же. */
   function profileSettings() {
     try { return JSON.parse(localStorage.getItem('ngr_me') || '{}'); } catch (e) { return {}; }
   }
   function saveProfileSettings(v) {
     var cur = profileSettings();
-    cur.nick = v.nick; cur.emoji = v.emoji;
+    cur.nick = v.nick;
+    if ('avatar' in v) cur.avatar = v.avatar;
+    if ('emoji' in v) cur.emoji = v.emoji;
     try { localStorage.setItem('ngr_me', JSON.stringify(cur)); } catch (e) {}
   }
 
@@ -1188,12 +1398,14 @@
     if (!box) return;
     var nm = me.nick || p.name || 'Покупатель';
     var ava = box.querySelector('.ngr-cab__ava');
-    if (me.photo) {
+    var pic = me.photo || (me.avatar ? avaFile(me.avatar) : '');
+    if (pic) {
       ava.textContent = '';
-      ava.style.backgroundImage = 'url(' + me.photo + ')';
+      ava.style.backgroundImage = 'url(' + pic + ')';
       ava.style.backgroundSize = 'cover';
       ava.style.backgroundPosition = 'center';
     } else {
+      // Старым покупателям остаётся первая буква имени.
       ava.style.backgroundImage = '';
       ava.textContent = me.emoji || (nm.charAt(0) || 'П').toUpperCase();
     }
@@ -1354,7 +1566,9 @@
       '<input type="file" accept="image/*" id="ngrPhoto" style="display:none"></label>' +
       (me.photo ? '<button type="button" class="ngr-cab__copy ngr-cab__drop">Убрать</button>' : '') +
       '</div></div>' +
-      '<div class="ngr-cab__field"><u>Или значок</u><div class="ngr-cab__ems"></div></div>' +
+      '<div class="ngr-cab__field"><u>Или выберите аватар</u>' +
+      '<div class="ngr-avc__row" role="radiogroup" aria-label="Аватар"></div>' +
+      '<button type="button" class="ngr-ava__more">Выбрать другой</button></div>' +
       '<button type="button" class="ngr-cab__save">Сохранить</button>' +
       '<span class="ngr-cab__saved"></span>' +
       '</div>' +
@@ -1372,17 +1586,56 @@
       '<a href="/members/profile/" style="color:#2f6ba8">настройках профиля</a>.</div>' +
       '</div>';
 
-    var ems = host.querySelector('.ngr-cab__ems');
-    ['🙂', '💪', '🌿', '⚡', '🧡', '🏃', '🧘', '🔥'].forEach(function (e) {
+    avaCss();
+    var chosen = me.avatar || '';
+
+    // Кружок аватара. Подписи в ряду нет — название читается наведением
+    // и озвучивается голосовым доступом.
+    function avaCard(a) {
       var b = document.createElement('button');
       b.type = 'button';
-      b.className = 'ngr-cab__em' + (me.emoji === e ? ' on' : '');
-      b.textContent = e;
-      b.addEventListener('click', function () {
-        host.querySelectorAll('.ngr-cab__em').forEach(function (x) { x.className = 'ngr-cab__em'; });
-        b.className = 'ngr-cab__em on';
+      b.className = 'ngr-avc' + (a[0] === chosen ? ' on' : '');
+      b.setAttribute('role', 'radio');
+      b.setAttribute('aria-checked', a[0] === chosen ? 'true' : 'false');
+      b.setAttribute('aria-label', a[3]);
+      b.title = a[3];
+      b.setAttribute('data-id', a[0]);
+      var im = document.createElement('img');
+      im.loading = 'lazy';
+      im.decoding = 'async';
+      im.alt = '';
+      im.src = AVA_URL + a[1];
+      b.appendChild(im);
+      b.addEventListener('click', function () { pickAva(a[0]); });
+      return b;
+    }
+
+    function pickAva(id) {
+      chosen = id;
+      document.querySelectorAll('.ngr-avc').forEach(function (x) {
+        var on = x.getAttribute('data-id') === id;
+        x.classList.toggle('on', on);
+        x.setAttribute('aria-checked', on ? 'true' : 'false');
       });
-      ems.appendChild(b);
+      drawRow();
+    }
+
+    var row = host.querySelector('.ngr-avc__row');
+    function drawRow() {
+      row.innerHTML = '';
+      // Показываем десять: выбранный всегда среди них, остальные — начало набора.
+      var list = AVATARS.slice(0, 10);
+      if (chosen && !list.some(function (a) { return a[0] === chosen; })) {
+        for (var i = 0; i < AVATARS.length; i++) {
+          if (AVATARS[i][0] === chosen) { list = [AVATARS[i]].concat(list.slice(0, 9)); break; }
+        }
+      }
+      list.forEach(function (a) { row.appendChild(avaCard(a)); });
+    }
+    drawRow();
+
+    host.querySelector('.ngr-avc__more').addEventListener('click', function () {
+      openAvaPicker(chosen, pickAva);
     });
 
     // Загрузка фотографии: уменьшаем до 160 точек прямо в браузере и храним
@@ -1424,10 +1677,10 @@
     });
 
     host.querySelector('.ngr-cab__save').addEventListener('click', function () {
-      var sel = host.querySelector('.ngr-cab__em.on');
       saveProfileSettings({
         nick: (host.querySelector('#ngrNick').value || '').trim(),
-        emoji: sel ? sel.textContent : ''
+        avatar: chosen,
+        emoji: ''
       });
       host.querySelector('.ngr-cab__saved').textContent = '✓ Сохранено';
       paintMe();
