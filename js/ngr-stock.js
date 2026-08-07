@@ -1039,6 +1039,10 @@
       'font-size:14px;font-weight:600;color:#14171c;cursor:pointer;white-space:nowrap}' +
       '.ngr-cab__copy:hover{background:#f5f7fa}' +
       '.ngr-cab__hint{font-size:12.5px;color:#8a919b;line-height:1.5;margin-top:8px}' +
+      '.ngr-cab__photo{display:flex;align-items:center;gap:12px;flex-wrap:wrap}' +
+      '.ngr-cab__prev{width:64px;height:64px;border-radius:50%;border:1px solid #e3e8ee;' +
+      'background:#f3f5f8 center/cover no-repeat;flex:0 0 64px}' +
+      'label.ngr-cab__copy{display:inline-block}' +
       '@media(max-width:860px){' +
       '.ngr-cab{grid-template-columns:1fr;gap:16px;padding:12px 16px 26px}' +
       '.ngr-cab__side{position:static}' +
@@ -1080,7 +1084,16 @@
     var box = document.querySelector('.ngr-cab__me');
     if (!box) return;
     var nm = me.nick || p.name || 'Покупатель';
-    box.querySelector('.ngr-cab__ava').textContent = me.emoji || (nm.charAt(0) || 'П').toUpperCase();
+    var ava = box.querySelector('.ngr-cab__ava');
+    if (me.photo) {
+      ava.textContent = '';
+      ava.style.backgroundImage = 'url(' + me.photo + ')';
+      ava.style.backgroundSize = 'cover';
+      ava.style.backgroundPosition = 'center';
+    } else {
+      ava.style.backgroundImage = '';
+      ava.textContent = me.emoji || (nm.charAt(0) || 'П').toUpperCase();
+    }
     box.querySelector('.ngr-cab__name').textContent = nm;
     box.querySelector('.ngr-cab__mail').textContent = p.login || '';
   }
@@ -1224,7 +1237,14 @@
       '<div class="ngr-cab__field"><u>Как вас показывать</u>' +
       '<input class="ngr-cab__inp" id="ngrNick" maxlength="24" placeholder="' +
       (p.name || 'Псевдоним') + '" value="' + (me.nick || '') + '"></div>' +
-      '<div class="ngr-cab__field"><u>Значок</u><div class="ngr-cab__ems"></div></div>' +
+      '<div class="ngr-cab__field"><u>Фотография</u>' +
+      '<div class="ngr-cab__photo">' +
+      '<div class="ngr-cab__prev"' + (me.photo ? ' style="background-image:url(' + me.photo + ')"' : '') + '></div>' +
+      '<label class="ngr-cab__copy">Загрузить фото' +
+      '<input type="file" accept="image/*" id="ngrPhoto" style="display:none"></label>' +
+      (me.photo ? '<button type="button" class="ngr-cab__copy ngr-cab__drop">Убрать</button>' : '') +
+      '</div></div>' +
+      '<div class="ngr-cab__field"><u>Или значок</u><div class="ngr-cab__ems"></div></div>' +
       '<button type="button" class="ngr-cab__save">Сохранить</button>' +
       '<span class="ngr-cab__saved"></span>' +
       '</div>' +
@@ -1253,6 +1273,44 @@
         b.className = 'ngr-cab__em on';
       });
       ems.appendChild(b);
+    });
+
+    // Загрузка фотографии: уменьшаем до 160 точек прямо в браузере и храним
+    // там же. Так фотография не уходит на сторону и не весит лишнего.
+    var inp = host.querySelector('#ngrPhoto');
+    if (inp) inp.addEventListener('change', function () {
+      var f = inp.files && inp.files[0];
+      if (!f) return;
+      if (f.size > 8 * 1024 * 1024) { alert('Фотография слишком большая, до 8 МБ.'); return; }
+      var rd = new FileReader();
+      rd.onload = function () {
+        var im = new Image();
+        im.onload = function () {
+          var s = 160, cv = document.createElement('canvas');
+          cv.width = s; cv.height = s;
+          var side = Math.min(im.width, im.height);
+          cv.getContext('2d').drawImage(im, (im.width - side) / 2, (im.height - side) / 2,
+            side, side, 0, 0, s, s);
+          var data = cv.toDataURL('image/jpeg', 0.82);
+          var cur = profileSettings(); cur.photo = data;
+          try { localStorage.setItem('ngr_me', JSON.stringify(cur)); } catch (e) {
+            alert('Не удалось сохранить фотографию в этом браузере.'); return;
+          }
+          host.querySelector('.ngr-cab__prev').style.backgroundImage = 'url(' + data + ')';
+          paintMe(); fixAccountButton();
+        };
+        im.src = rd.result;
+      };
+      rd.readAsDataURL(f);
+    });
+
+    var drop = host.querySelector('.ngr-cab__drop');
+    if (drop) drop.addEventListener('click', function () {
+      var cur = profileSettings(); delete cur.photo;
+      try { localStorage.setItem('ngr_me', JSON.stringify(cur)); } catch (e) {}
+      host.querySelector('.ngr-cab__prev').style.backgroundImage = '';
+      drop.parentNode.removeChild(drop);
+      paintMe(); fixAccountButton();
     });
 
     host.querySelector('.ngr-cab__save').addEventListener('click', function () {
