@@ -654,16 +654,19 @@
       // в карточке товара оформление не применяется.
       '.ngr-price .js-catalog-prod-price,.ngr-price .t-catalog__card__price:not(.t-catalog__card__price_old),' +
       '.ngr-price .t-catalog__prod-popup__price:not(.t-catalog__prod-popup__price_old){' +
-      'display:inline-flex!important;align-items:center;gap:2px;background:#ff7a1a!important;' +
+      'display:inline-flex!important;align-items:center;gap:2px;background:#4984c4!important;' +
       'color:#fff!important;padding:6px 12px!important;border-radius:10px!important;' +
       'font-size:24px!important;font-weight:800!important;line-height:1.15!important;' +
       'letter-spacing:-.5px;width:auto!important}' +
       '.ngr-price .js-catalog-prod-price *,.ngr-price .t-catalog__card__price:not(.t-catalog__card__price_old) *,' +
       '.ngr-price .t-catalog__prod-popup__price:not(.t-catalog__prod-popup__price_old) *{color:#fff!important}' +
       // Старая цена
+      // visibility:hidden ставит сама Tilda: текст старой цены в вёрстке есть,
+      // но не показывается — от неё оставалась одна чёрточка (Александр, 07.08).
       '.ngr-price .js-catalog-prod-price-old,.ngr-price .t-catalog__card__price_old,' +
       '.ngr-price .t-catalog__prod-popup__price_old{color:#a6adb6!important;font-size:15px!important;' +
-      'font-weight:600!important;text-decoration:line-through!important;background:none!important;padding:0!important}' +
+      'font-weight:600!important;text-decoration:line-through!important;background:none!important;' +
+      'padding:0!important;visibility:visible!important}' +
       '.ngr-price .js-catalog-prod-price-old *,.ngr-price .t-catalog__card__price_old *,' +
       '.ngr-price .t-catalog__prod-popup__price_old *{color:#a6adb6!important}' +
       // Процент выгоды
@@ -676,7 +679,7 @@
       // Полка «Скидки недели» на главной собрана отдельной вёрсткой —
       // приводим её цену к тому же виду, что в каталоге (Александр, 07.08).
       '.ngr-sale-card__bottom strong{display:inline-flex!important;align-items:center;' +
-      'background:#ff7a1a!important;color:#fff!important;padding:6px 12px!important;' +
+      'background:#4984c4!important;color:#fff!important;padding:6px 12px!important;' +
       'border-radius:10px!important;font-size:21px!important;font-weight:800!important;' +
       'line-height:1.15!important;letter-spacing:-.5px}' +
       '.ngr-sale-card__bottom del{color:#a6adb6!important;font-size:14px!important;' +
