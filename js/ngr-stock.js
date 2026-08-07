@@ -1770,11 +1770,28 @@
    * настоящие фильтры Tilda и нажимает их флажки — значит отбор работает
    * ровно так же, как раньше, и ничего не ломается.
    */
+  // Фирменные логотипы от дизайнера (папка «ФОТО/Логотипы», Александр 08.08).
+  // Своего знака нет у 21st Century, Doctors Best, Smartlife и Thorne —
+  // эти бренды показываем просто названием.
+  var LOGOS = 'https://pikhtachoo.github.io/nutrygo-pvz/img/';
   var BRAND_LOGO = {
-    'NOW': 'brand-now.jpg', 'Life Extension': 'brand-life-extension.jpg',
-    'Olimp': 'brand-olimp.jpg', 'Swanson': 'brand-swanson.jpg',
-    'Solaray': 'brand-solaray.jpg', 'Ultimate Nutrition': 'brand-ultimate.jpg',
-    'OstroVit': 'brand-ostrovit.jpg', 'VPLAB': 'brand-vplab.jpg'
+    'AllNutrition': 'brand-allnutrition.png',
+    'California Gold Nutrition': 'brand-california-gold-nutrition.png',
+    'Life Extension': 'brand-life-extension.png',
+    'NOW': 'brand-now.png',
+    'NaturesPlus': 'brand-naturesplus.png',
+    'Nutrex': 'brand-nutrex.png',
+    'Olimp': 'brand-olimp.png',
+    'OstroVit': 'brand-ostrovit.png',
+    'Promensil': 'brand-promensil.png',
+    'SAN': 'brand-san.png',
+    'SFD Nutrition': 'brand-sfd-nutrition.png',
+    'Sambucol': 'brand-sambucol.png',
+    'Solaray': 'brand-solaray.png',
+    'Swanson': 'brand-swanson.png',
+    'Ultimate Nutrition': 'brand-ultimate-nutrition.png',
+    'UltraVit': 'brand-ultravit.png',
+    'VPLAB': 'brand-vplab.png'
   };
 
   function sideCss() {
@@ -1796,8 +1813,8 @@
       '.ngr-side__box{flex:0 0 18px;width:18px;height:18px;border:1.5px solid #cfd6de;border-radius:5px;' +
       'display:flex;align-items:center;justify-content:center;font-size:12px;color:#fff;background:#fff}' +
       '.ngr-side__o.on .ngr-side__box{background:#4984c4;border-color:#4984c4}' +
-      '.ngr-side__logo{flex:0 0 24px;width:24px;height:24px;border-radius:6px;border:1px solid #eef1f5;' +
-      'background:#fff center/contain no-repeat}' +
+      '.ngr-side__logo{flex:0 0 58px;width:58px;height:22px;' +
+      'background:transparent left center/contain no-repeat}' +
       '.ngr-side__more{display:inline-block;margin-top:6px;font-size:13px;color:#2f6ba8;cursor:pointer}' +
       '.ngr-side__price{display:flex;gap:8px;align-items:center}' +
       '.ngr-side__price input{width:100%;min-width:0;padding:9px 10px;border:1px solid #e3e8ee;' +
@@ -1945,7 +1962,7 @@
         row.className = 'ngr-side__o' + (inp.checked ? ' on' : '');
         var logo = BRAND_LOGO[text];
         row.innerHTML = '<span class="ngr-side__box">✓</span>' +
-          (logo ? '<span class="ngr-side__logo" style="background-image:url(' + FILES + logo + ')"></span>' : '') +
+          (logo ? '<span class="ngr-side__logo" style="background-image:url(' + LOGOS + logo + ')"></span>' : '') +
           '<span class="ngr-side__lbl"></span>';
         row.querySelector('.ngr-side__lbl').textContent = text;
         if (i >= 8) { row.setAttribute('data-extra', '1'); row.style.display = 'none'; }
