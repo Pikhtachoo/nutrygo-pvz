@@ -204,7 +204,7 @@
     'Solaray':                   'brand-solaray.jpg',
     'Ultimate Nutrition':        'brand-ultimate.jpg',
     'OstroVit':                  'brand-ostrovit.jpg',
-    'VPlab':                     'brand-vplab.jpg'
+    'VPLAB':                     'brand-vplab.jpg'
   };
 
   function fixBrands() {
