@@ -349,16 +349,38 @@
    */
   var PROJECT = '27635446';
 
+  /**
+   * Признак входа.
+   *
+   * Раньше опирались только на функцию корзины Tilda. Но на страницах без
+   * корзины — «Документы», «Доставка», «Оплата» — её нет, и покупатель видел
+   * в шапке «Войти», хотя был внутри (замечание Александра 08.08). Поэтому
+   * запасной признак — профиль, который Tilda кладёт в хранилище браузера
+   * при входе; он есть на любой странице сайта.
+   */
+  function memberProfile() {
+    try {
+      var raw = localStorage.getItem('tilda_members_profile' + PROJECT);
+      if (!raw) return null;
+      var ts = Number(localStorage.getItem('tilda_members_profile' + PROJECT + '_timestamp') || 0);
+      // Просроченный слепок не считаем входом: неделя — с запасом.
+      if (ts && (Date.now() / 1000 - ts) > 7 * 24 * 3600) return null;
+      var p = JSON.parse(raw);
+      return (p && (p.name || p.login)) ? p : null;
+    } catch (e) { return null; }
+  }
+
   function member() {
     var tok = '';
     try { tok = window.t_cart__getMembersToken ? (t_cart__getMembersToken() || '') : ''; } catch (e) {}
-    if (!tok) return null;
-    var name = '';
-    try {
-      var p = JSON.parse(localStorage.getItem('tilda_members_profile' + PROJECT) || '{}');
-      name = String(p.name || p.login || '').trim();
-    } catch (e) {}
-    return { name: name };
+    var p = memberProfile();
+    if (!tok && !p) return null;
+    return {
+      name: p ? String(p.name || p.login || '').trim() : '',
+      login: p ? String(p.login || '') : '',
+      phone: p ? String(p.phone || '') : '',
+      hasToken: !!tok
+    };
   }
 
   function fixAccountButton() {
@@ -1107,8 +1129,11 @@
     if (name === 'orders') {
       var orders = d.last_orders || [];
       host.innerHTML = '<h2>Заказы</h2>' + (orders.length ? '' :
-        '<div class="ngr-cab__empty">Здесь появятся ваши заказы с сайта.<br>' +
-        'Заказы, оформленные до входа в кабинет, сюда не попадают.</div>');
+        (cabData.noToken
+          ? '<div class="ngr-cab__empty">Заказы видны на страницах каталога.<br>' +
+            '<a href="/" style="color:#2f6ba8">Перейти на главную</a></div>'
+          : '<div class="ngr-cab__empty">Здесь появятся ваши заказы с сайта.<br>' +
+            'Заказы, оформленные до входа в кабинет, сюда не попадают.</div>'));
       orders.forEach(function (o) {
         var c = document.createElement('div');
         c.className = 'ngr-cab__card';
@@ -1251,7 +1276,8 @@
   }
 
   function openCabinet() {
-    if (!memberToken()) { location.href = '#openmembersbar'; return; }
+    var me = member();
+    if (!me) { location.href = '#openmembersbar'; return; }
     document.documentElement.classList.add('ngr-own');
     cabCss();
     var w = prodWin();
@@ -1272,12 +1298,16 @@
       b.addEventListener('click', function () { cabSection(b.getAttribute('data-s')); });
     });
 
+    var noToken = !memberToken();
     Promise.all([
-      tildaPost('https://members.tildaapi.com/api/getprofile/').catch(function () { return null; }),
-      tildaPost('https://store.tildaapi.com/api/orders/getdashboard/').catch(function () { return null; })
+      noToken ? Promise.resolve(null) : tildaPost('https://members.tildaapi.com/api/getprofile/').catch(function () { return null; }),
+      noToken ? Promise.resolve(null) : tildaPost('https://store.tildaapi.com/api/orders/getdashboard/').catch(function () { return null; })
     ]).then(function (res) {
-      cabData.profile = (res[0] && res[0].data) || {};
+      // На страницах без корзины Tilda не выдаёт токен — показываем то,
+      // что знаем из профиля, и честно говорим про заказы.
+      cabData.profile = (res[0] && res[0].data) || memberProfile() || {};
       cabData.dash = res[1] || {};
+      cabData.noToken = noToken;
       paintMe();
       cabSection('orders');
     });
