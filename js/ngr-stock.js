@@ -692,6 +692,23 @@
     el.parentNode.insertBefore(wrap, el);
   }
 
+  /**
+   * Сроки доставки — выше описания и характеристик (решение Александра 07.08):
+   * покупателю сначала важно, когда он получит товар, а уже потом состав.
+   * Виджет доставки рисуется отдельно и может появиться позже наших блоков,
+   * поэтому положение поправляем каждый раз, а не один раз при сборке.
+   */
+  function fixDeliveryOrder() {
+    var pop = document.querySelector('.t-popup_show .t-catalog__prod-popup__container, ' +
+      '.t-catalog__prod-popup__container');
+    if (!pop) return;
+    var wrap = pop.querySelector('.ngr-descwrap');
+    var del = pop.querySelector('.nutrygo-delivery');
+    if (!wrap || !del) return;
+    if (del.nextElementSibling === wrap) return;   // уже стоит выше
+    wrap.parentNode.insertBefore(del, wrap);
+  }
+
   var FIRST_SHOWN = 3;   // остальные — по кнопке, чтобы карточка не растягивалась
 
   function renderReviews(box, sku, data) {
@@ -885,7 +902,7 @@
   function apply() {
     fixPopup(); fixCards(); fixCart(); fixDupDelivery(); fixUnits(); fixBrands();
     initSearchGuard(); fixSearch(); fixAccountButton(); fixAuthGate();
-    fixRatings(); fixPopupReviews(); fixDescription(); fixCardPhotos();
+    fixRatings(); fixPopupReviews(); fixDescription(); fixDeliveryOrder(); fixCardPhotos();
   }
 
   apply();
