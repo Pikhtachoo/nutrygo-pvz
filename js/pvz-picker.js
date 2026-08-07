@@ -264,11 +264,55 @@
       if (box) box.parentNode.removeChild(box);
     }
 
-    function askEta(p) {
+    /**
+     * Пересчёт доступности при изменении корзины.
+     *
+     * Раньше проверка шла один раз — в момент выбора пункта выдачи. Покупатель
+     * мог после этого докинуть товар или увеличить количество, и заказ уходил
+     * в оплату без проверки: снова риск «деньги списаны, отправления нет».
+     * Теперь состав корзины подписывается, и при любом расхождении проверка
+     * повторяется, а перед самой отправкой формы — ещё раз.
+     */
+    function cartSig() {
+      return cartItems().map(function (i) {
+        return i.offer_id + 'x' + i.quantity;
+      }).sort().join('|');
+    }
+
+    st.checkedSig = null;
+
+    setInterval(function () {
+      if (!st.picked) return;
+      var sig = cartSig();
+      if (sig !== st.checkedSig) askEta(st.picked);
+    }, 1500);
+
+    // Последний рубеж: не пускаем к оплате, пока текущая корзина не проверена.
+    // Если наш сервис не ответил — заказ пропускаем: своей ошибкой продажи
+    // не блокируем, для этого есть проверка на стороне интегратора.
+    form.addEventListener('submit', function (e) {
+      if (!st.picked) return;
+      // Повторная отправка после успешной проверки — пропускаем без вопросов,
+      // иначе при сбое сети форма ушла бы в бесконечный круг.
+      if (st.passOnce) { st.passOnce = false; return; }
+      if (cartSig() === st.checkedSig) return;
+      e.preventDefault();
+      e.stopPropagation();
+      var btn = submitBtn();
+      if (btn) btn.disabled = true;
+      askEta(st.picked, function (blocked) {
+        if (btn) btn.disabled = false;
+        if (blocked) return;
+        st.passOnce = true;
+        if (form.requestSubmit) form.requestSubmit(); else form.submit();
+      });
+    }, true);
+
+    function askEta(p, done) {
       var eta = chosenEl.querySelector('.ngpvz__eta');
       var items = cartItems();
-      if (!eta) return;
-      if (!items.length) { eta.textContent = ''; return; }
+      var sig = cartSig();
+      if (!items.length) { if (eta) eta.textContent = ''; st.checkedSig = sig; if (done) done(false); return; }
       fetch(API + '/delivery/eta', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ point_id: p.i, items: items })
@@ -278,19 +322,30 @@
             var hit = items.filter(function (i) { return i.offer_id === b.offer_id; })[0];
             return (hit && hit.name) || ('артикул ' + b.offer_id);
           });
-          eta.textContent = '';
+          if (eta) eta.textContent = '';
+          st.checkedSig = sig;
           blockCheckout(names);
+          if (done) done(true);
           return;
         }
         unblockCheckout();
-        if (j && j.ok && j.from) {
-          var a = fmtDate(j.from), b2 = fmtDate(j.to);
-          eta.innerHTML = 'Доставим <b>' + (b2 && b2 !== a ? (a + ' — ' + b2) : a) + '</b>' +
-            (j.splits > 1 ? '<br><span style="color:#8a8a8a;font-size:13px">Заказ приедет несколькими посылками</span>' : '');
-        } else {
-          eta.textContent = 'Срок доставки уточним при оформлении.';
+        st.checkedSig = sig;
+        if (eta) {
+          if (j && j.ok && j.from) {
+            var a = fmtDate(j.from), b2 = fmtDate(j.to);
+            eta.innerHTML = 'Доставим <b>' + (b2 && b2 !== a ? (a + ' — ' + b2) : a) + '</b>' +
+              (j.splits > 1 ? '<br><span style="color:#8a8a8a;font-size:13px">Заказ приедет несколькими посылками</span>' : '');
+          } else {
+            eta.textContent = 'Срок доставки уточним при оформлении.';
+          }
         }
-      }).catch(function () { eta.textContent = ''; });
+        if (done) done(false);
+      }).catch(function () {
+        // Наш сервис не ответил — продажу не блокируем, подпись не отмечаем,
+        // чтобы следующая попытка снова проверила состав корзины.
+        if (eta) eta.textContent = '';
+        if (done) done(false);
+      });
     }
 
     /** Список показываем по тому же правилу, что и карту: ближе — выше. */
