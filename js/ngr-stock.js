@@ -532,17 +532,23 @@
     var st = document.createElement('style');
     st.id = 'ngr-price-css';
     st.textContent =
-      // Плашка с ценой
-      '.ngr-price .t-catalog__card__price:not(.t-catalog__card__price_old){' +
+      // Плашка с ценой. В каталоге и в раскрытой карточке у Tilda разные
+      // классы (card__price и prod-popup__price) — перечисляем оба, иначе
+      // в карточке товара оформление не применяется.
+      '.ngr-price .js-catalog-prod-price,.ngr-price .t-catalog__card__price:not(.t-catalog__card__price_old),' +
+      '.ngr-price .t-catalog__prod-popup__price:not(.t-catalog__prod-popup__price_old){' +
       'display:inline-flex!important;align-items:center;gap:2px;background:#ff7a1a!important;' +
       'color:#fff!important;padding:6px 12px!important;border-radius:10px!important;' +
       'font-size:24px!important;font-weight:800!important;line-height:1.15!important;' +
       'letter-spacing:-.5px;width:auto!important}' +
-      '.ngr-price .t-catalog__card__price:not(.t-catalog__card__price_old) *{color:#fff!important}' +
+      '.ngr-price .js-catalog-prod-price *,.ngr-price .t-catalog__card__price:not(.t-catalog__card__price_old) *,' +
+      '.ngr-price .t-catalog__prod-popup__price:not(.t-catalog__prod-popup__price_old) *{color:#fff!important}' +
       // Старая цена
-      '.ngr-price .t-catalog__card__price_old{color:#a6adb6!important;font-size:15px!important;' +
-      'font-weight:600!important;text-decoration:line-through}' +
-      '.ngr-price .t-catalog__card__price_old *{color:#a6adb6!important}' +
+      '.ngr-price .js-catalog-prod-price-old,.ngr-price .t-catalog__card__price_old,' +
+      '.ngr-price .t-catalog__prod-popup__price_old{color:#a6adb6!important;font-size:15px!important;' +
+      'font-weight:600!important;text-decoration:line-through!important;background:none!important;padding:0!important}' +
+      '.ngr-price .js-catalog-prod-price-old *,.ngr-price .t-catalog__card__price_old *,' +
+      '.ngr-price .t-catalog__prod-popup__price_old *{color:#a6adb6!important}' +
       // Процент выгоды
       '.ngr-off{display:inline-block;background:#eaf7ef;color:#1a8f4c;font-size:12px;font-weight:800;' +
       'padding:4px 8px;border-radius:8px;white-space:nowrap}' +
@@ -565,8 +571,10 @@
     var hosts = document.querySelectorAll('.js-catalog-price-wrapper, .t-catalog__card__price-wrapper');
     hosts.forEach(function (w) {
       if (w.getAttribute('data-ngr-price') === '1') return;
-      var now = w.querySelector('.t-catalog__card__price:not(.t-catalog__card__price_old)');
-      var old = w.querySelector('.t-catalog__card__price_old');
+      var now = w.querySelector('.js-catalog-prod-price, .t-catalog__card__price:not(.t-catalog__card__price_old), ' +
+        '.t-catalog__prod-popup__price:not(.t-catalog__prod-popup__price_old)');
+      var old = w.querySelector('.js-catalog-prod-price-old, .t-catalog__card__price_old, ' +
+        '.t-catalog__prod-popup__price_old');
       if (!now) return;
       w.setAttribute('data-ngr-price', '1');
       w.classList.add('ngr-price');
