@@ -589,6 +589,240 @@
     box.querySelector('b').textContent = num;
   }
 
+  /* ---------- Своё окно товара ---------- */
+
+  /**
+   * Собственная карточка товара.
+   *
+   * Каталог Tilda держит в памяти лишь несколько карточек и догружает
+   * остальные по прокрутке — открыть товар с полки через него не выходило
+   * (четыре неудачных попытки, 08.08). Поэтому собираем окно сами из данных
+   * интегратора: фотографии Ozon, цена, отзывы, СГР, остаток и сроки
+   * доставки приходят одним ответом.
+   *
+   * Открывается откуда угодно: с полки, по ссылке вида ?ngprod=31983.
+   */
+  var prodCache = {};
+
+  function prodCss() {
+    if (document.getElementById('ngr-prod-css')) return;
+    var st = document.createElement('style');
+    st.id = 'ngr-prod-css';
+    st.textContent =
+      '.ngr-pw{position:fixed;inset:0;z-index:100000;display:none}' +
+      '.ngr-pw_open{display:block}' +
+      '.ngr-pw__bg{position:absolute;inset:0;background:rgba(20,23,28,.55)}' +
+      '.ngr-pw__win{position:absolute;inset:24px;max-width:1180px;margin:0 auto;background:#fff;' +
+      'border-radius:20px;overflow:auto;-webkit-overflow-scrolling:touch}' +
+      '.ngr-pw__x{position:sticky;top:0;float:right;margin:12px 12px 0 0;width:38px;height:38px;' +
+      'border-radius:50%;border:0;background:#f2f4f7;color:#14171c;font-size:19px;cursor:pointer;z-index:2}' +
+      '.ngr-pw__x:hover{background:#e7eaee}' +
+      '.ngr-pd{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:34px;padding:26px 30px 34px}' +
+      '.ngr-pd__gal{display:flex;gap:12px}' +
+      '.ngr-pd__thumbs{display:flex;flex-direction:column;gap:8px;flex:0 0 62px}' +
+      '.ngr-pd__thumbs i{display:block;width:62px;height:62px;border-radius:10px;border:1px solid #e8ecf1;' +
+      'background:#fff center/contain no-repeat;cursor:pointer}' +
+      '.ngr-pd__thumbs i.on{border-color:#4984c4;box-shadow:0 0 0 2px rgba(73,132,196,.22)}' +
+      '.ngr-pd__big{flex:1;min-width:0;aspect-ratio:1/1;border-radius:16px;border:1px solid #eef1f5;' +
+      'background:#fff center/contain no-repeat}' +
+      '.ngr-pd h3{margin:0 0 8px;font-size:22px;line-height:1.32;font-weight:700;color:#14171c}' +
+      '.ngr-pd__meta{display:flex;align-items:center;gap:14px;flex-wrap:wrap;font-size:13px;color:#8a919b;margin-bottom:10px}' +
+      '.ngr-pd__meta b{color:#14171c}' +
+      '.ngr-pd__box{border:1px solid #e8ecf1;border-radius:16px;padding:16px 18px;margin:14px 0}' +
+      '.ngr-pd__price{display:flex;align-items:center;gap:10px;flex-wrap:wrap}' +
+      '.ngr-pd__now{background:#4984c4;color:#fff;font-size:26px;font-weight:800;padding:7px 14px;border-radius:12px;letter-spacing:-.5px}' +
+      '.ngr-pd__old{color:#a6adb6;font-size:16px;font-weight:600;text-decoration:line-through}' +
+      '.ngr-pd__left{font-size:13px;color:#1a8f4c;font-weight:700;margin-top:10px}' +
+      '.ngr-pd__buy{display:block;width:100%;margin-top:14px;padding:15px;border:0;border-radius:12px;' +
+      'background:#ff7a1a;color:#fff;font-size:16px;font-weight:700;cursor:pointer}' +
+      '.ngr-pd__buy:hover{background:#f06f10}' +
+      '.ngr-pd__buy[disabled]{background:#c8ced6;cursor:not-allowed}' +
+      '.ngr-pd__full{grid-column:1/-1;padding:0 30px 30px}' +
+      '@media(max-width:900px){' +
+      '.ngr-pw__win{inset:0;border-radius:0}' +
+      '.ngr-pd{grid-template-columns:1fr;gap:20px;padding:12px 16px 24px}' +
+      '.ngr-pd__gal{flex-direction:column-reverse}' +
+      '.ngr-pd__thumbs{flex-direction:row;flex:0 0 auto;overflow-x:auto}' +
+      '.ngr-pd h3{font-size:19px}' +
+      '.ngr-pd__now{font-size:23px}' +
+      '.ngr-pd__full{padding:0 16px 24px}}';
+    document.head.appendChild(st);
+  }
+
+  function prodWin() {
+    var w = document.querySelector('.ngr-pw');
+    if (w) return w;
+    prodCss();
+    w = document.createElement('div');
+    w.className = 'ngr-pw';
+    w.innerHTML = '<div class="ngr-pw__bg"></div><div class="ngr-pw__win">' +
+      '<button type="button" class="ngr-pw__x" aria-label="Закрыть">✕</button>' +
+      '<div class="ngr-pw__body"></div></div>';
+    w.querySelector('.ngr-pw__bg').addEventListener('click', closeProduct);
+    w.querySelector('.ngr-pw__x').addEventListener('click', closeProduct);
+    document.body.appendChild(w);
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') closeProduct();
+    });
+    return w;
+  }
+
+  function closeProduct() {
+    var w = document.querySelector('.ngr-pw');
+    if (w) w.classList.remove('ngr-pw_open');
+    document.body.style.removeProperty('overflow');
+    if (/[?&]ngprod=/.test(location.search)) {
+      history.replaceState(null, '', location.pathname);
+    }
+  }
+
+  function addToCart(d) {
+    var pk = String(d.pack || '').split('|');
+    var item = {
+      name: d.title, price: d.price, quantity: 1, inv: d.left || 1,
+      uid: d.uid, lid: d.uid, gen_uid: d.uid,
+      sku: d.art, img: (d.photos || [])[0] || '',
+      url: d.url || '', recid: '2502703571',
+      portion: d.portion || '1', unit: d.unit || 'шт.',
+      pack_label: pk[0] || '', pack_x: pk[1] || '', pack_y: pk[2] || '',
+      pack_z: pk[3] || '', pack_m: pk[4] || '',
+      amount: d.price
+    };
+    try {
+      if (window.tcart__addProduct) { tcart__addProduct(item); return true; }
+    } catch (e) {}
+    return false;
+  }
+
+  function renderProduct(d) {
+    var body = prodWin().querySelector('.ngr-pw__body');
+    var photos = (d.photos || []).slice(0, 8);
+    var thumbs = photos.map(function (u, i) {
+      return '<i data-i="' + i + '" class="' + (i ? '' : 'on') + '" style="background-image:url(\'' + u + '\')"></i>';
+    }).join('');
+
+    body.innerHTML =
+      '<div class="ngr-pd">' +
+      '<div class="ngr-pd__gal">' +
+      (photos.length > 1 ? '<div class="ngr-pd__thumbs">' + thumbs + '</div>' : '') +
+      '<div class="ngr-pd__big" style="background-image:url(\'' + (photos[0] || '') + '\')"></div>' +
+      '</div>' +
+      '<div class="ngr-pd__info">' +
+      '<h3></h3>' +
+      '<div class="ngr-pd__meta"><span>Артикул: ' + d.art + '</span>' +
+      (d.reviews && d.reviews.n ? '<span>' + stars(d.reviews.avg) + ' <b>' + d.reviews.avg.toFixed(1) + '</b> · ' +
+        d.reviews.n + ' ' + plural(d.reviews.n, 'отзыв', 'отзыва', 'отзывов') + '</span>' : '') + '</div>' +
+      (d.sgr ? '<span class="ngr-sgr">✓ Проверен: СГР есть</span>' +
+        '<div class="ngr-sgr__num">Свидетельство о государственной регистрации: <b>' + d.sgr + '</b></div>' : '') +
+      '<div class="ngr-pd__box">' +
+      '<div class="ngr-pd__price"><span class="ngr-pd__now">' + money(d.price) + '</span>' +
+      (d.old ? '<span class="ngr-pd__old">' + money(d.old) + '</span>' : '') +
+      (d.off ? '<span class="ngr-off">−' + d.off + '%</span>' : '') + '</div>' +
+      (d.left >= 4 ? '<div class="ngr-pd__left">В наличии</div>' :
+        '<div class="ngr-pd__left" style="color:#a11">Сейчас недоступен</div>') +
+      '<button type="button" class="ngr-pd__buy"' + (d.left >= 4 ? '' : ' disabled') + '>В корзину</button>' +
+      '</div></div>' +
+      '<div class="ngr-pd__full"><div class="ngr-pd__desc"></div><div class="ngr-pd__rev"></div></div>' +
+      '</div>';
+
+    body.querySelector('h3').textContent = d.title;
+
+    // Галерея
+    var big = body.querySelector('.ngr-pd__big');
+    body.querySelectorAll('.ngr-pd__thumbs i').forEach(function (t) {
+      t.addEventListener('click', function () {
+        var i = Number(t.getAttribute('data-i')) || 0;
+        big.style.backgroundImage = 'url("' + photos[i] + '")';
+        body.querySelectorAll('.ngr-pd__thumbs i').forEach(function (x) { x.className = ''; });
+        t.className = 'on';
+      });
+    });
+
+    // Кнопка покупки
+    var buy = body.querySelector('.ngr-pd__buy');
+    if (buy) buy.addEventListener('click', function () {
+      if (addToCart(d)) {
+        buy.textContent = '✓ В корзине';
+        setTimeout(function () { buy.textContent = 'В корзину'; }, 2000);
+      } else {
+        buy.textContent = 'Не удалось добавить';
+      }
+    });
+
+    // Описание и характеристики — тем же видом, что в каталоге
+    var descHost = body.querySelector('.ngr-pd__desc');
+    if (d.text) {
+      descCss();
+      var lines = String(d.text).split(/\n+/).map(function (s) { return s.trim(); }).filter(Boolean);
+      var specs = [];
+      while (lines.length) {
+        var m = lines[lines.length - 1].match(/^([^:]{2,45}):\s*(.+)$/);
+        if (!m || m[1].split(' ').length > 6) break;
+        specs.unshift([m[1], m[2]]);
+        lines.pop();
+      }
+      if (lines.length) {
+        var a1 = accordion('Описание', false);
+        var b1 = a1.querySelector('.ngr-acc__body');
+        lines.join('\n\n').split('\n\n').forEach(function (p) {
+          var el = document.createElement('p'); el.textContent = p; b1.appendChild(el);
+        });
+        descHost.appendChild(a1);
+      }
+      if (specs.length) {
+        var a2 = accordion('Характеристики', true);
+        var tb = document.createElement('table'); tb.className = 'ngr-spec';
+        specs.forEach(function (s) {
+          var tr = document.createElement('tr');
+          var t1 = document.createElement('td'); t1.textContent = s[0];
+          var t2 = document.createElement('td'); t2.textContent = s[1];
+          tr.appendChild(t1); tr.appendChild(t2); tb.appendChild(tr);
+        });
+        a2.querySelector('.ngr-acc__body').appendChild(tb);
+        descHost.appendChild(a2);
+      }
+    }
+
+    // Отзывы — тем же блоком, что в каталоге
+    if (d.reviews && d.reviews.n) {
+      reviewCss();
+      var rb = document.createElement('div');
+      rb.className = 'ngr-revbox';
+      body.querySelector('.ngr-pd__rev').appendChild(rb);
+      renderReviews(rb, d.art, d.reviews);
+    }
+  }
+
+  function openProduct(art) {
+    var w = prodWin();
+    w.classList.add('ngr-pw_open');
+    document.body.style.setProperty('overflow', 'hidden');
+    w.querySelector('.ngr-pw__win').scrollTop = 0;
+    history.replaceState(null, '', location.pathname + '?ngprod=' + encodeURIComponent(art));
+    if (prodCache[art]) { renderProduct(prodCache[art]); return; }
+    w.querySelector('.ngr-pw__body').innerHTML =
+      '<div style="padding:60px 30px;text-align:center;color:#8a919b">Загружаем карточку…</div>';
+    fetch(API + '/catalog/product?offer=' + encodeURIComponent(art))
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (!j || j.error) throw new Error('нет данных');
+        prodCache[art] = j;
+        renderProduct(j);
+      })
+      .catch(function () {
+        w.querySelector('.ngr-pw__body').innerHTML =
+          '<div style="padding:60px 30px;text-align:center;color:#a11">Не удалось загрузить карточку товара.</div>';
+      });
+  }
+
+  window.NGR_OPEN_PRODUCT = openProduct;
+
+  // Прямая ссылка на товар
+  (function () {
+    var m = location.search.match(/[?&]ngprod=([\w-]+)/);
+    if (m) setTimeout(function () { openProduct(m[1]); }, 400);
+  })();
+
   /* ---------- Полки на главной ---------- */
 
   /**
@@ -657,31 +891,8 @@
    * среди карточек каталога по артикулу и нажимаем на него. Если товар
    * не отрисован (каталог грузится частями) — подгружаем, пока не найдём.
    */
-  function openFromShelf(art, tries) {
-    tries = tries || 0;
-    var hit = null;
-    document.querySelectorAll('.js-product').forEach(function (c) {
-      if (!hit && article(c) === String(art)) hit = c;
-    });
-    if (hit) {
-      var link = [].slice.call(hit.querySelectorAll('a')).filter(function (a) {
-        return /tproduct/.test(a.getAttribute('href') || '');
-      })[0];
-      (link || hit).click();
-      return;
-    }
-    if (tries >= 12) {
-      // Не нашли — честно ведём в каталог, а не оставляем клик без действия.
-      var block = document.querySelector('#rec2502703571');
-      if (block) block.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      return;
-    }
-    // Просим каталог показать следующую порцию и пробуем снова.
-    var more = document.querySelector('.js-store-load-more-btn, .t-store__load-more-btn, ' +
-      '.js-catalog-load-more, [class*="load-more"]');
-    if (more) more.click();
-    setTimeout(function () { openFromShelf(art, tries + 1); }, 400);
-  }
+  /** Клик по карточке полки открывает наше окно товара. */
+  function openFromShelf(art) { openProduct(art); }
 
   function shelfCard(c) {
     var a = document.createElement('a');
