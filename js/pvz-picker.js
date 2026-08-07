@@ -41,6 +41,9 @@
     '.ngpvz__search{width:100%;box-sizing:border-box;padding:11px 14px;border:1px solid #ddd;border-radius:12px;font-size:15px;margin-top:8px;font-family:inherit}' +
     '.ngpvz__map{height:300px;border:1px solid #e6e6e6;border-radius:14px;margin-top:8px;overflow:hidden;display:none}' +
     '.ngpvz_map .ngpvz__map{display:block}' +
+    // Вторая страховка от значка библиотеки в подписи карты: свежие версии
+    // Leaflet выводят его отдельным элементом, и одной настройки мало.
+    '.leaflet-attribution-flag,.leaflet-control-attribution svg{display:none!important}' +
     '.ngpvz__list{display:none;max-height:260px;overflow-y:auto;border:1px solid #e6e6e6;border-radius:14px;margin-top:8px;background:#fff;-webkit-overflow-scrolling:touch}' +
     '.ngpvz_open .ngpvz__list{display:block}' +
     '.ngpvz_open .ngpvz__search{display:block}' +
@@ -325,6 +328,12 @@
       loadLeaflet().then(function () {
         if (!st.map) {
           st.map = L.map(mapEl, { attributionControl: true, scrollWheelZoom: false });
+          // Подпись карты — без значка библиотеки: Leaflet рисует там флаг,
+          // неуместный на российском магазине. Ссылки на источники карты
+          // сохраняем, этого требуют их условия использования.
+          if (st.map.attributionControl && st.map.attributionControl.setPrefix) {
+            st.map.attributionControl.setPrefix('');
+          }
           L.tileLayer(TILES, { maxZoom: 20, subdomains: 'abcd', attribution: '© OpenStreetMap, © CARTO' }).addTo(st.map);
           st.layer = L.layerGroup().addTo(st.map);
           var start = st.userPos ? [st.userPos.lat, st.userPos.lon] : [st.city.y, st.city.x];
