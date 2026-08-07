@@ -576,7 +576,9 @@
    * подставляем его артикул в поиск каталога и прокручиваем к нему.
    */
   function openFromShelf(art) {
-    var inp = searchInput();
+    // Поле поиска в каталоге — input[name=query]; общий помощник его
+    // не находил, и клик приводил просто наверх каталога.
+    var inp = document.querySelector('.t-catalog__filter input[name="query"], input[name="query"]') || searchInput();
     if (!inp) {
       var open = document.querySelector('.js-catalog-search-mob-btn, .t-catalog__filter__search-btn');
       if (open) open.click();
@@ -585,9 +587,14 @@
     var block = document.querySelector('#rec2502703571');
     if (block) block.scrollIntoView({ behavior: 'smooth', block: 'start' });
     if (!inp) return;
-    inp.value = art;
-    inp.dispatchEvent(new Event('input', { bubbles: true }));
-    inp.dispatchEvent(new Event('change', { bubbles: true }));
+    // Значение ставим через родной установщик: Tilda слушает своё поле, и
+    // простое присваивание она не замечает.
+    var set = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value');
+    if (set && set.set) set.set.call(inp, art); else inp.value = art;
+    ['input', 'change', 'keyup'].forEach(function (t) {
+      inp.dispatchEvent(new Event(t, { bubbles: true }));
+    });
+    try { inp.focus({ preventScroll: true }); } catch (e) {}
   }
 
   function shelfCard(c) {
