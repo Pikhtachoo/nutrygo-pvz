@@ -685,29 +685,40 @@
 
   function fixPrices() {
     priceCss();
-    var hosts = document.querySelectorAll('.js-catalog-price-wrapper, .t-catalog__card__price-wrapper');
+    var hosts = document.querySelectorAll('.js-catalog-price-wrapper, .t-catalog__card__price-wrapper, ' +
+      '.t-catalog__prod-popup__price-wrapper');
     hosts.forEach(function (w) {
-      if (w.getAttribute('data-ngr-price') === '1') return;
       var now = w.querySelector('.js-catalog-prod-price, .t-catalog__card__price:not(.t-catalog__card__price_old), ' +
         '.t-catalog__prod-popup__price:not(.t-catalog__prod-popup__price_old)');
       var old = w.querySelector('.js-catalog-prod-price-old, .t-catalog__card__price_old, ' +
         '.t-catalog__prod-popup__price_old');
       if (!now) return;
-      w.setAttribute('data-ngr-price', '1');
+      var a = num(now), b = num(old);
+      // В раскрытой карточке Tilda подставляет цены не сразу. Раньше мы
+      // считали один раз и на пустом месте — старая цена оставалась пустой
+      // строкой, а процент не появлялся (замечание Александра 07.08).
+      // Поэтому запоминаем прочитанную пару и пересчитываем, когда изменится.
+      var sig = a + '/' + b;
+      if (w.getAttribute('data-ngr-price') === sig) return;
+      w.setAttribute('data-ngr-price', sig);
       w.classList.add('ngr-price');
       // Звёзды не должны стоять в строке с ценой — им место над ней.
       var rate = w.querySelector('.ngr-rate');
       if (rate && w.parentNode) w.parentNode.insertBefore(rate, w);
-      var a = num(now), b = num(old);
+
+      var off = w.querySelector('.ngr-off');
       if (b > a && a > 0) {
-        var off = w.querySelector('.ngr-off');
         if (!off) {
           off = document.createElement('span');
           off.className = 'ngr-off';
           w.appendChild(off);
         }
         off.textContent = '−' + Math.round((b - a) / b * 100) + '%';
+      } else if (off) {
+        off.parentNode.removeChild(off);
       }
+      // Пустую зачёркнутую цену не показываем — от неё оставалась чёрточка.
+      if (old) old.style.setProperty('display', b > 0 ? '' : 'none', 'important');
     });
   }
 
