@@ -440,25 +440,60 @@
     var st = document.createElement('style');
     st.id = 'ngr-rev-css';
     st.textContent =
-      '.ngr-star{position:relative;display:inline-block;color:#dfe3e8;font-size:15px;line-height:1;letter-spacing:1px}' +
+      // Звёзды
+      '.ngr-star{position:relative;display:inline-block;color:#dde1e6;font-size:15px;line-height:1;letter-spacing:1px}' +
       '.ngr-star__on{position:absolute;left:0;top:0;overflow:hidden;color:#ffab2e;white-space:nowrap}' +
       '.ngr-rate{display:flex;align-items:center;gap:6px;margin:6px 0 2px;font-size:13px;color:#6b7280}' +
-      '.ngr-rate b{color:#111;font-weight:700;font-size:13px}' +
-      '.ngr-revbox{margin:22px 0 6px;padding-top:18px;border-top:1px solid #eceff3}' +
-      '.ngr-revbox h4{margin:0 0 14px;font-size:17px;font-weight:700;color:#111}' +
-      '.ngr-revhead{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:16px}' +
-      '.ngr-revbig{font-size:34px;font-weight:800;line-height:1;color:#111}' +
-      '.ngr-revbars{flex:1;min-width:170px}' +
-      '.ngr-revbar{display:flex;align-items:center;gap:8px;font-size:12px;color:#8a919b;margin:3px 0}' +
-      '.ngr-revbar i{flex:1;height:6px;border-radius:4px;background:#eef1f5;overflow:hidden;font-style:normal}' +
+      '.ngr-rate b{color:#111;font-weight:700}' +
+      // Блок отзывов. Цвета и размеры задаём жёстко: вокруг стоит типографика
+      // Tilda, из-за неё текст отзыва красился в оранжевый, как ссылка.
+      '.ngr-revbox{margin:26px 0;padding:22px;border:1px solid #e8ecf1;border-radius:16px;' +
+      'background:#fff;font-family:inherit;box-sizing:border-box}' +
+      '.ngr-revbox *{box-sizing:border-box}' +
+      '.ngr-revbox h4{margin:0 0 18px;font-size:19px;font-weight:800;color:#14171c;letter-spacing:-.2px}' +
+      '.ngr-revhead{display:flex;align-items:center;gap:24px;flex-wrap:wrap;padding-bottom:18px;' +
+      'margin-bottom:6px;border-bottom:1px solid #f0f2f5}' +
+      '.ngr-revscore{text-align:center;min-width:92px}' +
+      '.ngr-revbig{font-size:42px;font-weight:800;line-height:1;color:#14171c;letter-spacing:-1px}' +
+      '.ngr-revscore .ngr-star{font-size:17px}' +
+      '.ngr-revcount{font-size:13px;color:#8a919b;margin-top:4px}' +
+      '.ngr-revbars{flex:1;min-width:190px}' +
+      '.ngr-revbar{display:flex;align-items:center;gap:9px;font-size:12px;color:#8a919b;margin:4px 0}' +
+      '.ngr-revbar u{width:26px;text-decoration:none;color:#6b7280;text-align:right}' +
+      '.ngr-revbar i{flex:1;height:7px;border-radius:5px;background:#f0f2f5;overflow:hidden;font-style:normal}' +
       '.ngr-revbar i s{display:block;height:100%;background:#ffab2e;text-decoration:none}' +
-      '.ngr-rev{padding:12px 0;border-top:1px solid #f2f4f7}' +
-      '.ngr-rev:first-of-type{border-top:0}' +
-      '.ngr-rev__top{display:flex;align-items:center;gap:9px;margin-bottom:5px}' +
-      '.ngr-rev__date{font-size:12px;color:#9aa1ab}' +
-      '.ngr-rev__text{font-size:14px;line-height:1.55;color:#2b2f36;white-space:pre-line}' +
-      '.ngr-rev__more{display:inline-block;margin-top:10px;font-size:13px;color:#ff7a1a;cursor:pointer}' +
-      '.ngr-revnote{font-size:12px;color:#9aa1ab;margin-top:12px}';
+      '.ngr-revbar em{width:24px;font-style:normal;color:#a6adb6}' +
+      // Отдельный отзыв
+      '.ngr-rev{display:flex;gap:12px;padding:16px 0;border-top:1px solid #f0f2f5}' +
+      '.ngr-rev__ava{flex:0 0 38px;width:38px;height:38px;border-radius:50%;background:#f3f5f8;' +
+      'display:flex;align-items:center;justify-content:center;color:#9aa1ab;font-size:17px}' +
+      '.ngr-rev__body{flex:1;min-width:0}' +
+      '.ngr-rev__top{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:4px}' +
+      '.ngr-rev__who{font-size:14px;font-weight:700;color:#14171c}' +
+      '.ngr-rev__date{font-size:12px;color:#a6adb6}' +
+      '.ngr-rev__ok{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;' +
+      'color:#1a8f4c;background:#eaf7ef;border-radius:20px;padding:3px 9px}' +
+      '.ngr-rev__text{font-size:14.5px;line-height:1.6;color:#2b2f36!important;white-space:pre-line;margin-top:6px}' +
+      '.ngr-rev__pics{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}' +
+      '.ngr-rev__pics a{display:block;width:72px;height:72px;border-radius:10px;overflow:hidden;' +
+      'background:#f3f5f8;border:1px solid #eceff3}' +
+      '.ngr-rev__pics img{width:100%;height:100%;object-fit:cover;display:block}' +
+      '.ngr-revmore{display:block;width:100%;margin-top:16px;padding:12px;border:1px solid #e3e8ee;' +
+      'background:#fff;border-radius:12px;font-size:14px;font-weight:700;color:#14171c;cursor:pointer}' +
+      '.ngr-revmore:hover{background:#f8fafc}' +
+      '.ngr-revnote{font-size:12px;color:#a6adb6;margin-top:14px;line-height:1.5}' +
+      // Телефон: крупные отзывы в одну колонку, оценка над шкалами
+      '@media(max-width:640px){' +
+      '.ngr-revbox{padding:16px;border-radius:14px;margin:20px 0}' +
+      '.ngr-revbox h4{font-size:17px;margin-bottom:14px}' +
+      '.ngr-revhead{gap:14px}' +
+      '.ngr-revscore{min-width:0;text-align:left;display:flex;align-items:center;gap:12px}' +
+      '.ngr-revbig{font-size:34px}' +
+      '.ngr-revbars{flex:1 0 100%;min-width:0}' +
+      '.ngr-rev{gap:10px;padding:14px 0}' +
+      '.ngr-rev__ava{flex:0 0 32px;width:32px;height:32px;font-size:15px}' +
+      '.ngr-rev__text{font-size:14px}' +
+      '.ngr-rev__pics a{width:64px;height:64px}}';
     document.head.appendChild(st);
   }
 
@@ -484,33 +519,63 @@
     });
   }
 
+  var FIRST_SHOWN = 3;   // остальные — по кнопке, чтобы карточка не растягивалась
+
   function renderReviews(box, sku, data) {
     var n = data.n || 0;
     if (!n) { box.innerHTML = ''; return; }
+    var list = data.list || [];
     var dist = [0, 0, 0, 0, 0];
-    (data.list || []).forEach(function (r) { if (r.r >= 1 && r.r <= 5) dist[r.r - 1]++; });
-    var shown = (data.list || []).length;
+    list.forEach(function (r) { if (r.r >= 1 && r.r <= 5) dist[r.r - 1]++; });
+    var shown = list.length;
+
     var bars = '';
     for (var s = 5; s >= 1; s--) {
-      var part = shown ? Math.round(dist[s - 1] / shown * 100) : 0;
-      bars += '<div class="ngr-revbar">' + s + ' <i><s style="width:' + part + '%"></s></i></div>';
+      var cnt = dist[s - 1];
+      var part = shown ? Math.round(cnt / shown * 100) : 0;
+      bars += '<div class="ngr-revbar"><u>' + s + ' ★</u><i><s style="width:' + part + '%"></s></i>' +
+        '<em>' + (cnt || '') + '</em></div>';
     }
-    var list = (data.list || []).map(function (r) {
-      return '<div class="ngr-rev"><div class="ngr-rev__top">' + stars(r.r) +
+
+    var items = list.map(function (r, i) {
+      var pics = (r.ph || []).map(function (u) {
+        return '<a href="' + u + '" target="_blank" rel="noopener"><img src="' + u + '" alt="Фото покупателя" loading="lazy"></a>';
+      }).join('');
+      return '<div class="ngr-rev"' + (i >= FIRST_SHOWN ? ' data-extra="1" style="display:none"' : '') + '>' +
+        '<div class="ngr-rev__ava">👤</div>' +
+        '<div class="ngr-rev__body">' +
+        '<div class="ngr-rev__top"><span class="ngr-rev__who">Покупатель Ozon</span>' +
+        (r.v ? '<span class="ngr-rev__ok">✓ Проверенная покупка</span>' : '') +
         '<span class="ngr-rev__date">' + (r.d || '').split('-').reverse().join('.') + '</span></div>' +
-        '<div class="ngr-rev__text"></div></div>';
+        '<div>' + stars(r.r) + '</div>' +
+        '<div class="ngr-rev__text"></div>' +
+        (pics ? '<div class="ngr-rev__pics">' + pics + '</div>' : '') +
+        '</div></div>';
     }).join('');
+
+    var hidden = Math.max(0, shown - FIRST_SHOWN);
     box.innerHTML =
       '<h4>Отзывы покупателей</h4>' +
-      '<div class="ngr-revhead"><div><div class="ngr-revbig">' + (data.avg || 0).toFixed(1) + '</div>' +
-      '<div>' + stars(data.avg || 0) + '</div>' +
-      '<div class="ngr-rev__date">' + n + ' ' + plural(n, 'отзыв', 'отзыва', 'отзывов') + '</div></div>' +
-      (shown ? '<div class="ngr-revbars">' + bars + '</div>' : '') + '</div>' + list +
-      (shown ? '' : '<div class="ngr-revnote">Покупатели поставили оценки, но не оставили текст.</div>') +
-      '<div class="ngr-revnote">Оценки и отзывы покупателей Ozon по этому товару.</div>';
-    // Текст вставляем как текст, а не разметку: он приходит от покупателей.
+      '<div class="ngr-revhead">' +
+      '<div class="ngr-revscore"><div class="ngr-revbig">' + (data.avg || 0).toFixed(1) + '</div>' +
+      '<div><div>' + stars(data.avg || 0) + '</div>' +
+      '<div class="ngr-revcount">' + n + ' ' + plural(n, 'отзыв', 'отзыва', 'отзывов') + '</div></div></div>' +
+      (shown ? '<div class="ngr-revbars">' + bars + '</div>' : '') + '</div>' + items +
+      (hidden ? '<button type="button" class="ngr-revmore">Показать ещё ' + hidden + ' ' +
+        plural(hidden, 'отзыв', 'отзыва', 'отзывов') + '</button>' : '') +
+      (shown ? '' : '<div class="ngr-revnote">Покупатели поставили оценки, но не написали отзыв.</div>') +
+      '<div class="ngr-revnote">Оценки и отзывы оставили покупатели Ozon после получения заказа. ' +
+      'Мы показываем их как есть и ничего не удаляем.</div>';
+
+    // Текст отзыва вставляем как текст, а не разметку: его пишут покупатели.
     var nodes = box.querySelectorAll('.ngr-rev__text');
-    (data.list || []).forEach(function (r, i) { if (nodes[i]) nodes[i].textContent = r.x || ''; });
+    list.forEach(function (r, i) { if (nodes[i]) nodes[i].textContent = r.x || ''; });
+
+    var more = box.querySelector('.ngr-revmore');
+    if (more) more.addEventListener('click', function () {
+      box.querySelectorAll('[data-extra]').forEach(function (e) { e.style.display = ''; });
+      more.parentNode.removeChild(more);
+    });
   }
 
   /** Развёрнутая карточка товара: сводка, распределение оценок и тексты. */
@@ -528,9 +593,13 @@
     if (!box) {
       box = document.createElement('div');
       box.className = 'ngr-revbox';
-      var host = pop.querySelector('.t-catalog__prod-popup__info, .t-catalog__prod-popup__text, ' +
-        '.t-store__prod-popup__text, .t-store__prod-popup__info') || pop;
-      host.appendChild(box);
+      // Ставим отзывы ПЕРЕД описанием, а не в самый низ: описание у нас
+      // длинное, и до отзывов внизу покупатель просто не доходил
+      // (замечание Александра 07.08).
+      var desc = pop.querySelector('.js-catalog-prod-text, .t-catalog__prod-popup__text, .t-store__prod-popup__text');
+      var host = pop.querySelector('.t-catalog__prod-popup__info, .t-store__prod-popup__info') || pop;
+      if (desc && desc.parentNode) desc.parentNode.insertBefore(box, desc);
+      else host.appendChild(box);
     }
     box.setAttribute('data-sku', String(sku));
     var r = rating[sku];
