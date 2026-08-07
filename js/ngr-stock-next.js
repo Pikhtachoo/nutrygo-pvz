@@ -2175,7 +2175,19 @@
     return true;
   }
 
+  /**
+   * ГАЛЕРЕЯ В КАТАЛОГЕ ВЫКЛЮЧЕНА (08.08).
+   *
+   * Она подменяла фон карточки снимками Ozon и в итоге все карточки
+   * оставались размытыми заглушками Tilda — покупатель не видел товар
+   * (замечание Александра). Фотографии важнее карусели, поэтому возвращаем
+   * штатное поведение Tilda. Все снимки товара по-прежнему доступны
+   * в карточке товара, там галерея работает и ничего не ломает.
+   */
+  var GALLERY_IN_CATALOG = false;
+
   function fixCardPhotos() {
+    if (!GALLERY_IN_CATALOG) return;
     document.querySelectorAll('.js-product').forEach(function (c) {
       if (c.getAttribute('data-ngr-gal')) return;
       var layers = c.querySelectorAll('.t-catalog__card__bgimg');
