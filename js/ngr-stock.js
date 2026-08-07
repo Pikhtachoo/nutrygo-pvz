@@ -593,12 +593,15 @@
     reviewCss(); shelfCss();
 
     // «Скидки недели» — меняем содержимое существующей полки.
-    var sale = document.querySelector('.ngr-sale-grid, .ngr-sale-cards, .ngr-section--sale .ngr-container > div:last-child');
+    var sale = document.querySelector('.ngr-sale-grid');
     if (!sale) {
       var anySale = document.querySelector('.ngr-sale-card');
       sale = anySale ? anySale.parentNode : null;
     }
-    if (sale && sale.getAttribute('data-ngr-shelf') !== 'sale' && shelves.byDiscount.length) {
+    // Скрипт главной перерисовывает полку после нас и возвращает свои
+    // четыре зашитых товара. Поэтому проверяем не пометку на контейнере,
+    // а наличие нашей сетки внутри — и перестраиваем, когда её снесли.
+    if (sale && shelves.byDiscount.length && !sale.querySelector('.ngr-shelf')) {
       sale.setAttribute('data-ngr-shelf', 'sale');
       buildShelf(sale, shelves.byDiscount);
     }
