@@ -575,7 +575,10 @@
    * Александра 08.08). Поэтому открываем товар там же, где он живёт, —
    * подставляем его артикул в поиск каталога и прокручиваем к нему.
    */
-  function openFromShelf(art) {
+  function openFromShelf(title) {
+    // Ищем по названию: поиск Tilda работает по названию товара, артикул
+    // он не находит — проверено (Александр, 08.08).
+    var art = String(title || '').split(/[,(]/)[0].trim().slice(0, 40);
     // Поле поиска в каталоге — input[name=query]; общий помощник его
     // не находил, и клик приводил просто наверх каталога.
     var inp = document.querySelector('.t-catalog__filter input[name="query"], input[name="query"]') || searchInput();
@@ -603,7 +606,7 @@
     a.href = c.url || '#';
     a.addEventListener('click', function (e) {
       e.preventDefault();
-      openFromShelf(c.art);
+      openFromShelf(c.title);
     });
     a.innerHTML =
       '<div class="ngr-sc__pic" style="background-image:url(\'' + c.img + '\')">' +
