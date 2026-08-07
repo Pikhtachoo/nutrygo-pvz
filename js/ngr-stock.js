@@ -519,6 +519,72 @@
     });
   }
 
+  /* ---------- Цена ---------- */
+
+  /**
+   * Цена со скидкой должна читаться первой (решение Александра 07.08,
+   * образец — карточка Ozon): она на цветной плашке, старая цена рядом
+   * зачёркнута и приглушена, справа — процент выгоды. В раскрытой карточке
+   * весь блок обведён рамкой, как на Ozon.
+   */
+  function priceCss() {
+    if (document.getElementById('ngr-price-css')) return;
+    var st = document.createElement('style');
+    st.id = 'ngr-price-css';
+    st.textContent =
+      // Плашка с ценой
+      '.ngr-price .t-catalog__card__price:not(.t-catalog__card__price_old){' +
+      'display:inline-flex;align-items:center;gap:2px;background:#ff7a1a;color:#fff!important;' +
+      'padding:6px 12px;border-radius:10px;font-size:24px!important;font-weight:800!important;' +
+      'line-height:1.1;letter-spacing:-.5px}' +
+      '.ngr-price .t-catalog__card__price:not(.t-catalog__card__price_old) *{color:#fff!important}' +
+      // Старая цена
+      '.ngr-price .t-catalog__card__price_old{color:#a6adb6!important;font-size:15px!important;' +
+      'font-weight:600!important;text-decoration:line-through}' +
+      '.ngr-price .t-catalog__card__price_old *{color:#a6adb6!important}' +
+      // Процент выгоды
+      '.ngr-off{display:inline-block;background:#eaf7ef;color:#1a8f4c;font-size:12px;font-weight:800;' +
+      'padding:4px 8px;border-radius:8px;white-space:nowrap}' +
+      '.ngr-price{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:8px 0}' +
+      // В раскрытой карточке — рамка вокруг цены, как на Ozon
+      '.t-catalog__prod-popup__container .ngr-price{border:1px solid #e8ecf1;border-radius:16px;' +
+      'padding:14px 16px;background:#fff;margin:12px 0}' +
+      '@media(max-width:640px){' +
+      '.ngr-price .t-catalog__card__price:not(.t-catalog__card__price_old){font-size:21px!important;padding:5px 10px}' +
+      '.ngr-price{gap:8px}}';
+    document.head.appendChild(st);
+  }
+
+  function num(el) {
+    return Number(String((el && el.textContent) || '').replace(/[^\d]/g, '')) || 0;
+  }
+
+  function fixPrices() {
+    priceCss();
+    var hosts = document.querySelectorAll('.js-catalog-price-wrapper, .t-catalog__card__price-wrapper');
+    hosts.forEach(function (w) {
+      if (w.getAttribute('data-ngr-price') === '1') return;
+      var now = w.querySelector('.t-catalog__card__price:not(.t-catalog__card__price_old)');
+      var old = w.querySelector('.t-catalog__card__price_old');
+      if (!now) return;
+      w.setAttribute('data-ngr-price', '1');
+      w.classList.add('ngr-price');
+      // Звёзды не должны стоять в строке с ценой — им место над ней.
+      var rate = w.querySelector('.ngr-rate');
+      if (rate && w.parentNode) w.parentNode.insertBefore(rate, w);
+      var a = num(now), b = num(old);
+      if (b > a && a > 0) {
+        var off = w.querySelector('.ngr-off');
+        if (!off) {
+          off = document.createElement('span');
+          off.className = 'ngr-off';
+          w.appendChild(off);
+        }
+        off.textContent = '−' + Math.round((b - a) / b * 100) + '%';
+      }
+    });
+  }
+
   /* ---------- Фото в карточке каталога ---------- */
 
   /**
@@ -902,7 +968,7 @@
   function apply() {
     fixPopup(); fixCards(); fixCart(); fixDupDelivery(); fixUnits(); fixBrands();
     initSearchGuard(); fixSearch(); fixAccountButton(); fixAuthGate();
-    fixRatings(); fixPopupReviews(); fixDescription(); fixDeliveryOrder(); fixCardPhotos();
+    fixRatings(); fixPopupReviews(); fixDescription(); fixDeliveryOrder(); fixCardPhotos(); fixPrices();
   }
 
   apply();
