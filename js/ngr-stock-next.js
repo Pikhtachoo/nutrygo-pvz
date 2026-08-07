@@ -1790,6 +1790,9 @@
       '.ngr-side__t{font-size:15px;font-weight:700;color:#14171c;margin-bottom:10px}' +
       '.ngr-side__o{display:flex;align-items:center;gap:9px;padding:6px 0;cursor:pointer;font-size:14px;color:#2b2f36}' +
       '.ngr-side__o:hover{color:#14171c}' +
+      // Значения, которых нет в текущей выборке: нажимать не на что.
+      '.ngr-side__o.off{opacity:.35;cursor:default}' +
+      '.ngr-side__o.off:hover{color:#2b2f36}' +
       '.ngr-side__box{flex:0 0 18px;width:18px;height:18px;border:1.5px solid #cfd6de;border-radius:5px;' +
       'display:flex;align-items:center;justify-content:center;font-size:12px;color:#fff;background:#fff}' +
       '.ngr-side__o.on .ngr-side__box{background:#4984c4;border-color:#4984c4}' +
@@ -1819,6 +1822,7 @@
   function sideGroup(title) {
     var g = document.createElement('div');
     g.className = 'ngr-side__g';
+    g.setAttribute('data-g', title);
     g.innerHTML = '<div class="ngr-side__t"></div>';
     g.querySelector('.ngr-side__t').textContent = title;
     return g;
@@ -1834,6 +1838,55 @@
    * её же флажки. Это следующая работа.
    */
   var SIDE_FILTERS = true;
+
+  /**
+   * Флажок фильтра ищем в момент нажатия, а не при сборке колонки.
+   * Tilda перерисовывает разметку фильтра после каждого применения, и
+   * запомненные ссылки повисали в воздухе: галочка в колонке ставилась,
+   * а каталог не менялся (замечание Александра 08.08).
+   */
+  function liveOpt(group, value) {
+    var items = [].slice.call(document.querySelectorAll('.t-catalog__filter__item'));
+    for (var i = 0; i < items.length; i++) {
+      var t = ((items[i].querySelector('.t-catalog__filter__item-title') || {}).textContent || '').trim();
+      if (t !== group) continue;
+      var labs = [].slice.call(items[i].querySelectorAll('label.t-checkbox__control'));
+      for (var k = 0; k < labs.length; k++) {
+        if ((labs[k].textContent || '').trim() === value) return labs[k];
+      }
+    }
+    return null;
+  }
+
+  function liveNums(group) {
+    var items = [].slice.call(document.querySelectorAll('.t-catalog__filter__item'));
+    for (var i = 0; i < items.length; i++) {
+      var t = ((items[i].querySelector('.t-catalog__filter__item-title') || {}).textContent || '').trim();
+      if (t === group) return [].slice.call(items[i].querySelectorAll('input[type="text"], input[type="number"]'));
+    }
+    return [];
+  }
+
+  /**
+   * Сверяем колонку с настоящим состоянием фильтра и заново прячем строку
+   * Tilda: после перерисовки она возвращается на место, и покупатель видел
+   * два фильтра сразу. Значения, которых в текущей выборке уже нет,
+   * приглушаем — как на Ozon.
+   */
+  function syncSideFilters() {
+    var side = document.querySelector('.ngr-side');
+    if (!side) return;
+    side.querySelectorAll('.ngr-side__o').forEach(function (row) {
+      var lab = liveOpt(row.getAttribute('data-g'), row.getAttribute('data-v'));
+      var inp = lab && lab.querySelector('input');
+      row.className = 'ngr-side__o' + (inp && inp.checked ? ' on' : '') + (lab ? '' : ' off');
+    });
+    document.querySelectorAll('.t-catalog__filter__item').forEach(function (it) {
+      var t = ((it.querySelector('.t-catalog__filter__item-title') || {}).textContent || '').trim();
+      if (/сортировка/i.test(t)) return;
+      if (it.style.display !== 'none') it.style.setProperty('display', 'none', 'important');
+    });
+  }
 
   function buildSideFilters() {
     if (!SIDE_FILTERS) return;
@@ -1869,9 +1922,11 @@
         mine[0].value = nums[0].value; mine[1].value = nums[1].value;
         [0, 1].forEach(function (k) {
           mine[k].addEventListener('change', function () {
-            nums[k].value = mine[k].value;
-            nums[k].dispatchEvent(new Event('input', { bubbles: true }));
-            nums[k].dispatchEvent(new Event('change', { bubbles: true }));
+            var live = liveNums(title);
+            if (!live[k]) return;
+            live[k].value = mine[k].value;
+            live[k].dispatchEvent(new Event('input', { bubbles: true }));
+            live[k].dispatchEvent(new Event('change', { bubbles: true }));
           });
         });
         g.appendChild(row);
@@ -1894,9 +1949,14 @@
           '<span class="ngr-side__lbl"></span>';
         row.querySelector('.ngr-side__lbl').textContent = text;
         if (i >= 8) { row.setAttribute('data-extra', '1'); row.style.display = 'none'; }
+        row.setAttribute('data-g', title);
+        row.setAttribute('data-v', text);
         row.addEventListener('click', function () {
-          inp.click();
-          setTimeout(function () { row.className = 'ngr-side__o' + (inp.checked ? ' on' : ''); }, 60);
+          var lab = liveOpt(title, text);
+          if (!lab) return;                 // значения нет в текущей выборке
+          lab.click();
+          setTimeout(syncSideFilters, 400);
+          setTimeout(syncSideFilters, 1500);
         });
         g2.appendChild(row);
         shown++;
@@ -1923,10 +1983,12 @@
     reset.className = 'ngr-side__reset';
     reset.textContent = 'Сбросить фильтры';
     reset.addEventListener('click', function () {
-      document.querySelectorAll('.t-catalog__filter__item input:checked').forEach(function (i) { i.click(); });
-      setTimeout(function () {
-        side.querySelectorAll('.ngr-side__o').forEach(function (r) { r.className = 'ngr-side__o'; });
-      }, 120);
+      document.querySelectorAll('.t-catalog__filter__item input:checked').forEach(function (i) {
+        var lab = i.closest('label');
+        if (lab) lab.click(); else i.click();
+      });
+      setTimeout(syncSideFilters, 400);
+      setTimeout(syncSideFilters, 1500);
     });
     side.appendChild(reset);
 
@@ -2553,7 +2615,7 @@
   function apply() {
     fixPopup(); fixCards(); fixCart(); fixDupDelivery(); fixUnits(); fixBrands();
     initSearchGuard(); fixSearch(); fixAccountButton(); fixAuthGate();
-    fixRatings(); fixPopupReviews(); fixDescription(); fixDeliveryOrder(); fixCardPhotos(); fixPrices(); fixFilterValues(); fixRatingFilter(); applyRatingFilter(false); fixShelves(); fixSgr(); fixFav(); cartCss(); buildSideFilters();
+    fixRatings(); fixPopupReviews(); fixDescription(); fixDeliveryOrder(); fixCardPhotos(); fixPrices(); fixFilterValues(); fixRatingFilter(); applyRatingFilter(false); fixShelves(); fixSgr(); fixFav(); cartCss(); buildSideFilters(); syncSideFilters();
   }
 
   apply();
