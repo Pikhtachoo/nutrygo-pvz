@@ -1166,8 +1166,8 @@
       '@media(max-width:860px){' +
       '.ngr-cab{grid-template-columns:1fr;gap:16px;padding:12px 16px 26px}' +
       '.ngr-cab__side{position:static}' +
-      '.ngr-cab__nav{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px}' +
-      '.ngr-cab__nav b{white-space:nowrap;padding:9px 14px;border:1px solid #e8ecf1}' +
+      '.ngr-cab__nav{display:flex;flex-wrap:wrap;gap:8px;padding-bottom:4px}' +
+      '.ngr-cab__nav b{white-space:nowrap;padding:9px 13px;border:1px solid #e8ecf1;font-size:13.5px}' +
       '.ngr-cab h2{font-size:21px}}';
     document.head.appendChild(st);
   }
@@ -1240,6 +1240,16 @@
     }).catch(function () {});
   }
 
+  var pulledFor = '';
+
+  function pullProfileOnce() {
+    var m = member();
+    var login = m && m.login;
+    if (!login || pulledFor === login) return;
+    pulledFor = login;
+    pullProfile(login);
+  }
+
   function pullProfile(login) {
     if (!login) return;
     fetch(API + '/profile/me?login=' + encodeURIComponent(login))
@@ -1257,6 +1267,9 @@
         }
         paintMe();
         fixAccountButton();
+        // Если профиль уже открыт, форма собрана по старым данным —
+        // пересобираем её, иначе выбранный аватар не отмечен.
+        if (document.querySelector('.ngr-avc__all') && cabData.profile) cabSection('profile');
       })
       .catch(function () {});
   }
@@ -2048,6 +2061,7 @@
   // эти бренды показываем просто названием.
   var LOGOS = 'https://pikhtachoo.github.io/nutrygo-pvz/img/';
   var BRAND_LOGO = {
+    '21st Century': 'brand-21st-century.png',
     'AllNutrition': 'brand-allnutrition.png',
     'Doctors Best': 'brand-doctors-best.png',
     'California Gold Nutrition': 'brand-california-gold-nutrition.png',
@@ -3042,7 +3056,7 @@
   function apply() {
     fixPopup(); fixCards(); fixCart(); fixDupDelivery(); fixUnits(); fixBrands();
     initSearchGuard(); fixSearch(); fixAccountButton(); fixAuthGate();
-    fixRatings(); fixPopupReviews(); fixDescription(); fixDeliveryOrder(); fixCardPhotos(); fixPrices(); fixFilterValues(); fixRatingFilter(); applyRatingFilter(false); fixShelves(); fixSgr(); fixFav(); cartCss(); dropCartTip(); refreshBrands(); buildSideFilters(); syncSideFilters(); fixUrlSort();
+    fixRatings(); fixPopupReviews(); fixDescription(); fixDeliveryOrder(); fixCardPhotos(); fixPrices(); fixFilterValues(); fixRatingFilter(); applyRatingFilter(false); fixShelves(); fixSgr(); fixFav(); cartCss(); dropCartTip(); pullProfileOnce(); refreshBrands(); buildSideFilters(); syncSideFilters(); fixUrlSort();
   }
 
   apply();

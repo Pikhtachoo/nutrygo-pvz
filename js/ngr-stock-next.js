@@ -2061,6 +2061,7 @@
   // эти бренды показываем просто названием.
   var LOGOS = 'https://pikhtachoo.github.io/nutrygo-pvz/img/';
   var BRAND_LOGO = {
+    '21st Century': 'brand-21st-century.png',
     'AllNutrition': 'brand-allnutrition.png',
     'Doctors Best': 'brand-doctors-best.png',
     'California Gold Nutrition': 'brand-california-gold-nutrition.png',
