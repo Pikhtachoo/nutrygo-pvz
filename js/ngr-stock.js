@@ -2039,6 +2039,9 @@
       'background:#e3e8ee!important}' +
       '.t-catalog__filter__price-outer{height:4px!important;border-radius:3px!important;' +
       'background:#4984c4!important}' +
+      // Сами ползунки лежат поверх дорожки и закрашены белым — из-за этого
+      // полосы не было видно вовсе (замечание Александра 08.08).
+      '.t-catalog__filter__range{background:transparent!important;background-color:transparent!important}' +
       '.t-catalog__filter__item-price-slider{padding:10px 4px 6px!important}' +
       '.t-catalog__filter__input{border:1px solid #e3e8ee!important;border-radius:10px!important;' +
       'height:42px!important}' +
