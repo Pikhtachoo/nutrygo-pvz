@@ -1224,7 +1224,44 @@
     document.head.appendChild(st);
   }
 
-  /** Личные настройки покупателя — псевдоним и значок. Хранятся у него же. */
+  /**
+   * Псевдоним и аватар хранятся в интеграторе, а не только в браузере:
+   * иначе выбор терялся при смене устройства или чистке кэша (решение
+   * Александра 08.08). Память браузера остаётся быстрым кэшем, чтобы
+   * значок рисовался сразу, не дожидаясь ответа.
+   */
+  function pushProfile(login) {
+    if (!login) return;
+    var cur = profileSettings();
+    fetch(API + '/profile/me', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ login: login, nick: cur.nick || '', avatar: cur.avatar || '' })
+    }).catch(function () {});
+  }
+
+  function pullProfile(login) {
+    if (!login) return;
+    fetch(API + '/profile/me?login=' + encodeURIComponent(login))
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        var cur = profileSettings();
+        if (j && (j.nick || j.avatar)) {
+          // Настройки с сервера главнее: они одни на все устройства.
+          if (j.nick) cur.nick = j.nick;
+          cur.avatar = j.avatar || '';
+          try { localStorage.setItem('ngr_me', JSON.stringify(cur)); } catch (e) {}
+        } else if (cur.nick || cur.avatar) {
+          // Первый заход после переезда: поднимаем прежний выбор из браузера.
+          pushProfile(login);
+        }
+        paintMe();
+        fixAccountButton();
+      })
+      .catch(function () {});
+  }
+
+  /** Личные настройки покупателя. В браузере — кэш, хранилище — интегратор. */
   function profileSettings() {
     try { return JSON.parse(localStorage.getItem('ngr_me') || '{}'); } catch (e) { return {}; }
   }
@@ -1492,6 +1529,7 @@
       }
       paintMe();
       fixAccountButton();
+      pushProfile((cabData.profile || {}).login || '');
       drawRow();
     }
 
@@ -1559,6 +1597,7 @@
       var now = profileSettings();
       host.querySelector('.ngr-cab__saved').textContent =
         (now.nick === nick && now.avatar === chosen) ? '✓ Сохранено' : 'Браузер не дал сохранить';
+      pushProfile((cabData.profile || {}).login || '');
       paintMe();
       fixAccountButton();
     });
@@ -1612,6 +1651,7 @@
       cabData.dash = res[1] || {};
       cabData.noToken = noToken;
       paintMe();
+      pullProfile(cabData.profile.login || '');
       cabSection('orders');
     });
   }
