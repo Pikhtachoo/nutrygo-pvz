@@ -1945,6 +1945,17 @@
    * Заодно приводим состав заказа к нормальному виду: крупная картинка,
    * читаемое название, заметная цена.
    */
+  /**
+   * Серая выноска с суммой у корзины. Tilda показывает её, проставляя стиль
+   * прямо на элемент из своего скрипта, поэтому правилом CSS её не убрать —
+   * снимаем со страницы (замечание Александра 08.08).
+   */
+  function dropCartTip() {
+    document.querySelectorAll('.t706__carticon-text').forEach(function (e) {
+      if (e.parentNode) e.parentNode.removeChild(e);
+    });
+  }
+
   function cartCss() {
     if (document.getElementById('ngr-cart-css')) return;
     var st = document.createElement('style');
@@ -2986,7 +2997,7 @@
   function apply() {
     fixPopup(); fixCards(); fixCart(); fixDupDelivery(); fixUnits(); fixBrands();
     initSearchGuard(); fixSearch(); fixAccountButton(); fixAuthGate();
-    fixRatings(); fixPopupReviews(); fixDescription(); fixDeliveryOrder(); fixCardPhotos(); fixPrices(); fixFilterValues(); fixRatingFilter(); applyRatingFilter(false); fixShelves(); fixSgr(); fixFav(); cartCss(); refreshBrands(); buildSideFilters(); syncSideFilters(); fixUrlSort();
+    fixRatings(); fixPopupReviews(); fixDescription(); fixDeliveryOrder(); fixCardPhotos(); fixPrices(); fixFilterValues(); fixRatingFilter(); applyRatingFilter(false); fixShelves(); fixSgr(); fixFav(); cartCss(); dropCartTip(); refreshBrands(); buildSideFilters(); syncSideFilters(); fixUrlSort();
   }
 
   apply();
