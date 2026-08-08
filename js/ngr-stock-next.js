@@ -471,8 +471,14 @@
     if (!a) return;
     var m = member();
     var want = m ? 'in' : 'out';
-    if (a.getAttribute('data-ngr-auth') === want + (m && m.name ? m.name : '')) return;
-    a.setAttribute('data-ngr-auth', want + (m && m.name ? m.name : ''));
+    // В условие входит и выбранный значок: раньше кнопка перерисовывалась
+    // только при смене входа или имени, и новый аватар в шапке не появлялся
+    // до перезагрузки страницы (замечание Александра 08.08).
+    var mine = profileSettings();
+    var face = mine.photo ? ('photo' + String(mine.photo).length) : (mine.avatar || '');
+    var key = want + (m && m.name ? m.name : '') + '|' + face;
+    if (a.getAttribute('data-ngr-auth') === key) return;
+    a.setAttribute('data-ngr-auth', key);
 
     if (!document.getElementById('ngr-account-css')) {
       var st = document.createElement('style');
@@ -498,10 +504,9 @@
     a.classList.add('ngr-account--in');
     // В шапке показываем выбранный аватар, а буква имени остаётся
     // запасным вариантом для тех, кто ничего не выбирал.
-    var mine = profileSettings();
-    var face = mine.photo || (mine.avatar ? avaFile(mine.avatar) : '');
+    var pic = mine.photo || (mine.avatar ? avaFile(mine.avatar) : '');
     a.innerHTML = '<span class="ngr-ava"' +
-      (face ? ' style="background-image:url(' + face + ');background-size:cover;background-position:center;color:transparent"' : '') +
+      (pic ? ' style="background-image:url(' + pic + ');background-size:cover;background-position:center;color:transparent"' : '') +
       '>' + letter + '</span>' +
       '<span class="ngr-account-name">' + short + '</span>';
     // Вошедшего ведём в наш кабинет, а не в кабинет Tilda.
