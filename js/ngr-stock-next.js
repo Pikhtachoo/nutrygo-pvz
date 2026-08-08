@@ -2137,6 +2137,12 @@
         }
         поле(s, '210px');
         поле(q, '280px');
+        // Порядок задаём на прямых детях строки: сами поля лежат внутри
+        // обёрток Tilda, и свойство на них ничего не решает.
+        [].slice.call(ss.children).forEach(function (c) {
+          if (s && (c === s || c.contains(s))) c.style.setProperty('order', '0', 'important');
+          else if (q && (c === q || c.contains(q))) c.style.setProperty('order', '1', 'important');
+        });
         if (s) {
           s.style.setProperty('order', '0', 'important');
           s.style.setProperty('padding', '0 36px 0 14px', 'important');
