@@ -2143,6 +2143,18 @@
           if (s && (c === s || c.contains(s))) c.style.setProperty('order', '0', 'important');
           else if (q && (c === q || c.contains(q))) c.style.setProperty('order', '1', 'important');
         });
+        // Ровняем левый край строки по сетке товаров замером, а не на глаз:
+        // у обёрток Tilda свои отступы, и «на 286 точек» промахивается.
+        if (innerWidth > 1000) {
+          setTimeout(function () {
+            var grid = document.querySelector('.t-catalog__card-list');
+            if (!grid || !s) return;
+            var сдвиг = Math.round(grid.getBoundingClientRect().left - s.getBoundingClientRect().left);
+            if (Math.abs(сдвиг) < 2 || Math.abs(сдвиг) > 400) return;
+            var было = parseFloat(ss.style.marginLeft) || 0;
+            ss.style.setProperty('margin-left', (было + сдвиг) + 'px', 'important');
+          }, 500);
+        }
         if (s) {
           s.style.setProperty('order', '0', 'important');
           s.style.setProperty('padding', '0 36px 0 14px', 'important');
