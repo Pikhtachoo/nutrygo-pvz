@@ -2132,16 +2132,20 @@
           "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' " +
           "stroke='%238a919b' stroke-width='2' stroke-linecap='round'>" +
           "<circle cx='11' cy='11' r='7'/><path d='M20 20l-3.6-3.6'/></svg>\")";
+        function ставь(e, prop, val) {
+          if (!e || e.style.getPropertyValue(prop) === val) return;
+          e.style.setProperty(prop, val, 'important');
+        }
         function поле(e, w) {
           if (!e) return;
-          e.style.setProperty('height', '44px', 'important');
-          e.style.setProperty('width', w, 'important');
-          e.style.setProperty('border', '1px solid #e3e8ee', 'important');
-          e.style.setProperty('border-radius', '12px', 'important');
-          e.style.setProperty('background-color', '#fff', 'important');
-          e.style.setProperty('font-size', '14.5px', 'important');
-          e.style.setProperty('color', '#14171c', 'important');
-          e.style.setProperty('box-sizing', 'border-box', 'important');
+          ставь(e, 'height', '44px');
+          ставь(e, 'width', w);
+          ставь(e, 'border', '1px solid #e3e8ee');
+          ставь(e, 'border-radius', '12px');
+          ставь(e, 'background-color', '#fff');
+          ставь(e, 'font-size', '14.5px');
+          ставь(e, 'color', '#14171c');
+          ставь(e, 'box-sizing', 'border-box');
         }
         var узко = innerWidth <= 1000;
         поле(s, '210px');
@@ -2152,34 +2156,27 @@
           if (s && (c === s || c.contains(s))) c.style.setProperty('order', '0', 'important');
           else if (q && (c === q || c.contains(q))) c.style.setProperty('order', '1', 'important');
         });
-        // Ровняем левый край строки по сетке товаров замером, а не на глаз:
-        // у обёрток Tilda свои отступы, и «на 286 точек» промахивается.
-        if (innerWidth > 1000) {
-          setTimeout(function () {
-            var grid = document.querySelector('.t-catalog__card-list');
-            if (!grid || !s) return;
-            var сдвиг = Math.round(grid.getBoundingClientRect().left - s.getBoundingClientRect().left);
-            if (Math.abs(сдвиг) < 2 || Math.abs(сдвиг) > 400) return;
-            var было = parseFloat(ss.style.marginLeft) || 0;
-            ss.style.setProperty('margin-left', (было + сдвиг) + 'px', 'important');
-          }, 500);
-        }
         if (s) {
-          s.style.setProperty('order', '0', 'important');
-          s.style.setProperty('padding', '0 36px 0 14px', 'important');
+          ставь(s, 'order', '0');
+          ставь(s, 'padding', '0 36px 0 14px');
         }
         if (q) {
-          q.style.setProperty('order', '1', 'important');
+          ставь(q, 'order', '1');
           // Слева оставляем место под лупу, иначе подпись наезжает на неё.
-          q.style.setProperty('padding', '0 14px 0 42px', 'important');
-          q.style.setProperty('background-image', лупа, 'important');
-          q.style.setProperty('background-repeat', 'no-repeat', 'important');
-          q.style.setProperty('background-position', '14px center', 'important');
-          q.style.setProperty('background-size', '18px 18px', 'important');
+          ставь(q, 'padding', '0 14px 0 42px');
+          ставь(q, 'background-image', лупа);
+          ставь(q, 'background-repeat', 'no-repeat');
+          ставь(q, 'background-position', '14px center');
+          ставь(q, 'background-size', '18px 18px');
+          // У обёртки поиска своя рамка — она рисовала вертикальную черту
+          // рядом с полем (замечание Александра 08.08).
           if (q.parentNode && q.parentNode !== ss) {
-            q.parentNode.style.setProperty('order', '1', 'important');
-            q.parentNode.style.setProperty('width', 'auto', 'important');
-            q.parentNode.style.setProperty('border', '0', 'important');
+            ставь(q.parentNode, 'order', '1');
+            ставь(q.parentNode, 'width', 'auto');
+            ставь(q.parentNode, 'border', '0');
+            ставь(q.parentNode, 'background', 'transparent');
+            ставь(q.parentNode, 'box-shadow', 'none');
+            ставь(q.parentNode, 'padding', '0');
           }
         }
       }
