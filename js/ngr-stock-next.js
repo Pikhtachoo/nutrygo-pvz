@@ -480,8 +480,8 @@
       st.textContent =
         '.ngr-account-link.ngr-account--in{background:#fff5ec;border-color:#f0c9a3}' +
         '.ngr-account-link .ngr-ava{display:inline-flex;align-items:center;justify-content:center;' +
-        'width:22px;height:22px;border-radius:50%;background:#ff7a1a;color:#fff;font-size:11px;' +
-        'font-weight:700;margin-right:7px;flex:0 0 22px}' +
+        'width:32px;height:32px;border-radius:50%;background:#ff7a1a;color:#fff;font-size:14px;' +
+        'font-weight:700;margin-right:8px;flex:0 0 32px;background-size:cover;background-position:center}' +
         '.ngr-account-link .ngr-account-name{max-width:132px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}';
       document.head.appendChild(st);
     }
@@ -1198,7 +1198,7 @@
     st.textContent =
       // Кружок аватара: круглая обрезка, синяя обводка у выбранного
       // и небольшая оранжевая отметка — фирменные цвета магазина.
-      '.ngr-avc{width:56px;height:56px;padding:0;border:2px solid #e8ecf1;border-radius:50%;' +
+      '.ngr-avc{width:72px;height:72px;padding:0;border:2px solid #e8ecf1;border-radius:50%;' +
       'background:#fbf9f6;overflow:hidden;cursor:pointer;position:relative;flex:0 0 auto;' +
       'transition:border-color .15s,transform .15s}' +
       '.ngr-avc img{width:100%;height:100%;object-fit:cover;display:block;border-radius:50%}' +
@@ -1207,168 +1207,16 @@
       '.ngr-avc.on{border-color:#4984c4;border-width:3px}' +
       '.ngr-avc.on::after{content:"";position:absolute;right:1px;bottom:1px;width:13px;height:13px;' +
       'border-radius:50%;background:#f0871f;border:2px solid #fff}' +
-      '.ngr-avc__row{display:flex;flex-wrap:wrap;gap:10px;margin:6px 0 10px}' +
+      '.ngr-avc__row{display:flex;flex-wrap:wrap;gap:12px;margin:4px 0 14px}' +
+      '.ngr-avc__cap{font-size:12.5px;font-weight:700;color:#8a919b;text-transform:uppercase;' +
+      'letter-spacing:.4px;margin:10px 0 2px}' +
+      '.ngr-avc__all{margin-top:4px}' +
+      '@media(max-width:560px){.ngr-avc{width:62px;height:62px}.ngr-avc__row{gap:9px}}' +
       '.ngr-avc__more{padding:9px 16px;border:1px solid #e3e8ee;background:#fff;border-radius:10px;' +
       'font-size:14px;font-weight:600;color:#14171c;cursor:pointer;font-family:inherit}' +
       '.ngr-avc__more:hover{background:#f6f8fa}' +
-      '.ngr-avc__more:focus-visible{outline:3px solid #4984c4;outline-offset:2px}' +
-      // Окно выбора
-      '.ngr-avm{position:fixed;inset:0;z-index:100000;background:rgba(20,23,28,.45);' +
-      'display:flex;align-items:center;justify-content:center;padding:18px}' +
-      '.ngr-avm__box{background:#fffdfa;border-radius:18px;width:min(760px,100%);' +
-      'max-height:min(86vh,760px);display:flex;flex-direction:column;overflow:hidden;' +
-      'box-shadow:0 18px 60px rgba(20,23,28,.28)}' +
-      '.ngr-avm__top{display:flex;align-items:center;justify-content:space-between;' +
-      'padding:18px 20px 12px;border-bottom:1px solid #f1ece4}' +
-      '.ngr-avm__ttl{font-size:19px;font-weight:800;color:#14171c}' +
-      '.ngr-avm__x{width:36px;height:36px;border:0;background:#f4f1ec;border-radius:50%;' +
-      'font-size:17px;color:#14171c;cursor:pointer;line-height:1}' +
-      '.ngr-avm__x:hover{background:#ece8e1}' +
-      '.ngr-avm__x:focus-visible{outline:3px solid #4984c4;outline-offset:2px}' +
-      '.ngr-avm__tabs{display:flex;gap:8px;overflow-x:auto;padding:12px 20px;border-bottom:1px solid #f1ece4}' +
-      '.ngr-avm__tab{white-space:nowrap;padding:8px 14px;border:1px solid #e8e3da;background:#fff;' +
-      'border-radius:999px;font-size:13.5px;font-weight:600;color:#3a4048;cursor:pointer;font-family:inherit}' +
-      '.ngr-avm__tab.on{background:#4984c4;border-color:#4984c4;color:#fff}' +
-      '.ngr-avm__tab:focus-visible{outline:3px solid #4984c4;outline-offset:2px}' +
-      '.ngr-avm__grid{display:grid;gap:16px 12px;padding:18px 20px;overflow:auto;' +
-      'grid-template-columns:repeat(7,1fr)}' +
-      '.ngr-avm__cell{display:flex;flex-direction:column;align-items:center;gap:6px}' +
-      '.ngr-avm__cell .ngr-avc{width:68px;height:68px}' +
-      '.ngr-avm__nm{font-size:11.5px;line-height:1.25;color:#5b6470;text-align:center}' +
-      '.ngr-avm__foot{padding:12px 20px 18px;border-top:1px solid #f1ece4;display:flex;' +
-      'align-items:center;justify-content:space-between;gap:12px}' +
-      '.ngr-avm__ok{padding:12px 22px;border:0;border-radius:12px;background:#4984c4;color:#fff;' +
-      'font-size:15px;font-weight:700;cursor:pointer;font-family:inherit}' +
-      '.ngr-avm__ok:hover{background:#3d74ad}' +
-      '.ngr-avm__ok:focus-visible{outline:3px solid #f0871f;outline-offset:2px}' +
-      '.ngr-avm__pick{font-size:13.5px;color:#2f7a4f}' +
-      '@media(max-width:900px){.ngr-avm__grid{grid-template-columns:repeat(5,1fr)}}' +
-      '@media(max-width:560px){.ngr-avm__grid{grid-template-columns:repeat(4,1fr)}' +
-      '.ngr-avm__cell .ngr-avc{width:60px;height:60px}}' +
-      '@media(max-width:380px){.ngr-avm__grid{grid-template-columns:repeat(3,1fr)}}';
+      '.ngr-avc__more:focus-visible{outline:3px solid #4984c4;outline-offset:2px}';
     document.head.appendChild(st);
-  }
-
-  /**
-   * Окно со всеми аватарами. Наборы переключаются вкладками, выбор
-   * подтверждается кнопкой, окно закрывается Escape или щелчком по фону.
-   * Стрелками можно ходить по кружкам, пробелом и Enter — выбирать.
-   */
-  function openAvaPicker(current, onPick) {
-    avaCss();
-    var back = document.activeElement;
-    var picked = current || '';
-    var cat = '';
-    for (var i = 0; i < AVATARS.length; i++) if (AVATARS[i][0] === picked) cat = AVATARS[i][2];
-    if (!cat) cat = AVA_CATS[0];
-
-    var wrap = document.createElement('div');
-    wrap.className = 'ngr-avm';
-    wrap.setAttribute('role', 'dialog');
-    wrap.setAttribute('aria-modal', 'true');
-    wrap.setAttribute('aria-label', 'Выбор аватара');
-    wrap.innerHTML =
-      '<div class="ngr-avm__box">' +
-      '<div class="ngr-avm__top"><div class="ngr-avm__ttl">Выберите аватар</div>' +
-      '<button type="button" class="ngr-avm__x" aria-label="Закрыть">✕</button></div>' +
-      '<div class="ngr-avm__tabs" role="tablist"></div>' +
-      '<div class="ngr-avm__grid" role="radiogroup" aria-label="Аватары"></div>' +
-      '<div class="ngr-avm__foot"><span class="ngr-avm__pick"></span>' +
-      '<button type="button" class="ngr-avm__ok">Готово</button></div></div>';
-    document.body.appendChild(wrap);
-
-    var tabs = wrap.querySelector('.ngr-avm__tabs');
-    var grid = wrap.querySelector('.ngr-avm__grid');
-    var note = wrap.querySelector('.ngr-avm__pick');
-
-    function say() {
-      note.textContent = picked ? '✓ ' + avaTitle(picked) : 'Аватар не выбран';
-    }
-
-    function drawGrid() {
-      grid.innerHTML = '';
-      AVATARS.filter(function (a) { return a[2] === cat; }).forEach(function (a) {
-        var cell = document.createElement('div');
-        cell.className = 'ngr-avm__cell';
-        var b = document.createElement('button');
-        b.type = 'button';
-        b.className = 'ngr-avc' + (a[0] === picked ? ' on' : '');
-        b.setAttribute('role', 'radio');
-        b.setAttribute('aria-checked', a[0] === picked ? 'true' : 'false');
-        b.setAttribute('aria-label', a[3]);
-        b.title = a[3];
-        b.setAttribute('data-id', a[0]);
-        var im = document.createElement('img');
-        im.loading = 'lazy';
-        im.decoding = 'async';
-        im.alt = '';
-        im.src = AVA_URL + a[1];
-        b.appendChild(im);
-        b.addEventListener('click', function () {
-          picked = a[0];
-          grid.querySelectorAll('.ngr-avc').forEach(function (x) {
-            var on = x.getAttribute('data-id') === picked;
-            x.classList.toggle('on', on);
-            x.setAttribute('aria-checked', on ? 'true' : 'false');
-          });
-          say();
-        });
-        var nm = document.createElement('span');
-        nm.className = 'ngr-avm__nm';
-        nm.textContent = a[3];
-        cell.appendChild(b);
-        cell.appendChild(nm);
-        grid.appendChild(cell);
-      });
-    }
-
-    AVA_CATS.forEach(function (c) {
-      var b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'ngr-avm__tab' + (c === cat ? ' on' : '');
-      b.setAttribute('role', 'tab');
-      b.textContent = c;
-      b.addEventListener('click', function () {
-        cat = c;
-        tabs.querySelectorAll('.ngr-avm__tab').forEach(function (x) {
-          x.classList.toggle('on', x.textContent === c);
-        });
-        drawGrid();
-      });
-      tabs.appendChild(b);
-    });
-    drawGrid();
-    say();
-
-    function close() {
-      document.removeEventListener('keydown', onKey, true);
-      if (wrap.parentNode) wrap.parentNode.removeChild(wrap);
-      if (back && back.focus) back.focus();
-    }
-    function onKey(e) {
-      if (e.key === 'Escape') { e.preventDefault(); close(); return; }
-      var cells = [].slice.call(grid.querySelectorAll('.ngr-avc'));
-      var at = cells.indexOf(document.activeElement);
-      if (at < 0) return;
-      var cols = Math.max(1, Math.round(grid.clientWidth / (cells[0].getBoundingClientRect().width + 12)));
-      var to = -1;
-      if (e.key === 'ArrowRight') to = at + 1;
-      else if (e.key === 'ArrowLeft') to = at - 1;
-      else if (e.key === 'ArrowDown') to = at + cols;
-      else if (e.key === 'ArrowUp') to = at - cols;
-      else if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); cells[at].click(); return; }
-      if (to >= 0 && to < cells.length) { e.preventDefault(); cells[to].focus(); }
-    }
-    document.addEventListener('keydown', onKey, true);
-
-    wrap.querySelector('.ngr-avm__x').addEventListener('click', close);
-    wrap.addEventListener('click', function (e) { if (e.target === wrap) close(); });
-    wrap.querySelector('.ngr-avm__ok').addEventListener('click', function () {
-      if (picked && onPick) onPick(picked);
-      close();
-    });
-    var first = grid.querySelector('.ngr-avc.on') || grid.querySelector('.ngr-avc');
-    if (first) first.focus();
   }
 
   /** Личные настройки покупателя — псевдоним и значок. Хранятся у него же. */
@@ -1573,8 +1421,7 @@
       (me.photo ? '<button type="button" class="ngr-cab__copy ngr-cab__drop">Убрать</button>' : '') +
       '</div></div>' +
       '<div class="ngr-cab__field"><u>Или выберите аватар</u>' +
-      '<div class="ngr-avc__row" role="radiogroup" aria-label="Аватар"></div>' +
-      '<button type="button" class="ngr-ava__more">Выбрать другой</button></div>' +
+      '<div class="ngr-avc__all" role="radiogroup" aria-label="Аватар"></div></div>' +
       '<button type="button" class="ngr-cab__save">Сохранить</button>' +
       '<span class="ngr-cab__saved"></span>' +
       '</div>' +
@@ -1643,23 +1490,23 @@
       drawRow();
     }
 
-    var row = host.querySelector('.ngr-avc__row');
+    // Все шестьдесят видны сразу, набор за набором: отдельная кнопка
+    // и окно только мешали (решение Александра 08.08).
+    var row = host.querySelector('.ngr-avc__all');
     function drawRow() {
       row.innerHTML = '';
-      // Показываем десять: выбранный всегда среди них, остальные — начало набора.
-      var list = AVATARS.slice(0, 10);
-      if (chosen && !list.some(function (a) { return a[0] === chosen; })) {
-        for (var i = 0; i < AVATARS.length; i++) {
-          if (AVATARS[i][0] === chosen) { list = [AVATARS[i]].concat(list.slice(0, 9)); break; }
-        }
-      }
-      list.forEach(function (a) { row.appendChild(avaCard(a)); });
+      AVA_CATS.forEach(function (c) {
+        var head = document.createElement('div');
+        head.className = 'ngr-avc__cap';
+        head.textContent = c;
+        row.appendChild(head);
+        var line = document.createElement('div');
+        line.className = 'ngr-avc__row';
+        AVATARS.forEach(function (a) { if (a[2] === c) line.appendChild(avaCard(a)); });
+        row.appendChild(line);
+      });
     }
     drawRow();
-
-    host.querySelector('.ngr-avc__more').addEventListener('click', function () {
-      openAvaPicker(chosen, pickAva);
-    });
 
     // Загрузка фотографии: уменьшаем до 160 точек прямо в браузере и храним
     // там же. Так фотография не уходит на сторону и не весит лишнего.
@@ -2103,6 +1950,10 @@
     var st = document.createElement('style');
     st.id = 'ngr-cart-css';
     st.textContent =
+      // Серая выноска с суммой выезжает при наведении на корзину
+      // и портит вид (замечание Александра 08.08). Значок и счётчик
+      // остаются, выноску убираем.
+      '.t706__carticon-text{display:none!important}' +
       '@supports (height:100dvh){' +
       '.t706__cartwin{height:100dvh!important;max-height:100dvh!important}}' +
       '.t706__cartwin-content{-webkit-overflow-scrolling:touch}' +
