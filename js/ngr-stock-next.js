@@ -2156,7 +2156,6 @@
           if (s && (c === s || c.contains(s))) c.style.setProperty('order', '0', 'important');
           else if (q && (c === q || c.contains(q))) c.style.setProperty('order', '1', 'important');
         });
-      }
         if (s) {
           ставь(s, 'order', '0');
           ставь(s, 'padding', '0 36px 0 14px');
