@@ -1470,7 +1470,11 @@
       (p.name || 'Псевдоним') + '" value="' + (me.nick || '') + '"></div>' +
       '<div class="ngr-cab__field"><u>Фотография</u>' +
       '<div class="ngr-cab__photo">' +
-      '<div class="ngr-cab__prev"' + (me.photo ? ' style="background-image:url(' + me.photo + ')"' : '') + '></div>' +
+      // В кружке показываем то, что покупатель видит на сайте: свою
+      // фотографию, а если её нет — выбранный аватар.
+      '<div class="ngr-cab__prev"' +
+      (me.photo ? ' style="background-image:url(' + me.photo + ')"'
+        : (me.avatar ? ' style="background-image:url(' + avaFile(me.avatar) + ')"' : '')) + '></div>' +
       '<label class="ngr-cab__copy">Загрузить фото' +
       '<input type="file" accept="image/*" id="ngrPhoto" style="display:none"></label>' +
       (me.photo ? '<button type="button" class="ngr-cab__copy ngr-cab__drop">Убрать</button>' : '') +
