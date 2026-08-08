@@ -1623,6 +1623,23 @@
         x.classList.toggle('on', on);
         x.setAttribute('aria-checked', on ? 'true' : 'false');
       });
+      // Аватар применяется сразу, как и загруженная фотография. Раньше выбор
+      // ждал нажатия «Сохранить», и по нажатию ничего видимого не менялось
+      // (замечание Александра 09.08).
+      var cur = profileSettings();
+      cur.avatar = id;
+      cur.emoji = '';
+      var ok = true;
+      try { localStorage.setItem('ngr_me', JSON.stringify(cur)); } catch (e) { ok = false; }
+      var note = host.querySelector('.ngr-cab__saved');
+      if (note) note.textContent = ok ? '✓ Аватар сохранён' : 'Браузер не дал сохранить выбор';
+      var prev = host.querySelector('.ngr-cab__prev');
+      if (prev && !cur.photo) {
+        prev.style.backgroundImage = 'url(' + avaFile(id) + ')';
+        prev.style.backgroundSize = 'cover';
+      }
+      paintMe();
+      fixAccountButton();
       drawRow();
     }
 
@@ -1683,12 +1700,13 @@
     });
 
     host.querySelector('.ngr-cab__save').addEventListener('click', function () {
-      saveProfileSettings({
-        nick: (host.querySelector('#ngrNick').value || '').trim(),
-        avatar: chosen,
-        emoji: ''
-      });
-      host.querySelector('.ngr-cab__saved').textContent = '✓ Сохранено';
+      var nick = (host.querySelector('#ngrNick').value || '').trim();
+      saveProfileSettings({ nick: nick, avatar: chosen, emoji: '' });
+      // Запись в память браузера может не пройти молча — перечитываем
+      // сохранённое и говорим покупателю правду.
+      var now = profileSettings();
+      host.querySelector('.ngr-cab__saved').textContent =
+        (now.nick === nick && now.avatar === chosen) ? '✓ Сохранено' : 'Браузер не дал сохранить';
       paintMe();
       fixAccountButton();
     });
