@@ -2106,6 +2106,15 @@
       var opts = document.querySelector('.t-catalog__filter__options');
       if (opts && opts.style.display !== 'none') opts.style.setProperty('display', 'none', 'important');
 
+      // На телефоне Tilda рисует свои кнопки «Фильтры» и «Поиск» — они
+      // повторяют нашу кнопку фильтров и видимое поле поиска. Оставляем
+      // только её сортировку (замечание Александра 08.08).
+      ['.js-catalog-filter-mob-btn', '.js-catalog-search-mob-btn'].forEach(function (sel) {
+        document.querySelectorAll(sel).forEach(function (b) {
+          if (b.style.display !== 'none') b.style.setProperty('display', 'none', 'important');
+        });
+      });
+
       var ss = document.querySelector('.t-catalog__filter__search-and-sort');
       if (ss) {
         ss.style.setProperty('display', 'flex', 'important');
@@ -2134,8 +2143,9 @@
           e.style.setProperty('color', '#14171c', 'important');
           e.style.setProperty('box-sizing', 'border-box', 'important');
         }
+        var узко = innerWidth <= 1000;
         поле(s, '210px');
-        поле(q, '280px');
+        поле(q, узко ? '100%' : '280px');
         // Порядок задаём на прямых детях строки: сами поля лежат внутри
         // обёрток Tilda, и свойство на них ничего не решает.
         [].slice.call(ss.children).forEach(function (c) {
