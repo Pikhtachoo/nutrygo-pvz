@@ -2185,6 +2185,15 @@
       }
     }
 
+    // Ползунки цены закрашены белым и прячут дорожку. Правило со стилем
+    // Tilda перебивает своим, поэтому снимаем фон прямо на элементах.
+    document.querySelectorAll('.t-catalog__filter__range').forEach(function (r) {
+      if (r.style.backgroundColor !== 'transparent') {
+        r.style.setProperty('background-color', 'transparent', 'important');
+        r.style.setProperty('background-image', 'none', 'important');
+      }
+    });
+
     // Ленту разделов Tilda перебивает своим стилем позже нашего, поэтому
     // гасим её на самом элементе — иначе правило не действует.
     document.querySelectorAll('.t-catalog__parts-switch-wrapper').forEach(function (e) {
