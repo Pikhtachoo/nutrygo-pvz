@@ -2115,11 +2115,46 @@
         ss.style.setProperty('width', 'auto', 'important');
         // Ровно над сеткой товаров: колонка фильтров 262 плюс отступ 24.
         ss.style.setProperty('margin-left', innerWidth > 1000 ? '286px' : '0', 'important');
-        // Сортировка слева, поиск рядом — как в каталоге Ozon.
+        // Сортировка слева, поиск рядом — как в каталоге Ozon. Оформление
+        // задаём прямо на элементах: свои правила Tilda пишет с номером
+        // блока, и обычным стилем их не перебить (замечание Александра 08.08
+        // про слово «Поиск», заезжающее на лупу).
         var s = ss.querySelector('select'), q = ss.querySelector('input');
-        if (s) s.style.setProperty('order', '0', 'important');
-        if (q && q.parentNode) q.parentNode.style.setProperty('order', '1', 'important');
-        if (q) q.style.setProperty('order', '1', 'important');
+        var лупа = 'url("data:image/svg+xml;utf8,' +
+          "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' " +
+          "stroke='%238a919b' stroke-width='2' stroke-linecap='round'>" +
+          "<circle cx='11' cy='11' r='7'/><path d='M20 20l-3.6-3.6'/></svg>\")";
+        function поле(e, w) {
+          if (!e) return;
+          e.style.setProperty('height', '44px', 'important');
+          e.style.setProperty('width', w, 'important');
+          e.style.setProperty('border', '1px solid #e3e8ee', 'important');
+          e.style.setProperty('border-radius', '12px', 'important');
+          e.style.setProperty('background-color', '#fff', 'important');
+          e.style.setProperty('font-size', '14.5px', 'important');
+          e.style.setProperty('color', '#14171c', 'important');
+          e.style.setProperty('box-sizing', 'border-box', 'important');
+        }
+        поле(s, '210px');
+        поле(q, '280px');
+        if (s) {
+          s.style.setProperty('order', '0', 'important');
+          s.style.setProperty('padding', '0 36px 0 14px', 'important');
+        }
+        if (q) {
+          q.style.setProperty('order', '1', 'important');
+          // Слева оставляем место под лупу, иначе подпись наезжает на неё.
+          q.style.setProperty('padding', '0 14px 0 42px', 'important');
+          q.style.setProperty('background-image', лупа, 'important');
+          q.style.setProperty('background-repeat', 'no-repeat', 'important');
+          q.style.setProperty('background-position', '14px center', 'important');
+          q.style.setProperty('background-size', '18px 18px', 'important');
+          if (q.parentNode && q.parentNode !== ss) {
+            q.parentNode.style.setProperty('order', '1', 'important');
+            q.parentNode.style.setProperty('width', 'auto', 'important');
+            q.parentNode.style.setProperty('border', '0', 'important');
+          }
+        }
       }
     }
 
