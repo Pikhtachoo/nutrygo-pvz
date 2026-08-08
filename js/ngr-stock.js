@@ -2056,6 +2056,11 @@
    * на самом элементе — разметка Tilda пересобирается, и класс не удержать.
    */
   function trimFilterBar() {
+    // Ленту разделов Tilda перебивает своим стилем позже нашего, поэтому
+    // гасим её на самом элементе — иначе правило не действует.
+    document.querySelectorAll('.t-catalog__parts-switch-wrapper').forEach(function (e) {
+      if (e.style.display !== 'none') e.style.setProperty('display', 'none', 'important');
+    });
     document.querySelectorAll('.t-catalog__filter__item').forEach(function (it) {
       var name = ((it.querySelector('.t-catalog__filter__item-title') || {}).textContent || '').trim();
       if (!/^(наличие|сортировка)$/i.test(name)) return;
