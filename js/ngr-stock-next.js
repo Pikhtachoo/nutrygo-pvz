@@ -2212,6 +2212,89 @@
     });
   }
 
+  /* ---------- Поиск документов ---------- */
+
+  /**
+   * На странице документов было поле ввода без всякой начинки. Подключаем
+   * его к каталогу: ищем по названию, бренду и артикулу и показываем номер
+   * свидетельства о госрегистрации (замечание Александра 08.08).
+   */
+  var docsTimer = null;
+
+  function docsSearch() {
+    if (!/\/documents/.test(location.pathname)) return;
+    var inp = null;
+    document.querySelectorAll('input').forEach(function (i) {
+      if (/название|артикул|sku/i.test(i.placeholder || '')) inp = i;
+    });
+    if (!inp || inp.getAttribute('data-ngr-docs')) return;
+    inp.setAttribute('data-ngr-docs', '1');
+
+    if (!document.getElementById('ngr-docs-css')) {
+      var st = document.createElement('style');
+      st.id = 'ngr-docs-css';
+      st.textContent =
+        '.ngr-docs{margin:14px 0 0;font-family:inherit}' +
+        '.ngr-docs__row{display:flex;gap:12px;align-items:center;padding:12px 14px;' +
+        'border:1px solid #e8ecf1;border-radius:12px;background:#fff;margin-bottom:8px;flex-wrap:wrap}' +
+        '.ngr-docs__t{flex:1 1 260px;min-width:0;font-size:14px;color:#14171c;line-height:1.35}' +
+        '.ngr-docs__a{font-size:12.5px;color:#8a919b;white-space:nowrap}' +
+        '.ngr-docs__s{font-size:12.5px;font-weight:700;color:#2f7a4f;white-space:nowrap}' +
+        '.ngr-docs__s_no{color:#8a919b;font-weight:600}' +
+        '.ngr-docs__go{font-size:13px;color:#2f6ba8;text-decoration:none;white-space:nowrap}' +
+        '.ngr-docs__note{font-size:13.5px;color:#8a919b;padding:10px 2px}';
+      document.head.appendChild(st);
+    }
+
+    var box = document.createElement('div');
+    box.className = 'ngr-docs';
+    var after = inp.closest('div') || inp.parentNode;
+    after.parentNode.insertBefore(box, after.nextSibling);
+
+    function draw(text) { box.innerHTML = '<div class="ngr-docs__note">' + text + '</div>'; }
+
+    function run() {
+      var q = (inp.value || '').trim();
+      if (q.length < 2) { box.innerHTML = ''; return; }
+      draw('Ищем…');
+      fetch(API + '/catalog/search?q=' + encodeURIComponent(q) + '&limit=30')
+        .then(function (r) { return r.json(); })
+        .then(function (j) {
+          var list = (j && j.items) || [];
+          if (!list.length) { draw('Ничего не нашли. Проверьте написание или отправьте запрос ниже.'); return; }
+          box.innerHTML = '';
+          list.forEach(function (it) {
+            var row = document.createElement('div');
+            row.className = 'ngr-docs__row';
+            var t = document.createElement('div');
+            t.className = 'ngr-docs__t';
+            t.textContent = it.title;
+            var a = document.createElement('span');
+            a.className = 'ngr-docs__a';
+            a.textContent = 'Артикул ' + it.art;
+            var s2 = document.createElement('span');
+            s2.className = 'ngr-docs__s' + (it.sgr ? '' : ' ngr-docs__s_no');
+            s2.textContent = it.sgr ? 'СГР ' + it.sgr : 'СГР уточняется';
+            var go = document.createElement('a');
+            go.className = 'ngr-docs__go';
+            go.href = '/?ngprod=' + encodeURIComponent(it.art);
+            go.textContent = 'Открыть товар';
+            row.appendChild(t); row.appendChild(a); row.appendChild(s2); row.appendChild(go);
+            box.appendChild(row);
+          });
+        })
+        .catch(function () { draw('Не удалось выполнить поиск, попробуйте ещё раз.'); });
+    }
+
+    inp.addEventListener('input', function () {
+      clearTimeout(docsTimer);
+      docsTimer = setTimeout(run, 350);
+    });
+    inp.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); clearTimeout(docsTimer); run(); }
+    });
+  }
+
   function cartCss() {
     if (document.getElementById('ngr-cart-css')) return;
     var st = document.createElement('style');
@@ -3254,7 +3337,7 @@
   function apply() {
     fixPopup(); fixCards(); fixCart(); fixDupDelivery(); fixUnits(); fixBrands();
     initSearchGuard(); fixSearch(); fixAccountButton(); fixAuthGate();
-    fixRatings(); fixPopupReviews(); fixDescription(); fixDeliveryOrder(); fixCardPhotos(); fixPrices(); fixFilterValues(); fixRatingFilter(); applyRatingFilter(false); fixShelves(); fixSgr(); fixFav(); cartCss(); filterBarCss(); trimFilterBar(); dropCartTip(); pullProfileOnce(); refreshBrands(); buildSideFilters(); syncSideFilters(); fixUrlSort();
+    fixRatings(); fixPopupReviews(); fixDescription(); fixDeliveryOrder(); fixCardPhotos(); fixPrices(); fixFilterValues(); fixRatingFilter(); applyRatingFilter(false); fixShelves(); fixSgr(); fixFav(); cartCss(); docsSearch(); filterBarCss(); trimFilterBar(); dropCartTip(); pullProfileOnce(); refreshBrands(); buildSideFilters(); syncSideFilters(); fixUrlSort();
   }
 
   apply();
