@@ -2107,14 +2107,13 @@
       if (opts && opts.style.display !== 'none') opts.style.setProperty('display', 'none', 'important');
 
       var ss = document.querySelector('.t-catalog__filter__search-and-sort');
-      if (ss && !ss.getAttribute('data-ngr-bar')) {
-        ss.setAttribute('data-ngr-bar', '1');
+      if (ss) {
         ss.style.setProperty('display', 'flex', 'important');
         ss.style.setProperty('gap', '10px', 'important');
         ss.style.setProperty('align-items', 'center', 'important');
         ss.style.setProperty('width', 'auto', 'important');
         // Ровно над сеткой товаров: колонка фильтров 262 плюс отступ 24.
-        ss.style.setProperty('margin-left', innerWidth > 1000 ? '286px' : '0', 'important');
+        ss.style.setProperty('margin-left', innerWidth > 1000 ? '275px' : '0', 'important');
         // Сортировка слева, поиск рядом — как в каталоге Ozon. Оформление
         // задаём прямо на элементах: свои правила Tilda пишет с номером
         // блока, и обычным стилем их не перебить (замечание Александра 08.08
