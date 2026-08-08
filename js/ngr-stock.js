@@ -2087,7 +2087,30 @@
    */
   function trimFilterBar() {
     // Метка страницы каталога: по ней действуют стили панели над сеткой.
-    document.documentElement.classList.toggle('ngr-catpage', onCatalogPage());
+    var cat = onCatalogPage();
+    document.documentElement.classList.toggle('ngr-catpage', cat);
+
+    // Голубую коробку вокруг поиска Tilda задаёт правилом с номером блока,
+    // и обычным стилем его не перебить. Ставим прямо на элемент.
+    if (cat) {
+      var bar = document.querySelector('.t-catalog__filter');
+      if (bar && bar.style.background !== 'transparent') {
+        bar.style.setProperty('background', 'transparent', 'important');
+        bar.style.setProperty('padding', '0', 'important');
+        bar.style.setProperty('border-radius', '0', 'important');
+        bar.style.setProperty('margin', '0 0 14px', 'important');
+      }
+      var ss = document.querySelector('.t-catalog__filter__search-and-sort');
+      if (ss && !ss.getAttribute('data-ngr-bar')) {
+        ss.setAttribute('data-ngr-bar', '1');
+        ss.style.setProperty('display', 'flex', 'important');
+        ss.style.setProperty('gap', '10px', 'important');
+        ss.style.setProperty('align-items', 'center', 'important');
+        ss.style.setProperty('width', 'auto', 'important');
+        // Ровно над сеткой товаров: колонка фильтров 262 плюс отступ 24.
+        ss.style.setProperty('margin-left', innerWidth > 1000 ? '286px' : '0', 'important');
+      }
+    }
 
     // Ленту разделов Tilda перебивает своим стилем позже нашего, поэтому
     // гасим её на самом элементе — иначе правило не действует.
