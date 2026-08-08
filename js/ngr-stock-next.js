@@ -2018,6 +2018,51 @@
     });
   }
 
+  /**
+   * Строка фильтров Tilda: то, что осталось на главной.
+   *
+   * Замечания Александра 08.08: верхняя лента разделов дублирует фильтр,
+   * «Наличие» бессмысленно — мы и так показываем только то, что есть,
+   * «Сортировка» повторяет список справа от поиска, а у ползунка цены
+   * не видно дорожки. Правим стилями, не трогая саму разметку Tilda,
+   * чтобы не задеть подбор товаров.
+   */
+  function filterBarCss() {
+    if (document.getElementById('ngr-fbar-css')) return;
+    var st = document.createElement('style');
+    st.id = 'ngr-fbar-css';
+    st.textContent =
+      // Лента разделов с полосой прокрутки — то же самое есть в фильтре
+      '.t-catalog__parts-switch-wrapper,.t-catalog__parts-above-wrapper{display:none!important}' +
+      // Дорожка ползунка цены и залитая часть
+      '.t-catalog__filter__range_bg{height:4px!important;border-radius:3px!important;' +
+      'background:#e3e8ee!important}' +
+      '.t-catalog__filter__price-outer{height:4px!important;border-radius:3px!important;' +
+      'background:#4984c4!important}' +
+      '.t-catalog__filter__item-price-slider{padding:10px 4px 6px!important}' +
+      '.t-catalog__filter__input{border:1px solid #e3e8ee!important;border-radius:10px!important;' +
+      'height:42px!important}' +
+      // Сама строка: ровные отступы и перенос вместо обрезки
+      '.t-catalog__filter{display:flex!important;flex-wrap:wrap!important;gap:10px!important;' +
+      'align-items:flex-start!important}' +
+      '.t-catalog__filter__item{margin:0!important}' +
+      '.t-catalog__filter__item-title{border-radius:12px!important}';
+    document.head.appendChild(st);
+  }
+
+  /**
+   * «Наличие» и «Сортировка» из строки фильтров убираем всегда: первое
+   * ничего не меняет, второе повторяет список выбора справа. Прячем стилем
+   * на самом элементе — разметка Tilda пересобирается, и класс не удержать.
+   */
+  function trimFilterBar() {
+    document.querySelectorAll('.t-catalog__filter__item').forEach(function (it) {
+      var name = ((it.querySelector('.t-catalog__filter__item-title') || {}).textContent || '').trim();
+      if (!/^(наличие|сортировка)$/i.test(name)) return;
+      if (it.style.display !== 'none') it.style.setProperty('display', 'none', 'important');
+    });
+  }
+
   function cartCss() {
     if (document.getElementById('ngr-cart-css')) return;
     var st = document.createElement('style');
@@ -3060,7 +3105,7 @@
   function apply() {
     fixPopup(); fixCards(); fixCart(); fixDupDelivery(); fixUnits(); fixBrands();
     initSearchGuard(); fixSearch(); fixAccountButton(); fixAuthGate();
-    fixRatings(); fixPopupReviews(); fixDescription(); fixDeliveryOrder(); fixCardPhotos(); fixPrices(); fixFilterValues(); fixRatingFilter(); applyRatingFilter(false); fixShelves(); fixSgr(); fixFav(); cartCss(); dropCartTip(); pullProfileOnce(); refreshBrands(); buildSideFilters(); syncSideFilters(); fixUrlSort();
+    fixRatings(); fixPopupReviews(); fixDescription(); fixDeliveryOrder(); fixCardPhotos(); fixPrices(); fixFilterValues(); fixRatingFilter(); applyRatingFilter(false); fixShelves(); fixSgr(); fixFav(); cartCss(); filterBarCss(); trimFilterBar(); dropCartTip(); pullProfileOnce(); refreshBrands(); buildSideFilters(); syncSideFilters(); fixUrlSort();
   }
 
   apply();
