@@ -2053,6 +2053,29 @@
       '.t-catalog__filter__search-and-sort{flex:0 0 auto!important;margin-left:auto!important}' +
       '@media(max-width:900px){.t-catalog__filter__search-and-sort{margin-left:0!important;' +
       'width:100%!important}}' +
+      /*
+       * В каталоге фильтры живут в своей колонке, и от строки Tilda остаются
+       * только поиск и сортировка. Голубая коробка вокруг них выглядела
+       * пустой (замечание Александра 08.08). Убираем коробку и ставим
+       * их над сеткой товаров, как на Ozon: сортировка слева, поиск рядом.
+       */
+      '.ngr-catpage .t-catalog__filter{background:transparent!important;padding:0!important;' +
+      'border-radius:0!important;margin:0 0 14px!important}' +
+      '.ngr-catpage .t-catalog__filter__search-and-sort{margin-left:286px!important;' +
+      'display:flex!important;gap:10px!important;align-items:center!important;width:auto!important}' +
+      '.ngr-catpage .t-catalog__sort-select{order:0;height:44px!important;min-width:210px;' +
+      'border:1px solid #e3e8ee!important;border-radius:12px!important;background:#fff!important;' +
+      'font-size:14.5px!important;color:#14171c!important;padding:0 38px 0 14px!important}' +
+      '.ngr-catpage .js-catalog-filter-search{order:1;height:44px!important;width:260px!important;' +
+      'border:1px solid #e3e8ee!important;border-radius:12px!important;background:#fff!important;' +
+      'font-size:14.5px!important;padding:0 14px 0 38px!important;' +
+      'background-image:url("data:image/svg+xml;utf8,' +
+      "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238a919b' stroke-width='2'><circle cx='11' cy='11' r='7'/><path d='M20 20l-3.5-3.5'/></svg>" +
+      '")!important;background-repeat:no-repeat!important;background-position:12px center!important;' +
+      'background-size:17px 17px!important}' +
+      '@media(max-width:1000px){.ngr-catpage .t-catalog__filter__search-and-sort{margin-left:0!important;' +
+      'flex-wrap:wrap!important}' +
+      '.ngr-catpage .js-catalog-filter-search{width:100%!important}}' +
       '.t-catalog__filter__item-title{border-radius:12px!important}';
     document.head.appendChild(st);
   }
@@ -2063,6 +2086,9 @@
    * на самом элементе — разметка Tilda пересобирается, и класс не удержать.
    */
   function trimFilterBar() {
+    // Метка страницы каталога: по ней действуют стили панели над сеткой.
+    document.documentElement.classList.toggle('ngr-catpage', onCatalogPage());
+
     // Ленту разделов Tilda перебивает своим стилем позже нашего, поэтому
     // гасим её на самом элементе — иначе правило не действует.
     document.querySelectorAll('.t-catalog__parts-switch-wrapper').forEach(function (e) {
