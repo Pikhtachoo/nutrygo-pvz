@@ -2046,6 +2046,13 @@
       '.t-catalog__filter{display:flex!important;flex-wrap:wrap!important;gap:10px!important;' +
       'align-items:flex-start!important}' +
       '.t-catalog__filter__item{margin:0!important}' +
+      // Поиск и сортировка уезжали на второй этаж: блок с фильтрами
+      // занимал всю ширину. Ставим их в один ряд, справа.
+      '.t-catalog__filter__controls-wrapper{align-items:center!important;gap:12px!important}' +
+      '.t-catalog__filter__options{flex:1 1 auto!important;width:auto!important}' +
+      '.t-catalog__filter__search-and-sort{flex:0 0 auto!important;margin-left:auto!important}' +
+      '@media(max-width:900px){.t-catalog__filter__search-and-sort{margin-left:0!important;' +
+      'width:100%!important}}' +
       '.t-catalog__filter__item-title{border-radius:12px!important}';
     document.head.appendChild(st);
   }
@@ -2060,6 +2067,12 @@
     // гасим её на самом элементе — иначе правило не действует.
     document.querySelectorAll('.t-catalog__parts-switch-wrapper').forEach(function (e) {
       if (e.style.display !== 'none') e.style.setProperty('display', 'none', 'important');
+    });
+    // Подпись под заголовком витрины не нужна (решение Александра 08.08).
+    document.querySelectorAll('p').forEach(function (e) {
+      if (e.children.length || e.style.display === 'none') return;
+      if (!/Цены и наличие обновляются из товарного каталога/.test(e.textContent || '')) return;
+      e.style.setProperty('display', 'none', 'important');
     });
     document.querySelectorAll('.t-catalog__filter__item').forEach(function (it) {
       var name = ((it.querySelector('.t-catalog__filter__item-title') || {}).textContent || '').trim();
