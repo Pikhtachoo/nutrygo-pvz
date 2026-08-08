@@ -564,8 +564,14 @@
       // Звёзды
       '.ngr-star{position:relative;display:inline-block;color:#dde1e6;font-size:15px;line-height:1;letter-spacing:1px}' +
       '.ngr-star__on{position:absolute;left:0;top:0;overflow:hidden;color:#ffab2e;white-space:nowrap}' +
-      '.ngr-rate{display:flex;align-items:center;gap:6px;margin:6px 0 2px;font-size:13px;color:#6b7280}' +
+      '.ngr-rate{display:flex;flex-wrap:wrap;align-items:center;gap:3px 6px;margin:6px 0 2px;' +
+      'font-size:13px;line-height:1.2;color:#6b7280}' +
       '.ngr-rate b{color:#111;font-weight:700}' +
+      // Число и слово «отзыва» держим вместе: на узкой карточке телефона
+      // они разъезжались по разным строкам (замечание Александра 09.08).
+      '.ngr-rate span{white-space:nowrap}' +
+      '@media(max-width:560px){.ngr-rate{font-size:12px;gap:2px 5px}' +
+      '.ngr-rate .ngr-star{font-size:13px}}' +
       // Блок отзывов. Цвета и размеры задаём жёстко: вокруг стоит типографика
       // Tilda, из-за неё текст отзыва красился в оранжевый, как ссылка.
       '.ngr-revbox{margin:26px 0;padding:22px;border:1px solid #e8ecf1;border-radius:16px;' +
@@ -2118,6 +2124,7 @@
   var LOGOS = 'https://pikhtachoo.github.io/nutrygo-pvz/img/';
   var BRAND_LOGO = {
     'AllNutrition': 'brand-allnutrition.png',
+    'Doctors Best': 'brand-doctors-best.png',
     'California Gold Nutrition': 'brand-california-gold-nutrition.png',
     'Life Extension': 'brand-life-extension.png',
     'NOW': 'brand-now.png',
