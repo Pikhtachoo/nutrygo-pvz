@@ -2100,6 +2100,12 @@
         bar.style.setProperty('border-radius', '0', 'important');
         bar.style.setProperty('margin', '0 0 14px', 'important');
       }
+      // Блок фильтров Tilda в каталоге пуст — все его пункты живут в нашей
+      // колонке. Пустой он всё равно занимал всю ширину и отжимал поиск
+      // с сортировкой к правому краю.
+      var opts = document.querySelector('.t-catalog__filter__options');
+      if (opts && opts.style.display !== 'none') opts.style.setProperty('display', 'none', 'important');
+
       var ss = document.querySelector('.t-catalog__filter__search-and-sort');
       if (ss && !ss.getAttribute('data-ngr-bar')) {
         ss.setAttribute('data-ngr-bar', '1');
@@ -2109,6 +2115,11 @@
         ss.style.setProperty('width', 'auto', 'important');
         // Ровно над сеткой товаров: колонка фильтров 262 плюс отступ 24.
         ss.style.setProperty('margin-left', innerWidth > 1000 ? '286px' : '0', 'important');
+        // Сортировка слева, поиск рядом — как в каталоге Ozon.
+        var s = ss.querySelector('select'), q = ss.querySelector('input');
+        if (s) s.style.setProperty('order', '0', 'important');
+        if (q && q.parentNode) q.parentNode.style.setProperty('order', '1', 'important');
+        if (q) q.style.setProperty('order', '1', 'important');
       }
     }
 
