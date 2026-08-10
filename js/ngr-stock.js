@@ -2372,15 +2372,18 @@
       // Локальные результаты поиска не участвуют в разметке сетки Tilda,
       // поэтому её перерисовка не двигает поле и не забирает фокус.
       '.ngr-smart-search{position:relative!important;min-width:0!important}' +
-      '.ngr-smart-search__panel{position:absolute;z-index:10020;left:0;top:calc(100% + 6px);' +
-      'width:min(520px,calc(100vw - 24px));max-height:480px;max-height:min(55dvh,480px);overflow:auto;' +
+      '.ngr-smart-search__panel{position:absolute;z-index:10020;left:0;right:auto;top:calc(100% + 6px);' +
+      'width:100%;max-width:100%;min-width:0;max-height:480px;max-height:min(55dvh,480px);overflow-y:auto;overflow-x:hidden;' +
       'box-sizing:border-box;background:#fff;border:1px solid #dfe5ec;border-radius:14px;' +
       'box-shadow:0 16px 40px rgba(20,23,28,.16);padding:6px}' +
       '.ngr-smart-search__panel[hidden]{display:none!important}' +
       '.ngr-smart-search__item{display:flex;width:100%;flex-direction:column;align-items:flex-start;' +
       'gap:3px;border:0;border-radius:10px;background:#fff;padding:10px 11px;text-align:left;' +
-      'font-family:inherit;color:#14171c;cursor:pointer}' +
+      'font-family:inherit;color:#14171c;cursor:pointer;min-width:0;max-width:100%;box-sizing:border-box;' +
+      'white-space:normal;overflow:hidden;overflow-wrap:anywhere}' +
       '.ngr-smart-search__item:hover,.ngr-smart-search__item:focus{background:#f2f6fa;outline:none}' +
+      '.ngr-smart-search__item strong,.ngr-smart-search__item span,.ngr-smart-search__item small{' +
+      'width:100%;max-width:100%;min-width:0;box-sizing:border-box;white-space:normal;overflow-wrap:anywhere;word-break:break-word}' +
       '.ngr-smart-search__item strong{font-size:14px;line-height:1.35}' +
       '.ngr-smart-search__item span{font-size:12px;color:#2f6ba8}' +
       '.ngr-smart-search__item small{font-size:12px;line-height:1.35;color:#6f7782;' +
@@ -2388,8 +2391,8 @@
       '.ngr-smart-search__note{padding:12px;font-size:13px;line-height:1.4;color:#6f7782}' +
       '@media(max-width:600px){.ngr-catpage .js-catalog-filter-search{font-size:16px!important}' +
       '.ngr-smart-search{width:100%!important;min-width:0!important}' +
-      '.ngr-smart-search__panel{left:auto;right:0;width:min(520px,calc(100vw - 24px));' +
-      'max-height:50dvh}}' +
+      '.ngr-smart-search__panel{left:0;right:auto;width:100%;max-width:100%;min-width:0;' +
+      'max-height:50dvh;overflow-x:hidden}}' +
       '.t-catalog__filter__item-title{border-radius:12px!important}';
     document.head.appendChild(st);
   }
@@ -3729,12 +3732,52 @@
   apply();
   document.addEventListener('DOMContentLoaded', apply);
   window.addEventListener('load', apply);
-  // Tilda меняет каталог пачкой мутаций. Один полный apply на каждый узел
-  // создавал каскад повторных reflow и визуальное мерцание поля поиска.
+  // Tilda меняет каталог пачкой мутаций. Короткий debounce объединяет пачку,
+  // но его общий max-deadline не переносится: непрерывная лента изменений
+  // не может навсегда отложить apply и оставить старую inline-геометрию.
+  var APPLY_DELAY = 40;
+  var APPLY_MAX_WAIT = 180;
   var applyTimer = null;
-  function queueApply() {
-    clearTimeout(applyTimer);
-    applyTimer = setTimeout(function () { applyTimer = null; apply(); }, 40);
+  var applyMaxTimer = null;
+  var applyPromptTimer = null;
+  var applyPending = false;
+
+  function runQueuedApply() {
+    if (!applyPending) return;
+    applyPending = false;
+    if (applyTimer !== null) {
+      clearTimeout(applyTimer);
+      applyTimer = null;
+    }
+    if (applyMaxTimer !== null) {
+      clearTimeout(applyMaxTimer);
+      applyMaxTimer = null;
+    }
+    if (applyPromptTimer !== null) {
+      clearTimeout(applyPromptTimer);
+      applyPromptTimer = null;
+    }
+    apply();
+  }
+
+  function queueApply(prompt) {
+    applyPending = true;
+    // Смена ширины должна сразу обновить inline-размеры, даже если обычный
+    // mutation-проход уже стоит в очереди.
+    // MutationObserver передаёт массив мутаций первым аргументом, поэтому
+    // немедленный режим включается только явным boolean true от resize.
+    if (prompt === true && applyPromptTimer === null) {
+      applyPromptTimer = setTimeout(runQueuedApply, 0);
+    }
+    // Debounce объединяет короткую пачку, а hard max-wait не перезапускается:
+    // непрерывные мутации не вызывают apply каждые 40 мс и не могут его заморить.
+    if (applyTimer !== null) {
+      clearTimeout(applyTimer);
+    }
+    applyTimer = setTimeout(runQueuedApply, APPLY_DELAY);
+    if (applyMaxTimer === null) {
+      applyMaxTimer = setTimeout(runQueuedApply, APPLY_MAX_WAIT);
+    }
   }
   new MutationObserver(queueApply)
     .observe(document.documentElement, { childList: true, subtree: true });
@@ -3744,6 +3787,6 @@
   window.addEventListener('resize', function () {
     if (window.innerWidth === applyWidth) return;
     applyWidth = window.innerWidth;
-    queueApply();
+    queueApply(true);
   }, { passive: true });
 })();

@@ -74,6 +74,21 @@ function pxAtMost(body, property, limit) {
   return Boolean(match && Number(match[1]) <= limit);
 }
 
+function namedFunctionSource(source, name) {
+  const match = new RegExp(`function\\s+${name}\\s*\\(`).exec(source);
+  assert.ok(match, `Expected function ${name}() in storefront source.`);
+  const brace = source.indexOf('{', match.index);
+  let depth = 0;
+  for (let i = brace; i < source.length; i += 1) {
+    if (source[i] === '{') depth += 1;
+    else if (source[i] === '}') {
+      depth -= 1;
+      if (depth === 0) return source.slice(match.index, i + 1);
+    }
+  }
+  assert.fail(`Function ${name}() has no closing brace.`);
+}
+
 const stockCss = stringCorpus(stock);
 const pvzCss = stringCorpus(pvz);
 
@@ -151,6 +166,73 @@ test('catalog toolbar has one deterministic 320-1000px layout', () => {
     /ss\.style\.setProperty\(\s*['"]width['"]\s*,\s*['"]auto['"]\s*,\s*['"]important['"]\s*\)/,
     'An inline width:auto!important currently overrides the <=1000px toolbar rule; make width breakpoint-aware.',
   );
+});
+
+test('catalog apply queue cannot starve and width changes bypass its delay', () => {
+  const queue = namedFunctionSource(stock, 'queueApply');
+  assert.match(queue,
+    /if\s*\(\s*applyTimer\s*!==\s*null\s*\)[\s\S]*?clearTimeout\s*\(\s*applyTimer\s*\)[\s\S]*?setTimeout\s*\(\s*runQueuedApply\s*,\s*APPLY_DELAY\s*\)/,
+    'The short debounce should coalesce a quiet mutation burst before applying.');
+  assert.match(queue,
+    /if\s*\(\s*applyMaxTimer\s*===\s*null\s*\)[\s\S]*?setTimeout\s*\(\s*runQueuedApply\s*,\s*APPLY_MAX_WAIT\s*\)/,
+    'The queue must retain a hard max-wait that repeated mutations cannot postpone.');
+  assert.doesNotMatch(queue, /clearTimeout\s*\(\s*applyMaxTimer\s*\)/,
+    'DOM mutations must never reset the hard max-wait timer, or apply can starve.');
+  assert.match(queue,
+    /if\s*\(\s*prompt\s*===\s*true\s*&&\s*applyPromptTimer\s*===\s*null\s*\)[\s\S]*?setTimeout\s*\(\s*runQueuedApply\s*,\s*0\s*\)/,
+    'Only an explicit prompt width update may bypass the delay; MutationObserver passes a truthy records array.');
+
+  const widthResize = stock.match(/var\s+applyWidth\s*=\s*window\.innerWidth[\s\S]{0,500}?\},\s*\{\s*passive\s*:\s*true\s*\}\s*\);/);
+  assert.ok(widthResize, 'Expected the width-only resize handler.');
+  assert.match(widthResize[0],
+    /if\s*\(\s*window\.innerWidth\s*===\s*applyWidth\s*\)\s*return\s*;[\s\S]*?queueApply\s*\(\s*true\s*\)/,
+    'Real width changes must schedule a prompt apply after height-only keyboard resizes are ignored.');
+});
+
+test('smart-search results stay inside their host and wrap at mobile/tablet widths', () => {
+  const panelRules = ruleBodies(stockCss, '.ngr-smart-search__panel');
+  assert.ok(panelRules.some((body) => /left\s*:\s*0/i.test(body)
+    && /right\s*:\s*auto/i.test(body)
+    && /width\s*:\s*100%/i.test(body)
+    && /max-width\s*:\s*100%/i.test(body)
+    && /min-width\s*:\s*0/i.test(body)
+    && /overflow-x\s*:\s*hidden/i.test(body)
+    && /box-sizing\s*:\s*border-box/i.test(body)),
+  'The panel must use its search host width at every breakpoint, including 768px, and suppress x-overflow.');
+
+  const mobile = cssAtMost(stockCss, 600);
+  const mobilePanelRules = ruleBodies(mobile, '.ngr-smart-search__panel');
+  assert.ok(mobilePanelRules.some((body) => /left\s*:\s*0/i.test(body)
+    && /right\s*:\s*auto/i.test(body)
+    && /width\s*:\s*100%/i.test(body)
+    && /max-width\s*:\s*100%/i.test(body)
+    && /min-width\s*:\s*0/i.test(body)
+    && /overflow-x\s*:\s*hidden/i.test(body)),
+  'The <=600px override must not restore viewport-wide/right-anchored panel geometry.');
+
+  const itemRules = ruleBodies(stockCss, '.ngr-smart-search__item');
+  assert.ok(itemRules.some((body) => /width\s*:\s*100%/i.test(body)
+    && /max-width\s*:\s*100%/i.test(body)
+    && /min-width\s*:\s*0/i.test(body)
+    && /box-sizing\s*:\s*border-box/i.test(body)
+    && /white-space\s*:\s*normal/i.test(body)
+    && /overflow-wrap\s*:\s*anywhere/i.test(body)),
+  'Each result button must shrink and wrap instead of retaining Tilda white-space:nowrap.');
+
+  for (const selector of [
+    '.ngr-smart-search__item strong',
+    '.ngr-smart-search__item span',
+    '.ngr-smart-search__item small',
+  ]) {
+    const textRules = ruleBodies(stockCss, selector);
+    assert.ok(textRules.some((body) => /width\s*:\s*100%/i.test(body)
+      && /max-width\s*:\s*100%/i.test(body)
+      && /min-width\s*:\s*0/i.test(body)
+      && /box-sizing\s*:\s*border-box/i.test(body)
+      && /white-space\s*:\s*normal/i.test(body)
+      && /(?:overflow-wrap\s*:\s*anywhere|word-break\s*:\s*break-word)/i.test(body)),
+    `${selector} must shrink and wrap inside the result button.`);
+  }
 });
 
 test('mobile PVZ actions fit the 272px checkout column', () => {
