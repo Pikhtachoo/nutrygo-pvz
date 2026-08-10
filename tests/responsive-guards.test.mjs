@@ -166,6 +166,44 @@ test('catalog toolbar has one deterministic 320-1000px layout', () => {
     /ss\.style\.setProperty\(\s*['"]width['"]\s*,\s*['"]auto['"]\s*,\s*['"]important['"]\s*\)/,
     'An inline width:auto!important currently overrides the <=1000px toolbar rule; make width breakpoint-aware.',
   );
+  assert.match(stockCss,
+    /@media\(min-width:1001px\)\{[\s\S]{0,900}\.t-catalog__filter__sort\{[^}]*flex\s*:\s*0\s+0\s+210px[^}]*\}[\s\S]{0,300}\.t-catalog__filter__search\{[^}]*flex\s*:\s*0\s+0\s+260px/i,
+    'Desktop sort/search wrappers need fixed flex bases so the search host cannot collapse to zero width.',
+  );
+  assert.match(stock, /поле\(q,\s*узко\s*\?\s*['"]100%['"]\s*:\s*['"]260px['"]\)/,
+    'The inline desktop input width must equal the 260px search wrapper.');
+  assert.doesNotMatch(stock, /поле\(q,[^\n]*['"]280px['"]/,
+    'An inline 280px!important input protrudes from the 260px smart-search host.');
+});
+
+test('native filter chips cannot flash during search rerenders', () => {
+  const chipRules = ruleBodies(stockCss, '#rec2502703571 .t-catalog__filter__item');
+  assert.ok(chipRules.some((body) => /display\s*:\s*none\s*!important/i.test(body)),
+    'Native Tilda filter chips need a permanent record-scoped CSS hide, not delayed inline cleanup.');
+
+  const optionRules = ruleBodies(stockCss, '#rec2502703571 .t-catalog__filter__options');
+  assert.ok(optionRules.some((body) => /display\s*:\s*none\s*!important/i.test(body)),
+    'The native options row must stay out of layout while Tilda rebuilds the search DOM.');
+
+  for (const selector of [
+    '.js-catalog-filter-mob-btn',
+    '.js-catalog-sort-mob-btn',
+    '.js-catalog-search-mob-btn',
+    '.js-catalog-search-mob-close-btn',
+  ]) {
+    const rules = ruleBodies(stockCss, `#rec2502703571 ${selector}`);
+    assert.ok(rules.some((body) => /display\s*:\s*none\s*!important/i.test(body)),
+      `${selector} must not re-open or duplicate the compact toolbar.`);
+  }
+
+  const barRules = ruleBodies(stockCss, '#rec2502703571 .t-catalog__filter');
+  assert.ok(barRules.some((body) => /background\s*:\s*transparent\s*!important/i.test(body)
+    && /padding\s*:\s*0\s*!important/i.test(body)),
+  'The compact toolbar chrome must be invariant on both home and full-catalog URLs.');
+
+  const smartInit = namedFunctionSource(stock, 'initSmartSearch');
+  assert.doesNotMatch(smartInit, /if\s*\(\s*!onCatalogPage\(\)\s*\)\s*return/,
+    'Description/typo search must initialize anywhere the catalog search input is present.');
 });
 
 test('catalog apply queue cannot starve and width changes bypass its delay', () => {

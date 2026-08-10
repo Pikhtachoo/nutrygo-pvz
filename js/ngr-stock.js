@@ -267,6 +267,442 @@
       '</b>.<br>Удалите товар из корзины, чтобы оформить остальное.';
   }
 
+  /* NGR_PROMO_RECOVERY_BEGIN */
+  var PROMO_GROUP_SELECTOR =
+    '.t706__orderform .t-input-group_pc[data-field-type="pc"],' +
+    'form[data-formcart="y"] .t-input-group_pc[data-field-type="pc"],' +
+    '.t-store__cart-form .t-input-group_pc[data-field-type="pc"]';
+  var promoStates = new WeakMap();
+  var promoNativeInputs = new WeakSet();
+  var promoMessageSeq = 0;
+
+  function promoNumber(value) {
+    var n = Number(String(value === undefined || value === null ? '' : value).replace(',', '.'));
+    return Number.isFinite(n) ? n : 0;
+  }
+
+  function positivePromoObject(promo) {
+    return !!(promo && typeof promo === 'object' &&
+      (promoNumber(promo.discountsum) > 0 || promoNumber(promo.discountpercent) > 0));
+  }
+
+  /** Read-only: the recovery component never installs, removes or recalculates a promo. */
+  function activePositivePromo() {
+    var cartPromo = window.tcart && window.tcart.promocode;
+    if (positivePromoObject(cartPromo)) return cartPromo;
+    var heldPromo = window.cartCalculator && window.cartCalculator.appliedPromocode;
+    if (positivePromoObject(heldPromo)) return heldPromo;
+    // No t_cart__promocode global exists in the Tilda 1.1 runtime currently loaded by NutryGo.
+    return null;
+  }
+
+  function promoStateFor(group) {
+    var state = promoStates.get(group);
+    if (!state) {
+      state = {
+        bound: false,
+        seq: 0,
+        pending: false,
+        lastValue: '',
+        observer: null,
+        wrapper: null
+      };
+      promoStates.set(group, state);
+    }
+    return state;
+  }
+
+  function promoInput(group) {
+    return group && group.querySelector('.t-inputpromocode');
+  }
+
+  function promoWrapper(group) {
+    return group && group.querySelector('.t-inputpromocode__wrapper');
+  }
+
+  function promoBusy(group) {
+    return window.t_promocode_load === 'y' ||
+      !!(group && group.querySelector('.t-inputpromocode__btn.t-btn_sending'));
+  }
+
+  function promoError(group, input) {
+    var error = group.querySelector('.ngr-promo-error');
+    if (!error) {
+      var host = group.querySelector('.t-input-block') || group;
+      error = document.createElement('div');
+      error.className = 'ngr-promo-error';
+      error.id = 'ngr-promo-error-' + (++promoMessageSeq);
+      error.hidden = true;
+      error.setAttribute('role', 'alert');
+      error.setAttribute('aria-live', 'polite');
+      host.appendChild(error);
+    }
+    if (input) {
+      var described = (input.getAttribute('aria-describedby') || '').split(/\s+/).filter(Boolean);
+      if (described.indexOf(error.id) < 0) {
+        described.push(error.id);
+        input.setAttribute('aria-describedby', described.join(' '));
+      }
+    }
+    return error;
+  }
+
+  function hidePromoError(group) {
+    var input = promoInput(group);
+    var error = group.querySelector('.ngr-promo-error');
+    if (input) input.removeAttribute('aria-invalid');
+    if (error) {
+      error.hidden = true;
+      error.textContent = '';
+    }
+  }
+
+  function showPromoError(group, message) {
+    var input = promoInput(group);
+    var error = promoError(group, input);
+    if (input) input.setAttribute('aria-invalid', 'true');
+    error.textContent = message;
+    error.hidden = false;
+  }
+
+  function promoTarget(target, selector, group) {
+    var node = target;
+    while (node && node !== group) {
+      if (node.matches && node.matches(selector)) return node;
+      node = node.parentNode;
+    }
+    return null;
+  }
+
+  function promoDispatch(input, type) {
+    if (!input || typeof input.dispatchEvent !== 'function' || typeof Event !== 'function') return;
+    try { input.dispatchEvent(new Event(type, { bubbles: true })); } catch (e) {}
+  }
+
+  function updatePromoClear(group) {
+    var state = promoStateFor(group);
+    var input = promoInput(group);
+    var clear = group.querySelector('.ngr-promo-clear');
+    if (!clear) return;
+    clear.disabled = !input || !String(input.value || '').length || state.pending || promoBusy(group);
+    clear.setAttribute('aria-disabled', clear.disabled ? 'true' : 'false');
+  }
+
+  function ensurePromoControls(group) {
+    var input = promoInput(group);
+    var wrapper = promoWrapper(group);
+    if (!input || !wrapper) return;
+    group.classList.add('ngr-promo-editable');
+    promoError(group, input);
+
+    var applyButton = wrapper.querySelector('.t-inputpromocode__btn');
+    if (applyButton) {
+      applyButton.setAttribute('role', 'button');
+      if (!applyButton.hasAttribute('tabindex')) applyButton.setAttribute('tabindex', '0');
+    }
+
+    var clear = wrapper.querySelector('.ngr-promo-clear');
+    if (!clear) {
+      clear = document.createElement('button');
+      clear.type = 'button';
+      clear.className = 'ngr-promo-clear';
+      clear.textContent = 'Очистить';
+      clear.setAttribute('aria-label', 'Очистить поле промокода');
+      wrapper.appendChild(clear);
+    }
+    updatePromoClear(group);
+  }
+
+  function promoRecordId(group) {
+    var node = group;
+    while (node) {
+      if (node.id && /^rec\d+$/.test(node.id)) return node.id.slice(3);
+      node = node.parentNode;
+    }
+    return '';
+  }
+
+  function initRestoredPromo(group, input) {
+    if (!input || input.getAttribute('data-ngr-promo-restored') !== '1') return true;
+    if (promoNativeInputs.has(input)) return true;
+    if (typeof window.t_input_promocode_init !== 'function') return false;
+    var recordId = promoRecordId(group);
+    var inputLid = group.getAttribute('data-input-lid') || '';
+    if (!recordId || !inputLid) return false;
+    try {
+      window.t_input_promocode_init(recordId, inputLid);
+      promoNativeInputs.add(input);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function markPromoPending(group, pending) {
+    var state = promoStateFor(group);
+    state.pending = pending;
+    if (pending) group.setAttribute('aria-busy', 'true');
+    else group.removeAttribute('aria-busy');
+    updatePromoClear(group);
+  }
+
+  function renderAppliedPromo(group, promo) {
+    var state = promoStateFor(group);
+    state.pending = false;
+    group.removeAttribute('aria-busy');
+    group.classList.remove('ngr-promo-editable');
+    hidePromoError(group);
+    var wrapper = promoWrapper(group);
+    if (wrapper && promoInput(group)) {
+      wrapper.textContent = '';
+      var text = document.createElement('div');
+      text.className = 't-text ngr-promo-applied';
+      text.textContent = promo && promo.promocode
+        ? 'Промокод ' + String(promo.promocode) + ' активирован.'
+        : 'Промокод активирован.';
+      wrapper.appendChild(text);
+    }
+    var title = group.querySelector('.t-input-title.t-descr.t-descr_md');
+    if (title) title.style.visibility = 'hidden';
+  }
+
+  function createRestoredPromoInput(group) {
+    var state = promoStateFor(group);
+    var wrapper = promoWrapper(group);
+    if (!wrapper || activePositivePromo()) return null;
+    var inputLid = group.getAttribute('data-input-lid') || '';
+    wrapper.textContent = '';
+
+    var input = document.createElement('input');
+    input.type = 'text';
+    input.name = 'Промокод';
+    input.className = 't-input t-inputpromocode js-tilda-rule';
+    input.value = state.lastValue || '';
+    input.placeholder = 'Введите промокод';
+    input.autocomplete = 'off';
+    input.setAttribute('data-tilda-rule', 'promocode');
+    input.setAttribute('data-ngr-promo-restored', '1');
+    if (inputLid) input.setAttribute('aria-labelledby', 'field-title_' + inputLid);
+
+    var applyButton = document.createElement('div');
+    applyButton.className = 't-inputpromocode__btn t-btn t-btn_md';
+    applyButton.textContent = 'Применить';
+    applyButton.setAttribute('role', 'button');
+    applyButton.setAttribute('tabindex', '0');
+
+    var clear = document.createElement('button');
+    clear.type = 'button';
+    clear.className = 'ngr-promo-clear';
+    clear.textContent = 'Очистить';
+    clear.setAttribute('aria-label', 'Очистить поле промокода');
+
+    wrapper.appendChild(input);
+    wrapper.appendChild(applyButton);
+    wrapper.appendChild(clear);
+    group.classList.add('ngr-promo-editable');
+    var title = group.querySelector('.t-input-title.t-descr.t-descr_md');
+    if (title && title.style && typeof title.style.removeProperty === 'function') {
+      title.style.removeProperty('visibility');
+    }
+    promoError(group, input);
+    updatePromoClear(group);
+    return input;
+  }
+
+  function restorePromoEditor(group, message) {
+    if (activePositivePromo()) {
+      renderAppliedPromo(group, activePositivePromo());
+      return;
+    }
+    markPromoPending(group, false);
+    var input = promoInput(group) || createRestoredPromoInput(group);
+    if (!input) return;
+    ensurePromoControls(group);
+    if (!initRestoredPromo(group, input)) {
+      showPromoError(group, 'Не удалось подготовить поле промокода. Закройте и снова откройте корзину.');
+      return;
+    }
+    showPromoError(group, message);
+    updatePromoClear(group);
+    var panel = group.querySelector('.ngr-promo-panel');
+    if (!panel || !panel.hidden) {
+      setTimeout(function () {
+        if (!input.isConnected || activePositivePromo()) return;
+        try { input.focus({ preventScroll: true }); } catch (e) { try { input.focus(); } catch (x) {} }
+        try { input.select(); } catch (e) {}
+      }, 0);
+    }
+  }
+
+  function settlePromo(group, seq) {
+    if (!group || !group.isConnected) return;
+    var state = promoStateFor(group);
+    if (seq !== undefined && seq !== state.seq) return;
+    if (promoBusy(group)) return;
+    var positive = activePositivePromo();
+    if (positive) {
+      renderAppliedPromo(group, positive);
+      return;
+    }
+    var input = promoInput(group);
+    if (input) {
+      if (state.pending) {
+        markPromoPending(group, false);
+        ensurePromoControls(group);
+        showPromoError(group, 'Промокод не применён. Проверьте код или срок действия и попробуйте ещё раз.');
+      }
+      return;
+    }
+    var wrapper = promoWrapper(group);
+    if (state.pending || (wrapper && wrapper.querySelector('.t-text'))) {
+      restorePromoEditor(group,
+        'Этот промокод не даёт скидку для товаров в корзине. Очистите поле или введите другой код.');
+    }
+  }
+
+  function waitPromoSettlement(group, seq, tick) {
+    setTimeout(function () {
+      if (!group || !group.isConnected) return;
+      var state = promoStateFor(group);
+      if (state.seq !== seq || !state.pending) return;
+      if (promoBusy(group)) {
+        if (tick === 375) {
+          showPromoError(group, 'Проверка промокода занимает больше обычного. Дождитесь ответа.');
+        }
+        // After 30 seconds keep one slow waiter alive. Native XHR has no public cancel/reset API;
+        // stopping here would leave Clear disabled forever when a late error keeps the input in DOM.
+        waitPromoSettlement(group, seq, tick + 1);
+        return;
+      }
+      settlePromo(group, seq);
+    }, tick ? (tick > 375 ? 1000 : 80) : 0);
+  }
+
+  function observePromoWrapper(group) {
+    var state = promoStateFor(group);
+    var wrapper = promoWrapper(group);
+    if (!wrapper || state.wrapper === wrapper) return;
+    if (state.observer) state.observer.disconnect();
+    state.wrapper = wrapper;
+    state.observer = new MutationObserver(function () {
+      if (!promoBusy(group)) settlePromo(group, state.seq);
+    });
+    state.observer.observe(wrapper, { childList: true });
+  }
+
+  function bindPromoGroup(group) {
+    var state = promoStateFor(group);
+    if (state.bound) return;
+    state.bound = true;
+
+    group.addEventListener('input', function (event) {
+      if (!event.target || !event.target.matches || !event.target.matches('.t-inputpromocode')) return;
+      state.lastValue = event.target.value || '';
+      hidePromoError(group);
+      updatePromoClear(group);
+    });
+
+    group.addEventListener('keydown', function (event) {
+      var applyButton = promoTarget(event.target, '.t-inputpromocode__btn', group);
+      if (!applyButton || (event.key !== 'Enter' && event.key !== ' ')) return;
+      event.preventDefault();
+      applyButton.click();
+    });
+
+    group.addEventListener('click', function (event) {
+      var clear = promoTarget(event.target, '.ngr-promo-clear', group);
+      if (clear) {
+        event.preventDefault();
+        var positive = activePositivePromo();
+        if (positive) {
+          renderAppliedPromo(group, positive);
+          return;
+        }
+        if (state.pending || promoBusy(group)) return;
+        var input = promoInput(group);
+        if (!input) return;
+        input.value = '';
+        state.lastValue = '';
+        hidePromoError(group);
+        promoDispatch(input, 'input');
+        promoDispatch(input, 'change');
+        updatePromoClear(group);
+        try { input.focus({ preventScroll: true }); } catch (e) { try { input.focus(); } catch (x) {} }
+        return;
+      }
+
+      var applyButton = promoTarget(event.target, '.t-inputpromocode__btn', group);
+      if (!applyButton || state.pending) return;
+      var input = promoInput(group);
+      if (!input) return;
+      state.lastValue = input.value || '';
+      state.seq += 1;
+      hidePromoError(group);
+      if (!String(state.lastValue).trim()) {
+        showPromoError(group, 'Введите промокод.');
+        updatePromoClear(group);
+        return;
+      }
+      markPromoPending(group, true);
+      waitPromoSettlement(group, state.seq, 0);
+    });
+  }
+
+  function promoCss() {
+    if (document.getElementById('ngr-promo-recovery-css')) return;
+    var style = document.createElement('style');
+    style.id = 'ngr-promo-recovery-css';
+    style.textContent =
+      '.ngr-promo-editable .t-inputpromocode__wrapper{display:grid!important;' +
+      'grid-template-columns:minmax(0,1fr) auto auto!important;gap:8px!important;' +
+      'align-items:stretch!important;width:100%!important;min-width:0!important;box-sizing:border-box!important}' +
+      '.ngr-promo-editable .t-inputpromocode{width:100%!important;min-width:0!important;' +
+      'max-width:100%!important;box-sizing:border-box!important}' +
+      '.ngr-promo-editable .t-inputpromocode__btn,.ngr-promo-editable .ngr-promo-clear{' +
+      'min-height:44px!important;box-sizing:border-box!important;align-items:center;justify-content:center}' +
+      '.ngr-promo-clear{border:1px solid #cfd7e2;border-radius:10px;background:#fff;color:#35506f;' +
+      'padding:0 14px;font-family:inherit;font-size:14px;font-weight:600;line-height:1.2;cursor:pointer}' +
+      '.ngr-promo-clear:hover:not(:disabled){background:#f4f7fa}' +
+      '.ngr-promo-clear:disabled{opacity:.5;cursor:not-allowed}' +
+      '.ngr-promo-clear:focus-visible,.ngr-promo-editable .t-inputpromocode__btn:focus-visible{' +
+      'outline:2px solid #2878c8!important;outline-offset:2px!important}' +
+      '.ngr-promo-error{margin-top:8px;color:#a11b1b;font-size:13px;line-height:1.4}' +
+      '.ngr-promo-error[hidden]{display:none!important}' +
+      '.ngr-promo-applied{font-weight:600}' +
+      '@media(max-width:640px){.ngr-promo-editable .t-inputpromocode{font-size:16px!important}}' +
+      '@media(max-width:420px){.ngr-promo-editable .t-inputpromocode__wrapper{' +
+      'grid-template-columns:minmax(0,1fr) minmax(0,1fr)!important}' +
+      '.ngr-promo-editable .t-inputpromocode{grid-column:1/-1!important}' +
+      '.ngr-promo-editable .t-inputpromocode__btn{grid-column:1!important;width:100%!important;min-width:0!important}' +
+      '.ngr-promo-editable .ngr-promo-clear{grid-column:2!important;width:100%!important;min-width:0!important}}';
+    document.head.appendChild(style);
+  }
+
+  function fixPromocode() {
+    promoCss();
+    document.querySelectorAll(PROMO_GROUP_SELECTOR).forEach(function (group) {
+      bindPromoGroup(group);
+      observePromoWrapper(group);
+      var positive = activePositivePromo();
+      if (positive) {
+        renderAppliedPromo(group, positive);
+        return;
+      }
+      var input = promoInput(group);
+      if (input) {
+        ensurePromoControls(group);
+        if (input.getAttribute('data-ngr-promo-restored') === '1') initRestoredPromo(group, input);
+        return;
+      }
+      var state = promoStateFor(group);
+      var wrapper = promoWrapper(group);
+      if (!promoBusy(group) && (state.pending || (wrapper && wrapper.querySelector('.t-text')))) {
+        settlePromo(group, state.seq);
+      }
+    });
+  }
+  /* NGR_PROMO_RECOVERY_END */
+
   /**
    * Дубль виджета доставки. Новый виджет («⌖ Ozon Доставка…») рисует основной
    * скрипт сайта; старый («📍 Доставка в…») остался старой копией в блоке
@@ -384,6 +820,17 @@
   var searchRestoreTimers = [];
 
   function searchInput() { return document.querySelector(SEARCH_INPUT); }
+
+  function clearSearchRestoreState() {
+    searchState = null;
+    clearTimeout(searchBlurTimer);
+    searchBlurTimer = null;
+    searchRestoreTimers.forEach(clearTimeout);
+    searchRestoreTimers = [];
+    // Уже поставленный requestAnimationFrame сам завершится без фокуса:
+    // restore() повторно проверяет searchState перед любым действием.
+    searchRestoreQueued = false;
+  }
 
   function initSearchGuard() {
     if (window.__ngrSearchGuard) return;
@@ -615,7 +1062,6 @@
   }
 
   function initSmartSearch() {
-    if (!onCatalogPage()) return;
     var inp = searchInput();
     if (!inp) return;
     var existing = document.getElementById('ngr-smart-search-results');
@@ -659,7 +1105,13 @@
         if (row.match === 'Описание' && it.d) {
           var d = document.createElement('small'); d.textContent = it.d; b.appendChild(d);
         }
-        b.addEventListener('click', function () { hide(); openProduct(it.a); });
+        b.addEventListener('click', function () {
+          clearSearchRestoreState();
+          clearTimeout(smartTimer);
+          requestId++;
+          hide();
+          openProduct(it.a);
+        });
         box.appendChild(b);
       });
       box.hidden = false; inp.setAttribute('aria-expanded', 'true');
@@ -714,15 +1166,7 @@
    */
   var PROJECT = '27635446';
 
-  /**
-   * Признак входа.
-   *
-   * Раньше опирались только на функцию корзины Tilda. Но на страницах без
-   * корзины — «Документы», «Доставка», «Оплата» — её нет, и покупатель видел
-   * в шапке «Войти», хотя был внутри (замечание Александра 08.08). Поэтому
-   * запасной признак — профиль, который Tilda кладёт в хранилище браузера
-   * при входе; он есть на любой странице сайта.
-   */
+  /** Кэш профиля нужен только для подписи; вход подтверждает живой токен. */
   function memberProfile() {
     try {
       var raw = localStorage.getItem('tilda_members_profile' + PROJECT);
@@ -736,15 +1180,16 @@
   }
 
   function member() {
-    var tok = '';
-    try { tok = window.t_cart__getMembersToken ? (t_cart__getMembersToken() || '') : ''; } catch (e) {}
+    var tok = memberToken();
+    // Снимок localStorage раньше жил неделю и выдавал старый браузер за
+    // вошедший аккаунт. Тогда кабинет открывался, но запросить заказы не мог.
+    if (!tok || !accountVerified || accountToken !== tok) return null;
     var p = memberProfile();
-    if (!tok && !p) return null;
     return {
       name: p ? String(p.name || p.login || '').trim() : '',
       login: p ? String(p.login || '') : '',
       phone: p ? String(p.phone || '') : '',
-      hasToken: !!tok
+      hasToken: true
     };
   }
 
@@ -1382,7 +1827,13 @@
   var TP = '27635446';
 
   function memberToken() {
-    try { return (window.t_cart__getMembersToken && t_cart__getMembersToken()) || ''; } catch (e) { return ''; }
+    var token = '';
+    try { token = (window.t_cart__getMembersToken && t_cart__getMembersToken()) || ''; } catch (e) {}
+    if (token) return token;
+    // Tilda может убрать helper после инициализации, но наш checkout уже
+    // сохранил подтверждаемый токен в скрытом поле формы.
+    var input = document.querySelector('input[name="ngmember"]');
+    return input ? String(input.value || '') : '';
   }
 
   function tildaPost(path, extra) {
@@ -1512,60 +1963,122 @@
    * Александра 08.08). Память браузера остаётся быстрым кэшем, чтобы
    * значок рисовался сразу, не дожидаясь ответа.
    */
-  function pushProfile(login) {
-    if (!login) return;
-    var cur = profileSettings();
-    fetch(API + '/profile/me', {
+  var accountSubject = '';
+  var accountToken = '';
+  var accountPromise = null;
+  var accountVerified = false;
+
+  function legacyProfileSettings() {
+    try { return JSON.parse(localStorage.getItem('ngr_me') || '{}'); } catch (e) { return {}; }
+  }
+  function legacyFavorites() {
+    try { return JSON.parse(localStorage.getItem('ngr_fav') || '[]'); } catch (e) { return []; }
+  }
+  function accountCacheKey(base) {
+    return accountSubject ? base + ':' + accountSubject : base;
+  }
+  function accountPost(action, data, requestToken) {
+    var token = requestToken || memberToken();
+    if (!token) return Promise.reject(new Error('no member token'));
+    var body = {};
+    Object.keys(data || {}).forEach(function (k) { body[k] = data[k]; });
+    body.action = action;
+    body.token = token;
+    return fetch(API + '/account/state', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ login: login, nick: cur.nick || '', avatar: cur.avatar || '' })
-    }).catch(function () {});
+      cache: 'no-store',
+      body: JSON.stringify(body)
+    }).then(function (r) {
+      if (!r.ok) {
+        var error = new Error('account HTTP ' + r.status);
+        error.status = r.status;
+        throw error;
+      }
+      return r.json().then(function (snapshot) {
+        return { snapshot: snapshot, token: token };
+      });
+    });
+  }
+  function applyAccountSnapshot(packet) {
+    var j = packet && packet.snapshot;
+    var requestToken = packet && packet.token;
+    if (!requestToken || requestToken !== accountToken || requestToken !== memberToken()) return null;
+    if (!j || !j.subject) return j;
+    accountVerified = true;
+    accountSubject = String(j.subject);
+    var p = j.profile && typeof j.profile === 'object' ? j.profile : {};
+    try {
+      localStorage.setItem(accountCacheKey('ngr_me'), JSON.stringify(p));
+      localStorage.setItem(accountCacheKey('ngr_fav'), JSON.stringify(Array.isArray(j.favorites) ? j.favorites : []));
+    } catch (e) {}
+    paintMe();
+    fixAccountButton();
+    paintFavoriteButtons();
+    // Первый apply идёт до ответа Worker и временно закрывает оформление.
+    // После подтверждения токена сразу пересчитываем gate, не ждём случайной DOM-мутации.
+    fixAuthGate();
+    return j;
+  }
+  function syncAccount(force) {
+    var token = memberToken();
+    if (!token) {
+      accountSubject = '';
+      accountToken = '';
+      accountPromise = null;
+      accountVerified = false;
+      return Promise.resolve(null);
+    }
+    if (accountToken !== token) {
+      accountToken = token;
+      accountSubject = '';
+      accountPromise = null;
+      accountVerified = false;
+    }
+    if (accountPromise && !force) return accountPromise;
+    var request = accountPost('read', null, token).then(function (packet) {
+      return applyAccountSnapshot(packet);
+    }).catch(function (error) {
+      if (accountToken === token && memberToken() === token) {
+        if (error && error.status === 401) accountVerified = false;
+        accountPromise = null;
+      }
+      return null;
+    });
+    accountPromise = request;
+    return request;
   }
 
-  var pulledFor = '';
+  function pushProfile() {
+    var cur = profileSettings();
+    return accountPost('profile', {
+      profile: { nick: cur.nick || '', avatar: cur.avatar || '', photo: cur.photo || '' }
+    }).then(function (j) { return applyAccountSnapshot(j); });
+  }
 
   function pullProfileOnce() {
-    var m = member();
-    var login = m && m.login;
-    if (!login || pulledFor === login) return;
-    pulledFor = login;
-    pullProfile(login);
+    syncAccount(false);
   }
 
-  function pullProfile(login) {
-    if (!login) return;
-    fetch(API + '/profile/me?login=' + encodeURIComponent(login))
-      .then(function (r) { return r.json(); })
-      .then(function (j) {
-        var cur = profileSettings();
-        if (j && (j.nick || j.avatar)) {
-          // Настройки с сервера главнее: они одни на все устройства.
-          if (j.nick) cur.nick = j.nick;
-          cur.avatar = j.avatar || '';
-          try { localStorage.setItem('ngr_me', JSON.stringify(cur)); } catch (e) {}
-        } else if (cur.nick || cur.avatar) {
-          // Первый заход после переезда: поднимаем прежний выбор из браузера.
-          pushProfile(login);
-        }
-        paintMe();
-        fixAccountButton();
-        // Если профиль уже открыт, форма собрана по старым данным —
-        // пересобираем её, иначе выбранный аватар не отмечен.
-        if (document.querySelector('.ngr-avc__all') && cabData.profile) cabSection('profile');
-      })
-      .catch(function () {});
+  function pullProfile() {
+    return syncAccount(true);
   }
 
   /** Личные настройки покупателя. В браузере — кэш, хранилище — интегратор. */
   function profileSettings() {
-    try { return JSON.parse(localStorage.getItem('ngr_me') || '{}'); } catch (e) { return {}; }
+    if (!accountSubject || !accountVerified || accountToken !== memberToken()) return {};
+    try { return JSON.parse(localStorage.getItem(accountCacheKey('ngr_me')) || '{}'); } catch (e) { return {}; }
+  }
+  function writeProfileSettings(cur) {
+    if (!accountSubject || !accountVerified || accountToken !== memberToken()) return false;
+    try { localStorage.setItem(accountCacheKey('ngr_me'), JSON.stringify(cur)); return true; } catch (e) { return false; }
   }
   function saveProfileSettings(v) {
     var cur = profileSettings();
     cur.nick = v.nick;
     if ('avatar' in v) cur.avatar = v.avatar;
     if ('emoji' in v) cur.emoji = v.emoji;
-    try { localStorage.setItem('ngr_me', JSON.stringify(cur)); } catch (e) {}
+    writeProfileSettings(cur);
   }
 
   /**
@@ -1614,11 +2127,14 @@
     paid: 'Оплачен', payed: 'Оплачен', awaiting_payment: 'Ожидает оплаты',
     delivery: 'В доставке', shipped: 'Отправлен', done: 'Выполнен',
     completed: 'Выполнен', cancelled: 'Отменён', canceled: 'Отменён',
-    refunded: 'Возврат', undeliverable: 'Доставка невозможна'
+    refunded: 'Возврат', undeliverable: 'Доставка невозможна',
+    delivery_created: 'Передан в Ozon Доставку', checkout_ok_dry_run: 'Доставка подтверждена',
+    create_failed: 'Нужна помощь с доставкой', cancel_requested: 'Запрошена отмена',
+    change_requested: 'Запрошено изменение'
   };
 
   function orderStatus(o) {
-    var s = o.status_name || o.status || o.state || '';
+    var s = o.delivery_status || o.status_name || o.status || o.state || '';
     if (s && typeof s === 'object') s = s.name || s.title || s.text || s.value || '';
     s = String(s || '');
     var key = s.toLowerCase().replace(/[\s-]/g, '_');
@@ -1634,6 +2150,51 @@
   function orderItems(o) {
     var a = o.products || o.items || o.goods || o.positions || [];
     return Array.isArray(a) ? a : [];
+  }
+
+  function loadIntegratorOrders(token) {
+    if (!token) return Promise.resolve({ orders: [] });
+    return fetch(API + '/orders/my', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      cache: 'no-store', body: JSON.stringify({ token: token })
+    }).then(function (r) { if (!r.ok) throw new Error('orders HTTP ' + r.status); return r.json(); })
+      .catch(function () { return { orders: [] }; });
+  }
+
+  function mergeOrderDashboard(nativeDash, integrator) {
+    var dash = nativeDash && typeof nativeDash === 'object' ? nativeDash : {};
+    var out = {};
+    Object.keys(dash).forEach(function (k) { out[k] = dash[k]; });
+    var orders = Array.isArray(dash.last_orders) ? dash.last_orders.slice() : [];
+    var byId = {};
+    orders.forEach(function (o, i) { var id = orderNo(o); if (id) byId[id] = i; });
+    ((integrator && integrator.orders) || []).forEach(function (o) {
+      var id = String(o.id || '').trim();
+      var mapped = {
+        id: id, date: o.at || '', amount: Number(o.amount) || 0,
+        delivery_status: o.status || '', city: o.city || '', address: o.address || '',
+        point: o.point || '', ozon_order: o.ozon_order || '',
+        items: (o.items || []).map(function (it) {
+          return { name: it.name || '', sku: it.sku || '', quantity: Number(it.qty) || 1, price: Number(it.price) || 0 };
+        })
+      };
+      if (id && byId[id] !== undefined) {
+        var current = orders[byId[id]];
+        current.delivery_status = mapped.delivery_status || current.delivery_status || '';
+        current.city = current.city || mapped.city;
+        current.address = current.address || mapped.address;
+        current.ozon_order = current.ozon_order || mapped.ozon_order;
+        if (!orderItems(current).length && mapped.items.length) current.items = mapped.items;
+      } else {
+        orders.push(mapped);
+        if (id) byId[id] = orders.length - 1;
+      }
+    });
+    orders.sort(function (a, b) {
+      return String(b.date || b.created || b.datetime || '').localeCompare(String(a.date || a.created || a.datetime || ''));
+    });
+    out.last_orders = orders;
+    return out;
   }
 
   function cabSection(name) {
@@ -1662,7 +2223,13 @@
           (no ? 'Заказ № ' + no : 'Заказ') + '</b>' +
           '<div class="ngr-cab__mail">' + String(o.date || o.created || o.datetime || '').slice(0, 16) + '</div></div>' +
           '<div style="text-align:right"><div class="ngr-cab__sum">' + money(Number(o.amount) || 0) + '</div>' +
-          '<div class="ngr-cab__st">' + orderStatus(o) + '</div></div></div>';
+          '<div class="ngr-cab__st">' + (o.delivery_status ? 'Статус доставки: ' : '') + orderStatus(o) + '</div></div></div>';
+        if (o.address) {
+          var delivery = document.createElement('div');
+          delivery.className = 'ngr-cab__hint';
+          delivery.textContent = String(o.city || '') + (o.city && o.address ? ', ' : '') + String(o.address || '');
+          c.appendChild(delivery);
+        }
         if (items.length) {
           var box = document.createElement('div');
           box.className = 'ngr-cab__items';
@@ -1691,6 +2258,12 @@
         }
         host.appendChild(c);
       });
+      var fullHistory = document.createElement('div');
+      fullHistory.className = 'ngr-cab__hint';
+      fullHistory.innerHTML = '<a href="/members/" style="color:#2f6ba8;font-weight:700">' +
+        'Открыть полную историю заказов</a><br>' +
+        'Здесь показаны последние заказы и актуальный статус доставки.';
+      host.appendChild(fullHistory);
       return;
     }
 
@@ -1720,8 +2293,36 @@
 
     if (name === 'fav') {
       var list = favList();
-      host.innerHTML = '<h2>Избранное</h2>' + (list.length ? '' :
-        '<div class="ngr-cab__empty">Пока пусто. Нажмите ♡ на карточке товара, чтобы сохранить его сюда.</div>');
+      var oldFav = legacyFavorites();
+      var migrationDone = false;
+      try { migrationDone = localStorage.getItem('ngr_fav_migrated:' + accountSubject) === '1'; } catch (e) {}
+      var canMigrate = !!(accountSubject && oldFav.length && !migrationDone);
+      host.innerHTML = '<h2>Избранное</h2>' +
+        (canMigrate ? '<div class="ngr-cab__card ngr-cab__favmigrate">' +
+          '<b>На этом устройстве найдено сохранённых товаров: ' + oldFav.length + '</b>' +
+          '<div class="ngr-cab__hint">Перенести их именно в текущий аккаунт?</div>' +
+          '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">' +
+          '<button type="button" class="ngr-cab__save ngr-cab__favyes">Перенести</button>' +
+          '<button type="button" class="ngr-cab__copy ngr-cab__favno">Не переносить</button></div></div>' : '') +
+        (list.length ? '' :
+          '<div class="ngr-cab__empty">Пока пусто. Нажмите ♡ на карточке товара, чтобы сохранить его сюда.</div>');
+      var yes = host.querySelector('.ngr-cab__favyes');
+      if (yes) yes.addEventListener('click', function () {
+        yes.disabled = true;
+        accountPost('merge', { favorites: oldFav }).then(function (packet) {
+          if (!applyAccountSnapshot(packet)) throw new Error('account changed');
+          try {
+            localStorage.setItem('ngr_fav_migrated:' + accountSubject, '1');
+            localStorage.removeItem('ngr_fav');
+          } catch (e) {}
+          cabSection('fav');
+        }).catch(function () { yes.disabled = false; });
+      });
+      var no = host.querySelector('.ngr-cab__favno');
+      if (no) no.addEventListener('click', function () {
+        try { localStorage.setItem('ngr_fav_migrated:' + accountSubject, '1'); } catch (e) {}
+        cabSection('fav');
+      });
       if (list.length) {
         var fb = document.createElement('div');
         fb.className = 'ngr-shelf';
@@ -1745,6 +2346,7 @@
     // Профиль с персонализацией: покупатель выбирает значок и псевдоним,
     // рядом — его реферальная ссылка (запрос Александра 08.08).
     var me = profileSettings();
+    var oldLocalPhoto = String((legacyProfileSettings() || {}).photo || '');
     host.innerHTML = '<h2>Профиль</h2>' +
       '<div class="ngr-cab__card">' +
       '<div class="ngr-cab__field"><u>Как вас показывать</u>' +
@@ -1760,6 +2362,9 @@
       '<label class="ngr-cab__copy">Загрузить фото' +
       '<input type="file" accept="image/*" id="ngrPhoto" style="display:none"></label>' +
       (me.photo ? '<button type="button" class="ngr-cab__copy ngr-cab__drop">Убрать</button>' : '') +
+      (!me.photo && oldLocalPhoto
+        ? '<button type="button" class="ngr-cab__copy ngr-cab__importphoto">Перенести фото с этого устройства</button>'
+        : '') +
       '</div></div>' +
       '<div class="ngr-cab__field"><u>Или выберите аватар</u>' +
       '<div class="ngr-avc__all" role="radiogroup" aria-label="Аватар"></div></div>' +
@@ -1817,18 +2422,22 @@
       var cur = profileSettings();
       cur.avatar = id;
       cur.emoji = '';
-      var ok = true;
-      try { localStorage.setItem('ngr_me', JSON.stringify(cur)); } catch (e) { ok = false; }
+      delete cur.photo;
+      var ok = writeProfileSettings(cur);
       var note = host.querySelector('.ngr-cab__saved');
-      if (note) note.textContent = ok ? '✓ Аватар сохранён' : 'Браузер не дал сохранить выбор';
+      if (note) note.textContent = ok ? 'Сохраняем…' : 'Браузер не дал сохранить выбор';
       var prev = host.querySelector('.ngr-cab__prev');
-      if (prev && !cur.photo) {
+      if (prev) {
         prev.style.backgroundImage = 'url(' + avaFile(id) + ')';
         prev.style.backgroundSize = 'cover';
       }
       paintMe();
       fixAccountButton();
-      pushProfile((cabData.profile || {}).login || '');
+      if (ok) pushProfile().then(function () {
+        if (note) note.textContent = '✓ Аватар сохранён на всех устройствах';
+      }).catch(function () {
+        if (note) note.textContent = 'Не удалось синхронизировать. Попробуйте ещё раз.';
+      });
       drawRow();
     }
 
@@ -1868,24 +2477,50 @@
             side, side, 0, 0, s, s);
           var data = cv.toDataURL('image/jpeg', 0.82);
           var cur = profileSettings(); cur.photo = data;
-          try { localStorage.setItem('ngr_me', JSON.stringify(cur)); } catch (e) {
+          if (!writeProfileSettings(cur)) {
             alert('Не удалось сохранить фотографию в этом браузере.'); return;
           }
           host.querySelector('.ngr-cab__prev').style.backgroundImage = 'url(' + data + ')';
           paintMe(); fixAccountButton();
+          var note = host.querySelector('.ngr-cab__saved');
+          if (note) note.textContent = 'Сохраняем фото…';
+          pushProfile().then(function () {
+            try { localStorage.removeItem('ngr_me'); } catch (e) {}
+            if (note) note.textContent = '✓ Фото сохранено на всех устройствах';
+          }).catch(function () {
+            if (note) note.textContent = 'Фото осталось на этом устройстве; синхронизация не удалась.';
+          });
         };
         im.src = rd.result;
       };
       rd.readAsDataURL(f);
     });
 
+    var importPhoto = host.querySelector('.ngr-cab__importphoto');
+    if (importPhoto) importPhoto.addEventListener('click', function () {
+      var cur = profileSettings();
+      cur.photo = oldLocalPhoto;
+      if (!writeProfileSettings(cur)) return;
+      importPhoto.disabled = true;
+      var note = host.querySelector('.ngr-cab__saved');
+      if (note) note.textContent = 'Переносим фото…';
+      pushProfile().then(function () {
+        try { localStorage.removeItem('ngr_me'); } catch (e) {}
+        cabSection('profile');
+      }).catch(function () {
+        importPhoto.disabled = false;
+        if (note) note.textContent = 'Не удалось перенести фото. Попробуйте ещё раз.';
+      });
+    });
+
     var drop = host.querySelector('.ngr-cab__drop');
     if (drop) drop.addEventListener('click', function () {
       var cur = profileSettings(); delete cur.photo;
-      try { localStorage.setItem('ngr_me', JSON.stringify(cur)); } catch (e) {}
+      writeProfileSettings(cur);
       host.querySelector('.ngr-cab__prev').style.backgroundImage = '';
       drop.parentNode.removeChild(drop);
       paintMe(); fixAccountButton();
+      pushProfile().catch(function () {});
     });
 
     host.querySelector('.ngr-cab__save').addEventListener('click', function () {
@@ -1896,9 +2531,13 @@
       var now = profileSettings();
       host.querySelector('.ngr-cab__saved').textContent =
         (now.nick === nick && now.avatar === chosen) ? '✓ Сохранено' : 'Браузер не дал сохранить';
-      pushProfile((cabData.profile || {}).login || '');
-      paintMe();
-      fixAccountButton();
+      host.querySelector('.ngr-cab__saved').textContent = 'Сохраняем…';
+      pushProfile().then(function () {
+        host.querySelector('.ngr-cab__saved').textContent = '✓ Сохранено на всех устройствах';
+        paintMe(); fixAccountButton();
+      }).catch(function () {
+        host.querySelector('.ngr-cab__saved').textContent = 'Не удалось синхронизировать. Попробуйте ещё раз.';
+      });
     });
 
     // Раньше подпись искалась по общему классу и доставалась первой кнопке —
@@ -1939,18 +2578,22 @@
       b.addEventListener('click', function () { cabSection(b.getAttribute('data-s')); });
     });
 
-    var noToken = !memberToken();
+    var token = memberToken();
+    var noToken = !token;
     Promise.all([
       noToken ? Promise.resolve(null) : tildaPost('https://members.tildaapi.com/api/getprofile/').catch(function () { return null; }),
-      noToken ? Promise.resolve(null) : tildaPost('https://store.tildaapi.com/api/orders/getdashboard/').catch(function () { return null; })
+      noToken ? Promise.resolve(null) : tildaPost('https://store.tildaapi.com/api/orders/getdashboard/').catch(function () { return null; }),
+      noToken ? Promise.resolve(null) : syncAccount(false),
+      noToken ? Promise.resolve({ orders: [] }) : loadIntegratorOrders(token)
     ]).then(function (res) {
       // На страницах без корзины Tilda не выдаёт токен — показываем то,
       // что знаем из профиля, и честно говорим про заказы.
       cabData.profile = (res[0] && res[0].data) || memberProfile() || {};
-      cabData.dash = res[1] || {};
+      // Tilda встречается в двух совместимых форматах: dashboard в корне либо в data.
+      // Нормализуем только оболочку; владельцем статуса заказа остаётся сама Tilda.
+      cabData.dash = mergeOrderDashboard((res[1] && res[1].data) || res[1] || {}, res[3]);
       cabData.noToken = noToken;
       paintMe();
-      pullProfile(cabData.profile.login || '');
       cabSection('orders');
     });
   }
@@ -1959,12 +2602,14 @@
 
   /* ---------- Избранное ---------- */
 
-  /**
-   * Избранное храним в браузере покупателя: отдельного хранилища на нашей
-   * стороне не требуется, а личные данные никуда не уходят.
-   */
+  /** Гость хранит избранное локально; аккаунт — в проверенном Worker state. */
+  function verifiedAccountToken() {
+    var token = memberToken();
+    return token && accountVerified && accountSubject && accountToken === token ? token : '';
+  }
   function favList() {
-    try { return JSON.parse(localStorage.getItem('ngr_fav') || '[]'); } catch (e) { return []; }
+    var key = verifiedAccountToken() ? accountCacheKey('ngr_fav') : 'ngr_fav:guest:v1';
+    try { return JSON.parse(localStorage.getItem(key) || '[]'); } catch (e) { return []; }
   }
   function favHas(a) { return favList().indexOf(String(a)) > -1; }
 
@@ -2010,11 +2655,36 @@
       host.appendChild(b);
     });
   }
+  function paintFavoriteButtons() {
+    document.querySelectorAll('.js-product, .ngr-sc').forEach(function (c) {
+      var art = c.classList.contains('ngr-sc') ? c.getAttribute('data-art') : article(c);
+      var b = c.querySelector('.ngr-fav');
+      if (!art || !b) return;
+      var on = favHas(art);
+      b.className = 'ngr-fav' + (on ? ' on' : '');
+      b.textContent = on ? '♥' : '♡';
+    });
+  }
   function favToggle(a) {
     var l = favList(), i = l.indexOf(String(a));
     if (i > -1) l.splice(i, 1); else l.push(String(a));
-    try { localStorage.setItem('ngr_fav', JSON.stringify(l)); } catch (e) {}
-    return favHas(a);
+    var on = i < 0;
+    var requestToken = verifiedAccountToken();
+    var intentToken = memberToken();
+    var key = requestToken ? accountCacheKey('ngr_fav') : 'ngr_fav:guest:v1';
+    try { localStorage.setItem(key, JSON.stringify(l)); } catch (e) {}
+    if (intentToken) {
+      var send = function () {
+        // Клик относится к тому аккаунту, который был открыт в момент клика.
+        // После logout/switch не переносим это действие в новую сессию.
+        if (memberToken() !== intentToken) return Promise.resolve(null);
+        return accountPost('favorite', { id: String(a), on: on }, intentToken)
+          .then(function (packet) { applyAccountSnapshot(packet); });
+      };
+      if (requestToken) send().catch(function () {});
+      else syncAccount(false).then(function () { return send(); }).catch(function () {});
+    }
+    return on;
   }
 
   /* ---------- Полки на главной ---------- */
@@ -2330,15 +3000,26 @@
       '.t-catalog__filter__input{border:1px solid #e3e8ee!important;border-radius:10px!important;' +
       'height:42px!important}' +
       // Сама строка: ровные отступы и перенос вместо обрезки
-      '.t-catalog__filter{display:flex!important;flex-wrap:wrap!important;gap:10px!important;' +
-      'align-items:flex-start!important}' +
-      '.t-catalog__filter__item{margin:0!important}' +
+      '#rec2502703571 .t-catalog__filter{display:flex!important;flex-wrap:wrap!important;gap:10px!important;' +
+      'align-items:flex-start!important;background:transparent!important;padding:0!important;' +
+      'border-radius:0!important;margin:0 0 14px!important}' +
+      // Tilda пересобирает пункты фильтра при фокусе и вводе. Inline-скрытие
+      // срабатывало только на следующем JS-проходе, поэтому старые чипы успевали
+      // появиться на кадр. Постоянное правило не даёт им участвовать в раскладке
+      // ни на главной витрине, ни в полном каталоге.
+      '#rec2502703571 .t-catalog__filter__item{display:none!important;margin:0!important}' +
       // Поиск и сортировка уезжали на второй этаж: блок с фильтрами
       // занимал всю ширину. Ставим их в один ряд, справа.
       '.t-catalog__filter__controls-wrapper{align-items:center!important;gap:12px!important}' +
-      '.t-catalog__filter__options{flex:1 1 auto!important;width:auto!important}' +
-      '.t-catalog__filter__search-and-sort{flex:0 0 auto!important;margin-left:auto!important}' +
-      '@media(max-width:900px){.t-catalog__filter__search-and-sort{margin-left:0!important;' +
+      '#rec2502703571 .t-catalog__filter__options,' +
+      '#rec2502703571 .js-catalog-filter-mob-btn,' +
+      '#rec2502703571 .js-catalog-sort-mob-btn,' +
+      '#rec2502703571 .js-catalog-search-mob-btn,' +
+      '#rec2502703571 .js-catalog-search-mob-close-btn{display:none!important}' +
+      '#rec2502703571 .t-catalog__filter__search-and-sort{flex:0 0 auto!important;' +
+      'margin-left:286px!important;display:flex!important;gap:10px!important;align-items:center!important}' +
+      '@media(max-width:1000px){#rec2502703571 .t-catalog__filter__search-and-sort{margin-left:0!important;' +
+      'display:grid!important;grid-template-columns:minmax(104px,.78fr) minmax(0,1.22fr)!important;' +
       'width:100%!important}}' +
       /*
        * В каталоге фильтры живут в своей колонке, и от строки Tilda остаются
@@ -2346,29 +3027,37 @@
        * пустой (замечание Александра 08.08). Убираем коробку и ставим
        * их над сеткой товаров, как на Ozon: сортировка слева, поиск рядом.
        */
-      '.ngr-catpage .t-catalog__filter{background:transparent!important;padding:0!important;' +
-      'border-radius:0!important;margin:0 0 14px!important}' +
-      '.ngr-catpage .t-catalog__filter__search-and-sort{margin-left:286px!important;' +
+      '#rec2502703571 .t-catalog__filter__search-and-sort{margin-left:286px!important;' +
       'display:flex!important;gap:10px!important;align-items:center!important;width:auto!important}' +
-      '.ngr-catpage .t-catalog__sort-select{order:0;height:44px!important;min-width:210px;' +
+      '#rec2502703571 .t-catalog__sort-select{order:0;height:44px!important;min-width:210px;' +
       'border:1px solid #e3e8ee!important;border-radius:12px!important;background:#fff!important;' +
       'font-size:14.5px!important;color:#14171c!important;padding:0 38px 0 14px!important}' +
-      '.ngr-catpage .js-catalog-filter-search{order:1;height:44px!important;width:260px!important;' +
+      '#rec2502703571 .js-catalog-filter-search{order:1;height:44px!important;width:260px!important;' +
       'border:1px solid #e3e8ee!important;border-radius:12px!important;background:#fff!important;' +
-      'font-size:14.5px!important;padding:0 14px 0 38px!important;' +
+      'font-size:14.5px!important;padding:0 14px 0 38px!important;box-sizing:border-box!important;' +
       'background-image:url("data:image/svg+xml;utf8,' +
       "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238a919b' stroke-width='2'><circle cx='11' cy='11' r='7'/><path d='M20 20l-3.5-3.5'/></svg>" +
       '")!important;background-repeat:no-repeat!important;background-position:12px center!important;' +
       'background-size:17px 17px!important}' +
-      '@media(max-width:1000px){.ngr-catpage .t-catalog__filter__search-and-sort{margin-left:0!important;' +
+      // На desktop Tilda задаёт wrapper-ам flex:1. После добавления панели
+      // подсказок сортировка забирала все 510px, а host поиска схлопывался в 0.
+      '@media(min-width:1001px){' +
+      '#rec2502703571 .t-catalog__filter__sort{width:210px!important;min-width:210px!important;' +
+      'max-width:210px!important;flex:0 0 210px!important}' +
+      '#rec2502703571 .t-catalog__filter__search{width:260px!important;min-width:0!important;' +
+      'max-width:260px!important;flex:0 0 260px!important}' +
+      '#rec2502703571 .t-catalog__filter__sort .t-catalog__sort-select,' +
+      '#rec2502703571 .t-catalog__filter__search .js-catalog-filter-search{' +
+      'width:100%!important;max-width:100%!important;box-sizing:border-box!important}}' +
+      '@media(max-width:1000px){#rec2502703571 .t-catalog__filter__search-and-sort{margin-left:0!important;' +
       'display:grid!important;grid-template-columns:minmax(104px,.78fr) minmax(0,1.22fr)!important;' +
       'width:100%!important;min-width:0!important}' +
-      '.ngr-catpage .t-catalog__filter__search-and-sort>*{width:100%!important;min-width:0!important}' +
-      '.ngr-catpage .js-catalog-filter-search,.ngr-catpage .t-catalog__sort-select{' +
+      '#rec2502703571 .t-catalog__filter__search-and-sort>*{width:100%!important;min-width:0!important}' +
+      '#rec2502703571 .js-catalog-filter-search,#rec2502703571 .t-catalog__sort-select{' +
       'width:100%!important;min-width:0!important;max-width:100%!important}}' +
-      '@media(max-width:600px){.ngr-catpage .t-catalog__filter__search-and-sort{' +
+      '@media(max-width:600px){#rec2502703571 .t-catalog__filter__search-and-sort{' +
       'grid-template-columns:minmax(0,1fr)!important}' +
-      '.ngr-catpage .t-catalog__filter__search-and-sort>*{grid-column:1!important}}' +
+      '#rec2502703571 .t-catalog__filter__search-and-sort>*{grid-column:1!important}}' +
       // Локальные результаты поиска не участвуют в разметке сетки Tilda,
       // поэтому её перерисовка не двигает поле и не забирает фокус.
       '.ngr-smart-search{position:relative!important;min-width:0!important}' +
@@ -2389,7 +3078,7 @@
       '.ngr-smart-search__item small{font-size:12px;line-height:1.35;color:#6f7782;' +
       'display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}' +
       '.ngr-smart-search__note{padding:12px;font-size:13px;line-height:1.4;color:#6f7782}' +
-      '@media(max-width:600px){.ngr-catpage .js-catalog-filter-search{font-size:16px!important}' +
+      '@media(max-width:600px){#rec2502703571 .js-catalog-filter-search{font-size:16px!important}' +
       '.ngr-smart-search{width:100%!important;min-width:0!important}' +
       '.ngr-smart-search__panel{left:0;right:auto;width:100%;max-width:100%;min-width:0;' +
       'max-height:50dvh;overflow-x:hidden}}' +
@@ -2426,7 +3115,8 @@
       // На телефоне Tilda рисует свои кнопки «Фильтры» и «Поиск» — они
       // повторяют нашу кнопку фильтров и видимое поле поиска. Оставляем
       // только её сортировку (замечание Александра 08.08).
-      ['.js-catalog-filter-mob-btn', '.js-catalog-search-mob-btn'].forEach(function (sel) {
+      ['.js-catalog-filter-mob-btn', '.js-catalog-sort-mob-btn',
+        '.js-catalog-search-mob-btn', '.js-catalog-search-mob-close-btn'].forEach(function (sel) {
         document.querySelectorAll(sel).forEach(function (b) {
           if (b.style.display !== 'none') b.style.setProperty('display', 'none', 'important');
         });
@@ -2471,7 +3161,7 @@
         }
         var узко = узкаяПанель;
         поле(s, узко ? '100%' : '210px');
-        поле(q, узко ? '100%' : '280px');
+        поле(q, узко ? '100%' : '260px');
         if (q) ставь(q, 'font-size', оченьУзко ? '16px' : '14.5px');
         // Порядок задаём на прямых детях строки: сами поля лежат внутри
         // обёрток Tilda, и свойство на них ничего не решает.
@@ -3724,7 +4414,7 @@
   }, true);
 
   function apply() {
-    fixPopup(); fixCards(); fixCart(); fixDupDelivery(); fixUnits(); fixBrands();
+    fixPopup(); fixCards(); fixCart(); fixPromocode(); fixDupDelivery(); fixUnits(); fixBrands();
     initSearchGuard(); fixSearch(); initSmartSearch(); fixAccountButton(); fixAuthGate();
     fixRatings(); fixPopupReviews(); fixDescription(); fixDeliveryOrder(); fixCardPhotos(); fixPrices(); fixFilterValues(); fixRatingFilter(); applyRatingFilter(false); fixShelves(); fixSgr(); fixFav(); cartCss(); docsSearch(); filterBarCss(); trimFilterBar(); dropCartTip(); pullProfileOnce(); refreshBrands(); buildSideFilters(); syncSideFilters(); fixUrlSort();
   }

@@ -7,6 +7,18 @@ import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const source = await readFile(resolve(root, 'js/ngr-stock.js'), 'utf8');
+
+function functionSource(name) {
+  const match = new RegExp(`function\\s+${name}\\s*\\(`).exec(source);
+  assert.ok(match, `Expected ${name}().`);
+  const brace = source.indexOf('{', match.index);
+  let depth = 0;
+  for (let i = brace; i < source.length; i += 1) {
+    if (source[i] === '{') depth += 1;
+    if (source[i] === '}' && --depth === 0) return source.slice(match.index, i + 1);
+  }
+  assert.fail(`No closing brace for ${name}().`);
+}
 const start = source.indexOf('  function smartNorm(');
 const end = source.indexOf('  function loadSmartIndex(', start);
 assert.ok(start > -1 && end > start, 'pure ranking helpers must be present');
@@ -65,4 +77,27 @@ test('ranking evaluates all candidates before applying the result limit', () => 
     .sort((a, b) => b.ranked.score - a.ranked.score)
     .slice(0, 10);
   assert.equal(ranked[0].item.a, 'winner');
+});
+
+test('opening a smart result cancels every pending focus restoration', () => {
+  const cleared = [];
+  const resetContext = vm.createContext({
+    searchState: { active: true, value: 'omega' },
+    searchBlurTimer: 7,
+    searchRestoreTimers: [8, 9],
+    searchRestoreQueued: true,
+    clearTimeout: (id) => cleared.push(id),
+  });
+  vm.runInContext(functionSource('clearSearchRestoreState'), resetContext);
+  resetContext.clearSearchRestoreState();
+  assert.equal(resetContext.searchState, null);
+  assert.equal(resetContext.searchBlurTimer, null);
+  assert.deepEqual(Array.from(resetContext.searchRestoreTimers), []);
+  assert.equal(resetContext.searchRestoreQueued, false);
+  assert.deepEqual(cleared, [7, 8, 9]);
+
+  const smart = functionSource('initSmartSearch');
+  assert.match(smart,
+    /addEventListener\(['"]click['"],\s*function\s*\(\)\s*\{[\s\S]*?clearSearchRestoreState\(\)[\s\S]*?openProduct\(it\.a\)/,
+    'Result navigation must clear the keyboard/focus guard before opening a product.');
 });
