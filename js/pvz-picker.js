@@ -58,7 +58,13 @@
     '.ngpvz_chosen .ngpvz__chosen{display:block}' +
     '.ngpvz__chosen b{color:#1f8a3b}' +
     '.ngpvz__change{background:none;border:0;color:#f28c28;cursor:pointer;padding:0;font-size:13px;font-family:inherit;text-decoration:underline}' +
-    '@media (max-width:600px){.ngpvz__map{height:240px}.ngpvz__list{max-height:220px}}';
+    '@media (max-width:600px){' +
+      '.ngpvz__actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:stretch}' +
+      '.ngpvz__geo,.ngpvz__maptoggle{min-width:0;width:100%;min-height:44px;box-sizing:border-box;padding:10px 8px;font-size:16px;line-height:1.25;white-space:normal;overflow-wrap:anywhere}' +
+      '.ngpvz__count{grid-column:1/-1}' +
+      '.ngpvz__search{font-size:16px}' +
+      '.ngpvz__map{height:240px}.ngpvz__list{max-height:220px}' +
+    '}';
   document.head.appendChild(css);
 
   function get(url) {
@@ -115,18 +121,34 @@
    * российского магазина это неуместно, поэтому библиотека заменена целиком,
    * а не просто спрятан значок.
    */
+  function removeMapLibTags() {
+    Array.prototype.forEach.call(document.querySelectorAll('[data-ngpvz-maplib="1"]'), function (el) {
+      if (el.parentNode) el.parentNode.removeChild(el);
+    });
+  }
+
   function loadMapLib() {
-    if (window.ol) return Promise.resolve();
+    if (window.ol && window.ol.Map) return Promise.resolve();
     if (mapLibLoading) return mapLibLoading;
+    removeMapLibTags();
     mapLibLoading = new Promise(function (res, rej) {
       var link = document.createElement('link');
       link.rel = 'stylesheet'; link.href = MAPLIB_CSS;
+      link.setAttribute('data-ngpvz-maplib', '1');
       document.head.appendChild(link);
       var js = document.createElement('script');
       js.src = MAPLIB_JS;
-      js.onload = function () { res(); };
-      js.onerror = function () { rej(new Error('map lib failed')); };
+      js.setAttribute('data-ngpvz-maplib', '1');
+      var timer = window.setTimeout(function () { rej(new Error('map lib timeout')); }, 15000);
+      js.onload = function () { window.clearTimeout(timer); res(); };
+      js.onerror = function () { window.clearTimeout(timer); rej(new Error('map lib failed')); };
       document.head.appendChild(js);
+    }).then(function () {
+      if (!window.ol || !window.ol.Map) throw new Error('map lib did not initialize');
+    }).catch(function (error) {
+      mapLibLoading = null;
+      removeMapLibTags();
+      throw error;
     });
     return mapLibLoading;
   }
@@ -197,6 +219,59 @@
     var chosenEl = wrap.querySelector('.ngpvz__chosen');
 
     var st = { city: null, points: [], shown: [], userPos: null, map: null, layer: null, picked: null };
+    var cityRequestSeq = 0;
+
+    function setMapButton(text, expanded, busy) {
+      mapBtn.textContent = text;
+      mapBtn.disabled = !!busy;
+      mapBtn.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+      if (busy) mapBtn.setAttribute('aria-busy', 'true');
+      else mapBtn.removeAttribute('aria-busy');
+    }
+
+    function focusCityInput() {
+      try { cityInput.focus({ preventScroll: true }); }
+      catch (e) { cityInput.focus(); }
+    }
+
+    function clearMapCard() {
+      var card = wrap.querySelector('.ngpvz__mapcard');
+      if (card && card.parentNode) card.parentNode.removeChild(card);
+    }
+
+    function destroyMap() {
+      clearMapCard();
+      if (st.map && st.map.setTarget) {
+        try { st.map.setTarget(null); } catch (e) {}
+      }
+      st.map = null;
+      st.layer = null;
+    }
+
+    function showCityProblem(result, focus) {
+      var reason = result && result.reason;
+      if (reason === 'stale') return;
+      wrap.classList.remove('ngpvz_map');
+      if (reason === 'not_found') {
+        setMapButton('Город не найден', false, false);
+        countEl.textContent = 'Уточните название города.';
+      } else if (reason === 'load_error') {
+        setMapButton('Повторить загрузку карты', false, false);
+        var value = norm(cityInput.value);
+        var hasCurrentList = st.city && st.points.length && value &&
+          (st.city._n === value || st.city._n.indexOf(value) === 0);
+        countEl.textContent = hasCurrentList
+          ? 'Карта не загрузилась — выберите пункт из списка или повторите попытку.'
+          : 'Не удалось загрузить пункты. Повторите попытку.';
+      } else if (reason === 'no_points') {
+        setMapButton('Нет пунктов в городе', false, false);
+        countEl.textContent = 'Для выбранного города пункты выдачи не найдены.';
+      } else {
+        setMapButton('Сначала выберите город', false, false);
+        countEl.textContent = 'Введите город или используйте «Рядом со мной».';
+      }
+      if (focus) focusCityInput();
+    }
 
     function pick(p) {
       st.picked = p;
@@ -205,6 +280,8 @@
       addrInput.dispatchEvent(new Event('change', { bubbles: true }));
       wrap.classList.remove('ngpvz_open', 'ngpvz_map');
       wrap.classList.add('ngpvz_chosen');
+      clearMapCard();
+      setMapButton('Показать карту', false, false);
       chosenEl.innerHTML =
         '<b>' + kindText(p) + '</b><br>' + p.a +
         (hoursText(p) ? '<br>Режим работы: ' + hoursText(p) : '') +
@@ -417,12 +494,23 @@
           btn.addEventListener('click', function () { pick(st.shown[+btn.getAttribute('data-i')]); });
         });
       }
-      if (wrap.classList.contains('ngpvz_map')) drawMap();
+      if (wrap.classList.contains('ngpvz_map')) drawMap(cityRequestSeq);
     }
 
     /** На карте — точки видимой области, а не первые попавшиеся из списка. */
-    function drawMap() {
-      loadMapLib().then(function () {
+    function drawMap(requestSeq) {
+      if (requestSeq && requestSeq !== cityRequestSeq) return Promise.resolve('stale');
+      if (!st.city) {
+        showCityProblem({ reason: 'empty' }, false);
+        return Promise.resolve(false);
+      }
+      if (!st.points.length) {
+        showCityProblem({ reason: 'no_points' }, false);
+        return Promise.resolve(false);
+      }
+      setMapButton('Загружаем карту…', true, true);
+      return loadMapLib().then(function () {
+        if (requestSeq && requestSeq !== cityRequestSeq) return 'stale';
         if (!st.map) {
           var start = st.userPos ? [st.userPos.lon, st.userPos.lat] : [st.city.x, st.city.y];
           st.layer = new ol.source.Vector();
@@ -458,9 +546,17 @@
         [0, 120, 400, 900].forEach(function (ms) {
           setTimeout(function () { if (st.map) { st.map.updateSize(); drawVisible(); } }, ms);
         });
-      }).catch(function () {
+        setMapButton('Скрыть карту', true, false);
+        return true;
+      }).catch(function (error) {
+        if (requestSeq && requestSeq !== cityRequestSeq) return 'stale';
+        destroyMap();
         wrap.classList.remove('ngpvz_map');
-        mapBtn.textContent = 'Карта недоступна';
+        wrap.classList.add('ngpvz_open');
+        setMapButton('Повторить загрузку карты', false, false);
+        countEl.textContent = 'Карта не загрузилась — выберите пункт из списка или повторите попытку.';
+        if (window.console && console.warn) console.warn('[NutryGo PVZ] map load failed', error);
+        return false;
       });
     }
 
@@ -514,26 +610,56 @@
       countEl.textContent = 'Пунктов в городе: ' + st.points.length + ' · на карте: ' + inView.length;
     }
 
-    function openCity(c, keepMap) {
-      if (!c) return Promise.resolve();
+    function openCity(c, keepMap, requestSeq) {
+      if (requestSeq && requestSeq !== cityRequestSeq) return Promise.resolve('stale');
+      if (!c) return Promise.resolve(false);
       if (st.city && st.city.file === c.file && st.city.city === c.city && st.points.length) {
+        var reopenMap = !!keepMap || wrap.classList.contains('ngpvz_map');
         wrap.classList.add('ngpvz_open');
+        wrap.classList.remove('ngpvz_map');
         render();
-        return Promise.resolve();
+        if (reopenMap) {
+          wrap.classList.add('ngpvz_map');
+          return drawMap(requestSeq);
+        }
+        setMapButton('Показать карту', false, false);
+        return Promise.resolve(true);
       }
       return get(BASE + '/' + c.file).then(function (data) {
+        if (requestSeq && requestSeq !== cityRequestSeq) return 'stale';
+        var reopenMap = !!keepMap || wrap.classList.contains('ngpvz_map');
         st.city = c;
         st.points = Array.isArray(data) ? data : (data[c.city] || []);
         wrap.classList.add('ngpvz_open');
         wrap.classList.remove('ngpvz_chosen');
-        if (st.map) { st.map.remove(); st.map = null; }
+        wrap.classList.remove('ngpvz_map');
+        destroyMap();
         render();
-        if (keepMap) { wrap.classList.add('ngpvz_map'); mapBtn.textContent = 'Скрыть карту'; drawMap(); }
+        if (reopenMap) {
+          wrap.classList.add('ngpvz_map');
+          return drawMap(requestSeq);
+        }
+        setMapButton('Показать карту', false, false);
+        return true;
       });
     }
 
     function openByName(name, keepMap) {
-      loadCities().then(function () { return openCity(findCity(name), keepMap); }).catch(function () {});
+      var requestSeq = ++cityRequestSeq;
+      var value = String(name || '').trim();
+      if (!norm(value)) return Promise.resolve({ ok: false, reason: 'empty' });
+      return loadCities().then(function () {
+        if (requestSeq !== cityRequestSeq) return { ok: false, reason: 'stale' };
+        var city = findCity(value);
+        if (!city) return { ok: false, reason: 'not_found' };
+        return openCity(city, keepMap, requestSeq).then(function (mapReady) {
+          if (requestSeq !== cityRequestSeq || mapReady === 'stale') return { ok: false, reason: 'stale' };
+          return { ok: true, city: city, mapReady: mapReady !== false };
+        });
+      }).catch(function (error) {
+        if (requestSeq !== cityRequestSeq) return { ok: false, reason: 'stale' };
+        return { ok: false, reason: 'load_error', error: error };
+      });
     }
 
     geoBtn.addEventListener('click', function () {
@@ -548,7 +674,17 @@
           cityInput.value = c.city;
           cityInput.dispatchEvent(new Event('input', { bubbles: true }));
           cityInput.dispatchEvent(new Event('change', { bubbles: true }));
-          openCity(c, true);
+          return openByName(c.city, true).then(function (result) {
+            if (!result.ok && result.reason !== 'stale') {
+              geoBtn.textContent = 'Не удалось загрузить пункты';
+              showCityProblem(result, false);
+              setTimeout(function () { geoBtn.textContent = '📍 Рядом со мной'; }, 3000);
+            }
+          });
+        }).catch(function () {
+          geoBtn.textContent = 'Не удалось загрузить пункты';
+          showCityProblem({ reason: 'load_error' }, false);
+          setTimeout(function () { geoBtn.textContent = '📍 Рядом со мной'; }, 3000);
         });
       }, function () {
         geoBtn.textContent = 'Не дали доступ к геопозиции';
@@ -557,21 +693,54 @@
     });
 
     mapBtn.addEventListener('click', function () {
-      var show = !wrap.classList.contains('ngpvz_map');
-      wrap.classList.toggle('ngpvz_map', show);
-      mapBtn.textContent = show ? 'Скрыть карту' : 'Показать карту';
-      if (show) {
-        if (!st.points.length && cityInput.value) openByName(cityInput.value, true);
-        else drawMap();
+      if (wrap.classList.contains('ngpvz_map')) {
+        wrap.classList.remove('ngpvz_map');
+        clearMapCard();
+        setMapButton('Показать карту', false, false);
+        return;
       }
+      var value = String(cityInput.value || '').trim();
+      var valueNorm = norm(value);
+      var cityReady = st.city && st.points.length && valueNorm &&
+        (st.city._n === valueNorm || st.city._n.indexOf(valueNorm) === 0);
+      if (!value) {
+        showCityProblem({ reason: 'empty' }, true);
+        return;
+      }
+      if (!cityReady) {
+        setMapButton('Ищем город…', false, true);
+        openByName(value, true).then(function (result) {
+          if (!result.ok) showCityProblem(result, true);
+          else if (result.mapReady !== false) setMapButton('Скрыть карту', true, false);
+        });
+        return;
+      }
+      wrap.classList.add('ngpvz_map');
+      drawMap(cityRequestSeq);
     });
 
     var t = null;
     cityInput.addEventListener('input', function () {
       clearTimeout(t);
-      t = setTimeout(function () { openByName(cityInput.value); }, 400);
+      cityRequestSeq += 1;
+      if (wrap.classList.contains('ngpvz_map') || mapBtn.disabled) {
+        wrap.classList.remove('ngpvz_map');
+        clearMapCard();
+        setMapButton('Показать карту', false, false);
+      }
+      t = setTimeout(function () {
+        openByName(cityInput.value).then(function (result) {
+          if (result.ok && !wrap.classList.contains('ngpvz_map')) setMapButton('Показать карту', false, false);
+          else if (result.reason === 'empty') showCityProblem(result, false);
+        });
+      }, 400);
     });
-    cityInput.addEventListener('change', function () { openByName(cityInput.value); });
+    cityInput.addEventListener('change', function () {
+      openByName(cityInput.value).then(function (result) {
+        if (result.ok && !wrap.classList.contains('ngpvz_map')) setMapButton('Показать карту', false, false);
+        else if (!result.ok) showCityProblem(result, false);
+      });
+    });
     searchEl.addEventListener('input', function () { if (st.points.length) render(); });
 
     if (typeSelect) {
@@ -580,7 +749,9 @@
         wrap.style.display = courier ? 'none' : '';
         addrInput.readOnly = courier;
         addrInput.placeholder = courier ? 'Адрес доставки курьером' : 'Выберите пункт выдачи ниже';
-        if (!courier && cityInput.value) openByName(cityInput.value);
+        if (!courier && cityInput.value) openByName(cityInput.value).then(function (result) {
+          if (!result.ok) showCityProblem(result, false);
+        });
       });
     }
 
@@ -591,7 +762,9 @@
         cityInput.dispatchEvent(new Event('input', { bubbles: true }));
       }
     } catch (e) {}
-    if (cityInput.value) openByName(cityInput.value);
+    if (cityInput.value) openByName(cityInput.value).then(function (result) {
+      if (!result.ok) showCityProblem(result, false);
+    });
   }
 
   function scan() {

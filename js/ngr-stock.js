@@ -374,9 +374,14 @@
    * набрано, и после пересборки возвращаем панель, текст и курсор. Если
    * покупатель закрыл поиск сам (крестик или пустой запрос) — не мешаем.
    */
-  var SEARCH_INPUT = '.t-catalog__filter__search input, .t-store__filter__search input, ' +
-    '.t-catalog__search-wrapper input, .js-catalog-filter-search input';
-  var searchState = null;   // {value, width} пока покупатель работает с поиском
+  var SEARCH_INPUT = '#rec2502703571 .t-catalog__filter__search input, ' +
+    '#rec2502703571 .t-store__filter__search input, ' +
+    '#rec2502703571 .t-catalog__search-wrapper input, ' +
+    '#rec2502703571 input.js-catalog-filter-search';
+  var searchState = null;
+  var searchBlurTimer = null;
+  var searchRestoreQueued = false;
+  var searchRestoreTimers = [];
 
   function searchInput() { return document.querySelector(SEARCH_INPUT); }
 
@@ -384,10 +389,58 @@
     if (window.__ngrSearchGuard) return;
     window.__ngrSearchGuard = 1;
 
+    document.addEventListener('focusin', function (e) {
+      var el = e.target;
+      if (!el || !el.matches || !el.matches(SEARCH_INPUT)) return;
+      clearTimeout(searchBlurTimer);
+      searchState = {
+        value: el.value || '',
+        start: typeof el.selectionStart === 'number' ? el.selectionStart : null,
+        end: typeof el.selectionEnd === 'number' ? el.selectionEnd : null,
+        width: window.innerWidth,
+        active: true,
+        composing: false
+      };
+    }, true);
+
     document.addEventListener('input', function (e) {
       var el = e.target;
       if (!el || !el.matches || !el.matches(SEARCH_INPUT)) return;
-      searchState = el.value ? { value: el.value, width: window.innerWidth } : null;
+      if (!searchState) searchState = { width: window.innerWidth };
+      searchState.value = el.value || '';
+      searchState.start = typeof el.selectionStart === 'number' ? el.selectionStart : null;
+      searchState.end = typeof el.selectionEnd === 'number' ? el.selectionEnd : null;
+      searchState.active = true;
+      searchState.composing = !!e.isComposing;
+    }, true);
+
+    document.addEventListener('compositionstart', function (e) {
+      if (e.target && e.target.matches && e.target.matches(SEARCH_INPUT) && searchState) {
+        searchState.composing = true;
+      }
+    }, true);
+    document.addEventListener('compositionend', function (e) {
+      if (e.target && e.target.matches && e.target.matches(SEARCH_INPUT) && searchState) {
+        searchState.composing = false;
+        searchState.value = e.target.value || '';
+      }
+    }, true);
+
+    document.addEventListener('focusout', function (e) {
+      if (!e.target || !e.target.matches || !e.target.matches(SEARCH_INPUT)) return;
+      clearTimeout(searchBlurTimer);
+      searchBlurTimer = setTimeout(function () {
+        var a = document.activeElement;
+        if (a && a !== document.body && a !== document.documentElement &&
+            (!a.matches || !a.matches(SEARCH_INPUT)) &&
+            (!a.closest || !a.closest('.ngr-smart-search'))) searchState = null;
+      }, 650);
+    }, true);
+
+    // Явный тап вне поиска — это решение покупателя, фокус не возвращаем.
+    document.addEventListener('pointerdown', function (e) {
+      if (!searchState || !e.target || !e.target.closest) return;
+      if (!e.target.closest('.t-catalog__filter__search, .ngr-smart-search')) searchState = null;
     }, true);
 
     // Закрыл сам — забываем состояние и больше не возвращаем панель.
@@ -397,27 +450,256 @@
         searchState = null;
       }
     }, true);
+
+    document.addEventListener('keydown', function (e) {
+      if ((e.key === 'Escape' || e.key === 'Tab') && e.target && e.target.matches && e.target.matches(SEARCH_INPUT)) {
+        searchState = null;
+      }
+    }, true);
+
+    function keepSearchDuringViewportResize() {
+      if (!searchState || !searchState.active) return;
+      searchRestoreTimers.forEach(clearTimeout);
+      searchRestoreTimers = [0, 60, 140, 280, 520, 900, 1500].map(function (ms) {
+        return setTimeout(fixSearch, ms);
+      });
+    }
+    window.addEventListener('resize', keepSearchDuringViewportResize, { passive: true });
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', keepSearchDuringViewportResize, { passive: true });
+    }
   }
 
   function fixSearch() {
-    if (!searchState) return;
-    // Ширина не менялась — значит панель схлопнулась не из-за поворота экрана,
-    // а из-за клавиатуры: возвращаем всё как было.
+    if (!searchState || !searchState.active || searchState.composing) return;
+    // clientWidth не меняется при появлении экранной клавиатуры и iOS zoom.
+    // При настоящем повороте экрана старое состояние возвращать не нужно.
     if (window.innerWidth !== searchState.width) { searchState = null; return; }
     var inp = searchInput();
-    if (inp && document.activeElement === inp) return;      // всё на месте
+    if (inp && document.activeElement === inp && inp.value === searchState.value) return; // всё на месте
+    if (!inp || !inp.getBoundingClientRect().width || searchRestoreQueued) return;
+    searchRestoreQueued = true;
+    var restore = function () {
+      searchRestoreQueued = false;
+      if (!searchState || !searchState.active) return;
+      var current = searchInput();
+      if (!current || !current.getBoundingClientRect().width) return;
+      if (current.value !== searchState.value) current.value = searchState.value;
+      try { current.focus({ preventScroll: true }); } catch (e) { current.focus(); }
+      if (searchState.start !== null && current.setSelectionRange) {
+        try { current.setSelectionRange(searchState.start, searchState.end); } catch (e) {}
+      }
+    };
+    if (window.requestAnimationFrame) window.requestAnimationFrame(restore);
+    else window.setTimeout(restore, 0);
+  }
 
-    if (!inp || !inp.getBoundingClientRect().width) {
-      var open = document.querySelector('.js-catalog-search-mob-btn');
-      if (open && open.getBoundingClientRect().width) open.click();
-      inp = searchInput();
+  /* ---------- Умный поиск по каталогу ---------- */
+
+  var SMART_SEARCH_INDEX = window.NGR_SEARCH_INDEX ||
+    'https://pikhtachoo.github.io/nutrygo-pvz/data/search-index.json';
+  var smartIndexPromise = null;
+
+  function smartNorm(s) {
+    s = String(s || '').toLocaleLowerCase('ru').replace(/ё/g, 'е');
+    try { s = s.normalize('NFKD').replace(/[\u0300-\u036f]/g, ''); } catch (e) {}
+    return s.replace(/[^a-zа-я0-9]+/gi, ' ').replace(/\s+/g, ' ').trim();
+  }
+
+  function keyboardVariant(s) {
+    var en = "qwertyuiop[]asdfghjkl;'zxcvbnm,.";
+    var ru = 'йцукенгшщзхъфывапролджэячсмитьбю';
+    var out = '', changed = false;
+    for (var i = 0; i < s.length; i++) {
+      var c = s.charAt(i), p = en.indexOf(c), r = ru.indexOf(c);
+      if (p > -1) { out += ru.charAt(p); changed = true; }
+      else if (r > -1) { out += en.charAt(r); changed = true; }
+      else out += c;
     }
+    return changed ? smartNorm(out) : '';
+  }
+
+  // «beta karotin» → «бета каротин». Это не словарь медицинских обещаний,
+  // а только механическая транслитерация запроса; исходный вариант ищем тоже.
+  function translitVariant(s) {
+    if (!/[a-z]/i.test(s)) return '';
+    var pairs = [
+      ['shch', 'щ'], ['sch', 'щ'], ['yo', 'ё'], ['zh', 'ж'], ['kh', 'х'],
+      ['ts', 'ц'], ['ch', 'ч'], ['sh', 'ш'], ['yu', 'ю'], ['ya', 'я'],
+      ['ye', 'е'], ['a', 'а'], ['b', 'б'], ['v', 'в'], ['g', 'г'],
+      ['d', 'д'], ['e', 'е'], ['z', 'з'], ['i', 'и'], ['j', 'й'],
+      ['k', 'к'], ['l', 'л'], ['m', 'м'], ['n', 'н'], ['o', 'о'],
+      ['p', 'п'], ['r', 'р'], ['s', 'с'], ['t', 'т'], ['u', 'у'],
+      ['f', 'ф'], ['h', 'х'], ['c', 'к'], ['y', 'ы'], ['q', 'к'], ['w', 'в'], ['x', 'кс']
+    ];
+    var out = smartNorm(s);
+    pairs.forEach(function (p) { out = out.replace(new RegExp(p[0], 'g'), p[1]); });
+    return smartNorm(out);
+  }
+
+  function smartStem(w) {
+    if (w.length < 5) return w;
+    return w.replace(/(иями|ями|ами|ого|ему|ому|ыми|ими|ая|яя|ое|ее|ые|ие|ий|ый|ой|ам|ям|ах|ях|ом|ем|ов|ев|ы|и|а|я|у|ю|е|о)$/i, '');
+  }
+
+  function smartTokens(s) {
+    var stop = { 'для': 1, 'или': 1, 'при': 1, 'под': 1, 'над': 1, 'без': 1, 'это': 1 };
+    return smartNorm(s).split(' ').filter(function (w) { return w.length > 1 && !stop[w]; });
+  }
+
+  function oneEdit(a, b) {
+    if (a === b) return true;
+    if (Math.abs(a.length - b.length) > 1) return false;
+    var i = 0, j = 0, edits = 0;
+    while (i < a.length && j < b.length) {
+      if (a.charAt(i) === b.charAt(j)) { i++; j++; continue; }
+      if (++edits > 1) return false;
+      if (a.length > b.length) i++;
+      else if (b.length > a.length) j++;
+      else { i++; j++; }
+    }
+    return edits + (i < a.length || j < b.length ? 1 : 0) <= 1;
+  }
+
+  function tokenScore(token, words) {
+    var stem = smartStem(token), best = 0;
+    for (var i = 0; i < words.length; i++) {
+      var w = words[i];
+      if (w === token) return 120;
+      if (Math.min(w.length, token.length) >= 4 && (w.indexOf(token) === 0 || token.indexOf(w) === 0)) best = Math.max(best, 85);
+      if (stem.length >= 4 && smartStem(w) === stem) best = Math.max(best, 65);
+      if (token.length >= 4 && Math.abs(w.length - token.length) <= 1 && oneEdit(token, w)) best = Math.max(best, 45);
+    }
+    return best;
+  }
+
+  function rankSmart(item, query) {
+    var title = item._t || (item._t = smartNorm(item.t));
+    var brand = item._b || (item._b = smartNorm(item.b));
+    var text = item.s || '';
+    var q = smartNorm(query), art = smartNorm(item.a);
+    if (!q) return null;
+    if (art === q) return { score: 12000, match: 'Артикул' };
+    var score = 0, match = 'Описание';
+    if (title === q) { score += 9000; match = 'Название'; }
+    else if (title.indexOf(q) === 0) { score += 6500; match = 'Название'; }
+    else if (title.indexOf(q) > -1) { score += 4800; match = 'Название'; }
+    if (brand === q) { score += 4200; match = 'Бренд'; }
+    else if (brand.indexOf(q) === 0) { score += 3200; match = 'Бренд'; }
+    if (text.indexOf(q) > -1) score += 2100;
+
+    var tokens = smartTokens(q);
+    if (!tokens.length) return score ? { score: score, match: match } : null;
+    var tw = title.split(' '), bw = brand.split(' '), sw = text.split(' ');
+    var matched = 0;
+    tokens.forEach(function (tok) {
+      var ts = tokenScore(tok, tw), bs = tokenScore(tok, bw), ds = tokenScore(tok, sw);
+      var best = Math.max(ts, bs, ds);
+      if (best) matched++;
+      if (best === ts && ts) { score += ts * 8; if (match === 'Описание') match = 'Название'; }
+      else if (best === bs && bs) { score += bs * 6; if (match === 'Описание') match = 'Бренд'; }
+      else score += ds * 2;
+    });
+    var need = tokens.length < 3 ? tokens.length : Math.ceil(tokens.length * 0.67);
+    return matched >= need && score > 0 ? { score: score, match: match } : null;
+  }
+
+  function loadSmartIndex() {
+    if (!smartIndexPromise) {
+      smartIndexPromise = fetch(SMART_SEARCH_INDEX, { credentials: 'omit', cache: 'no-cache' })
+        .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+        .then(function (j) { return (j && j.items) || []; })
+        .catch(function () { smartIndexPromise = null; return []; });
+    }
+    return smartIndexPromise;
+  }
+
+  function initSmartSearch() {
+    if (!onCatalogPage()) return;
+    var inp = searchInput();
     if (!inp) return;
-    if (inp.value !== searchState.value) {
-      inp.value = searchState.value;
-      inp.dispatchEvent(new Event('input', { bubbles: true }));
+    var existing = document.getElementById('ngr-smart-search-results');
+    if (inp.getAttribute('data-ngr-smart') === '1' && existing && existing.isConnected) return;
+    document.querySelectorAll('.ngr-smart-search__panel').forEach(function (p) { p.remove(); });
+    inp.setAttribute('data-ngr-smart', '1');
+    inp.setAttribute('autocomplete', 'off');
+    inp.setAttribute('role', 'combobox');
+    inp.setAttribute('aria-autocomplete', 'list');
+    var host = inp.closest('.t-catalog__search-wrapper') || inp.parentNode;
+    if (!host) return;
+    host.classList.add('ngr-smart-search');
+    var box = document.createElement('div');
+    box.className = 'ngr-smart-search__panel';
+    box.id = 'ngr-smart-search-results';
+    box.hidden = true;
+    box.setAttribute('role', 'listbox');
+    host.appendChild(box);
+    inp.setAttribute('aria-controls', box.id);
+    inp.setAttribute('aria-expanded', 'false');
+    var requestId = 0;
+    var smartTimer = null;
+
+    function hide() { box.hidden = true; inp.setAttribute('aria-expanded', 'false'); }
+    function note(text) {
+      box.innerHTML = '';
+      var n = document.createElement('div');
+      n.className = 'ngr-smart-search__note'; n.textContent = text;
+      box.appendChild(n); box.hidden = false; inp.setAttribute('aria-expanded', 'true');
     }
-    try { inp.focus({ preventScroll: true }); } catch (e) { inp.focus(); }
+    function draw(list) {
+      box.innerHTML = '';
+      if (!list.length) { note('Ничего не нашли. Попробуйте другое написание.'); return; }
+      list.slice(0, 10).forEach(function (row) {
+        var it = row.item;
+        var b = document.createElement('button');
+        b.type = 'button'; b.className = 'ngr-smart-search__item'; b.setAttribute('role', 'option');
+        var t = document.createElement('strong'); t.textContent = it.t;
+        var m = document.createElement('span'); m.textContent = row.match + ' · Артикул ' + it.a;
+        b.appendChild(t); b.appendChild(m);
+        if (row.match === 'Описание' && it.d) {
+          var d = document.createElement('small'); d.textContent = it.d; b.appendChild(d);
+        }
+        b.addEventListener('click', function () { hide(); openProduct(it.a); });
+        box.appendChild(b);
+      });
+      box.hidden = false; inp.setAttribute('aria-expanded', 'true');
+    }
+    function run() {
+      var raw = inp.value || '', q = smartNorm(raw);
+      if (q.length < 2) { hide(); return; }
+      var mine = ++requestId;
+      note('Ищем по названию и описанию…');
+      loadSmartIndex().then(function (items) {
+        if (mine !== requestId || !inp.isConnected || smartNorm(inp.value) !== q) return;
+        if (!items.length) { hide(); return; } // native-поиск остаётся fallback
+        var variants = [q], kb = keyboardVariant(q), tr = translitVariant(q);
+        if (kb && kb !== q) variants.push(kb);
+        if (tr && tr !== q && variants.indexOf(tr) < 0) variants.push(tr);
+        var out = [];
+        items.forEach(function (it) {
+          var best = null;
+          variants.forEach(function (v) { var r = rankSmart(it, v); if (r && (!best || r.score > best.score)) best = r; });
+          if (best) out.push({ item: it, score: best.score, match: best.match });
+        });
+        out.sort(function (a, b) { return b.score - a.score || String(a.item.t).localeCompare(String(b.item.t), 'ru'); });
+        draw(out);
+      });
+    }
+    inp.addEventListener('input', function () { clearTimeout(smartTimer); smartTimer = setTimeout(run, 280); });
+    inp.addEventListener('focus', function () { if (smartNorm(inp.value).length >= 2) run(); });
+    inp.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') hide();
+      if (e.key === 'ArrowDown' && !box.hidden) {
+        var first = box.querySelector('button'); if (first) { e.preventDefault(); first.focus(); }
+      }
+    });
+    box.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') { hide(); inp.focus(); return; }
+      var buttons = [].slice.call(box.querySelectorAll('button'));
+      var i = buttons.indexOf(document.activeElement);
+      if (e.key === 'ArrowDown' && buttons[i + 1]) { e.preventDefault(); buttons[i + 1].focus(); }
+      if (e.key === 'ArrowUp') { e.preventDefault(); (buttons[i - 1] || inp).focus(); }
+    });
   }
 
   /* ---------- Вход в кабинет ---------- */
@@ -2079,8 +2361,35 @@
       '")!important;background-repeat:no-repeat!important;background-position:12px center!important;' +
       'background-size:17px 17px!important}' +
       '@media(max-width:1000px){.ngr-catpage .t-catalog__filter__search-and-sort{margin-left:0!important;' +
-      'flex-wrap:wrap!important}' +
-      '.ngr-catpage .js-catalog-filter-search{width:100%!important}}' +
+      'display:grid!important;grid-template-columns:minmax(104px,.78fr) minmax(0,1.22fr)!important;' +
+      'width:100%!important;min-width:0!important}' +
+      '.ngr-catpage .t-catalog__filter__search-and-sort>*{width:100%!important;min-width:0!important}' +
+      '.ngr-catpage .js-catalog-filter-search,.ngr-catpage .t-catalog__sort-select{' +
+      'width:100%!important;min-width:0!important;max-width:100%!important}}' +
+      '@media(max-width:600px){.ngr-catpage .t-catalog__filter__search-and-sort{' +
+      'grid-template-columns:minmax(0,1fr)!important}' +
+      '.ngr-catpage .t-catalog__filter__search-and-sort>*{grid-column:1!important}}' +
+      // Локальные результаты поиска не участвуют в разметке сетки Tilda,
+      // поэтому её перерисовка не двигает поле и не забирает фокус.
+      '.ngr-smart-search{position:relative!important;min-width:0!important}' +
+      '.ngr-smart-search__panel{position:absolute;z-index:10020;left:0;top:calc(100% + 6px);' +
+      'width:min(520px,calc(100vw - 24px));max-height:480px;max-height:min(55dvh,480px);overflow:auto;' +
+      'box-sizing:border-box;background:#fff;border:1px solid #dfe5ec;border-radius:14px;' +
+      'box-shadow:0 16px 40px rgba(20,23,28,.16);padding:6px}' +
+      '.ngr-smart-search__panel[hidden]{display:none!important}' +
+      '.ngr-smart-search__item{display:flex;width:100%;flex-direction:column;align-items:flex-start;' +
+      'gap:3px;border:0;border-radius:10px;background:#fff;padding:10px 11px;text-align:left;' +
+      'font-family:inherit;color:#14171c;cursor:pointer}' +
+      '.ngr-smart-search__item:hover,.ngr-smart-search__item:focus{background:#f2f6fa;outline:none}' +
+      '.ngr-smart-search__item strong{font-size:14px;line-height:1.35}' +
+      '.ngr-smart-search__item span{font-size:12px;color:#2f6ba8}' +
+      '.ngr-smart-search__item small{font-size:12px;line-height:1.35;color:#6f7782;' +
+      'display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}' +
+      '.ngr-smart-search__note{padding:12px;font-size:13px;line-height:1.4;color:#6f7782}' +
+      '@media(max-width:600px){.ngr-catpage .js-catalog-filter-search{font-size:16px!important}' +
+      '.ngr-smart-search{width:100%!important;min-width:0!important}' +
+      '.ngr-smart-search__panel{left:auto;right:0;width:min(520px,calc(100vw - 24px));' +
+      'max-height:50dvh}}' +
       '.t-catalog__filter__item-title{border-radius:12px!important}';
     document.head.appendChild(st);
   }
@@ -2122,10 +2431,15 @@
 
       var ss = document.querySelector('.t-catalog__filter__search-and-sort');
       if (ss) {
-        ss.style.setProperty('display', 'flex', 'important');
+        var узкаяПанель = innerWidth <= 1000;
+        var оченьУзко = innerWidth <= 600;
+        ss.style.setProperty('display', узкаяПанель ? 'grid' : 'flex', 'important');
         ss.style.setProperty('gap', '10px', 'important');
         ss.style.setProperty('align-items', 'center', 'important');
-        ss.style.setProperty('width', 'auto', 'important');
+        ss.style.setProperty('width', узкаяПанель ? '100%' : 'auto', 'important');
+        ss.style.setProperty('grid-template-columns', оченьУзко ? 'minmax(0,1fr)' :
+          (узкаяПанель ? 'minmax(104px,.78fr) minmax(0,1.22fr)' : 'none'), 'important');
+        ss.style.setProperty('min-width', '0', 'important');
         // Ровно над сеткой товаров: колонка фильтров 262 плюс отступ 24.
         ss.style.setProperty('margin-left', innerWidth > 1000 ? '275px' : '0', 'important');
         // Сортировка слева, поиск рядом — как в каталоге Ozon. Оформление
@@ -2152,21 +2466,42 @@
           ставь(e, 'color', '#14171c');
           ставь(e, 'box-sizing', 'border-box');
         }
-        var узко = innerWidth <= 1000;
-        поле(s, '210px');
+        var узко = узкаяПанель;
+        поле(s, узко ? '100%' : '210px');
         поле(q, узко ? '100%' : '280px');
+        if (q) ставь(q, 'font-size', оченьУзко ? '16px' : '14.5px');
         // Порядок задаём на прямых детях строки: сами поля лежат внутри
         // обёрток Tilda, и свойство на них ничего не решает.
         [].slice.call(ss.children).forEach(function (c) {
-          if (s && (c === s || c.contains(s))) c.style.setProperty('order', '0', 'important');
-          else if (q && (c === q || c.contains(q))) c.style.setProperty('order', '1', 'important');
+          if (s && (c === s || c.contains(s))) {
+            c.style.setProperty('order', '0', 'important');
+            if (узко) {
+              c.style.setProperty('display', 'block', 'important');
+              c.style.setProperty('width', '100%', 'important');
+              c.style.setProperty('min-width', '0', 'important');
+              c.style.setProperty('grid-column', оченьУзко ? '1' : 'auto', 'important');
+            }
+          } else if (q && (c === q || c.contains(q))) {
+            c.style.setProperty('order', '1', 'important');
+            if (узко) {
+              c.style.setProperty('display', 'block', 'important');
+              c.style.setProperty('width', '100%', 'important');
+              c.style.setProperty('min-width', '0', 'important');
+              c.style.setProperty('grid-column', оченьУзко ? '1' : 'auto', 'important');
+            }
+          }
         });
         if (s) {
           ставь(s, 'order', '0');
+          ставь(s, 'display', 'block');
+          ставь(s, 'min-width', '0');
+          ставь(s, 'max-width', узко ? '100%' : 'none');
           ставь(s, 'padding', '0 36px 0 14px');
         }
         if (q) {
           ставь(q, 'order', '1');
+          ставь(q, 'min-width', '0');
+          ставь(q, 'max-width', узко ? '100%' : 'none');
           // Слева оставляем место под лупу, иначе подпись наезжает на неё.
           ставь(q, 'padding', '0 14px 0 42px');
           ставь(q, 'background-image', лупа);
@@ -2177,7 +2512,8 @@
           // рядом с полем (замечание Александра 08.08).
           if (q.parentNode && q.parentNode !== ss) {
             ставь(q.parentNode, 'order', '1');
-            ставь(q.parentNode, 'width', 'auto');
+            ставь(q.parentNode, 'width', узко ? '100%' : 'auto');
+            ставь(q.parentNode, 'min-width', '0');
             ставь(q.parentNode, 'border', '0');
             ставь(q.parentNode, 'background', 'transparent');
             ставь(q.parentNode, 'box-shadow', 'none');
@@ -2326,12 +2662,59 @@
       '.t706__product-thumb{width:62px!important;height:62px!important;flex:0 0 62px!important}' +
       '.t706__product-title{font-size:13.5px!important}' +
       '.t706__product-plusminus{margin-top:8px!important}' +
+      // На узком экране штатный контейнер иконки растягивался до 146 px
+      // и перекрывал ссылки второй колонки. Кликабельной остаётся только
+      // компактная круглая кнопка в безопасном отступе.
+      '.ngr-ready .t706__carticon{left:auto!important;right:12px!important;' +
+      'bottom:calc(12px + env(safe-area-inset-bottom,0px))!important;width:56px!important;' +
+      'min-width:56px!important;max-width:56px!important;height:56px!important;padding:0!important;' +
+      'display:block!important;box-sizing:border-box!important;pointer-events:none!important}' +
+      '.ngr-ready .t706__carticon-wrapper{width:56px!important;height:56px!important;' +
+      'pointer-events:auto!important}' +
+      '.ngr-ready .t706__carticon-counter{pointer-events:auto!important}' +
+      // Ссылка выхода в заголовке формы не должна выходить за viewport.
+      '.t706__cartwin .t706__auth{display:flex!important;flex-wrap:wrap!important;gap:6px 10px!important;' +
+      'align-items:center!important}' +
+      '.t706__cartwin .js-cart-log-out{position:static!important;right:auto!important;' +
+      'max-width:100%!important;box-sizing:border-box!important;overflow-wrap:anywhere}' +
       '.t706__cartwin-bottom .t-form__submit button,.t706__cartwin-bottom .t-submit{' +
       'position:sticky;bottom:0;font-size:16px!important;padding:16px!important}}';
     document.head.appendChild(st);
   }
 
   /* ---------- Боковая колонка фильтров ---------- */
+
+  var sideReturnFocus = null;
+
+  function closeSideFilters() {
+    var live = document.querySelector('.ngr-side_open');
+    if (live) {
+      live.classList.remove('ngr-side_open');
+      live.removeAttribute('aria-modal');
+    }
+    document.documentElement.classList.remove('ngr-side-lock');
+    if (sideReturnFocus && sideReturnFocus.isConnected) {
+      try { sideReturnFocus.focus({ preventScroll: true }); } catch (e) { sideReturnFocus.focus(); }
+    }
+  }
+
+  function openSideFilters(button) {
+    var live = document.querySelector('.ngr-side');
+    if (!live) return;
+    sideReturnFocus = button || document.activeElement;
+    live.classList.add('ngr-side_open');
+    live.setAttribute('aria-modal', 'true');
+    document.documentElement.classList.add('ngr-side-lock');
+    var first = live.querySelector('.ngr-side__close');
+    if (first) first.focus();
+  }
+
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && document.querySelector('.ngr-side_open')) {
+      e.preventDefault();
+      closeSideFilters();
+    }
+  });
 
   /**
    * Фильтры вынесены в боковую колонку, как на маркетплейсах (запрос
@@ -2407,6 +2790,7 @@
       '.ngr-side__up:hover{background:#f6f8fa}' +
       '.ngr-sidebtn{display:none}' +
       '@media(max-width:1000px){' +
+      'html.ngr-side-lock,html.ngr-side-lock body{overflow:hidden!important;overscroll-behavior:none}' +
       '.ngr-withside{grid-template-columns:minmax(0,1fr)}' +
       '.ngr-withside>*{grid-column:1}' +
       '.ngr-withside>.ngr-side{grid-column:1;grid-row:auto}' +
@@ -2415,7 +2799,8 @@
       '.ngr-sidebtn{display:inline-flex;align-items:center;gap:8px;margin:0 0 12px;padding:11px 18px;' +
       'border:1px solid #e3e8ee;background:#fff;border-radius:12px;font-size:14px;font-weight:700;' +
       'color:#14171c;cursor:pointer}' +
-      '.ngr-side__close{display:block;width:100%;margin-top:8px;padding:13px;border:0;border-radius:12px;' +
+      '.ngr-side__close{display:block;position:sticky;top:0;z-index:5;width:100%;margin:0 0 8px;' +
+      'padding:13px;border:0;border-radius:12px;' +
       'background:#4984c4;color:#fff;font-size:15px;font-weight:700;cursor:pointer}}' +
       '@media(min-width:1001px){.ngr-side__close{display:none}}';
     document.head.appendChild(st);
@@ -2512,7 +2897,8 @@
    */
   function syncSideFilters() {
     var side = document.querySelector('.ngr-side');
-    if (!side) return;
+    if (!side) { document.documentElement.classList.remove('ngr-side-lock'); return; }
+    if (!side.classList.contains('ngr-side_open')) document.documentElement.classList.remove('ngr-side-lock');
     side.querySelectorAll('.ngr-side__o').forEach(function (row) {
       var lab = liveOpt(row.getAttribute('data-g'), row.getAttribute('data-v'));
       var inp = lab && lab.querySelector('input');
@@ -2597,6 +2983,15 @@
 
     var side = document.createElement('aside');
     side.className = 'ngr-side';
+    side.setAttribute('role', 'dialog');
+    side.setAttribute('aria-label', 'Фильтры каталога');
+
+    var close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'ngr-side__close';
+    close.textContent = 'Показать товары';
+    close.addEventListener('click', closeSideFilters);
+    side.appendChild(close);
 
     items.forEach(function (it) {
       var title = ((it.querySelector('.t-catalog__filter__item-title') || {}).textContent || '').trim();
@@ -2707,16 +3102,6 @@
     });
     side.appendChild(up);
 
-    var close = document.createElement('button');
-    close.type = 'button';
-    close.className = 'ngr-side__close';
-    close.textContent = 'Показать товары';
-    close.addEventListener('click', function () {
-      var live = document.querySelector('.ngr-side');
-      if (live) live.classList.remove('ngr-side_open');
-    });
-    side.appendChild(close);
-
     // Ставим колонку слева от сетки товаров.
     var grid = block.querySelector('.t-catalog__products, .js-catalog-products') ||
       (document.querySelector('.js-product') || {}).parentNode;
@@ -2735,8 +3120,7 @@
     btn.className = 'ngr-sidebtn';
     btn.textContent = '☰ Фильтры';
     btn.addEventListener('click', function () {
-      var live = document.querySelector('.ngr-side');
-      if (live) live.classList.add('ngr-side_open');
+      openSideFilters(btn);
     });
     host.parentNode.insertBefore(btn, host);
 
@@ -3338,13 +3722,28 @@
 
   function apply() {
     fixPopup(); fixCards(); fixCart(); fixDupDelivery(); fixUnits(); fixBrands();
-    initSearchGuard(); fixSearch(); fixAccountButton(); fixAuthGate();
+    initSearchGuard(); fixSearch(); initSmartSearch(); fixAccountButton(); fixAuthGate();
     fixRatings(); fixPopupReviews(); fixDescription(); fixDeliveryOrder(); fixCardPhotos(); fixPrices(); fixFilterValues(); fixRatingFilter(); applyRatingFilter(false); fixShelves(); fixSgr(); fixFav(); cartCss(); docsSearch(); filterBarCss(); trimFilterBar(); dropCartTip(); pullProfileOnce(); refreshBrands(); buildSideFilters(); syncSideFilters(); fixUrlSort();
   }
 
   apply();
   document.addEventListener('DOMContentLoaded', apply);
   window.addEventListener('load', apply);
-  new MutationObserver(function () { apply(); })
+  // Tilda меняет каталог пачкой мутаций. Один полный apply на каждый узел
+  // создавал каскад повторных reflow и визуальное мерцание поля поиска.
+  var applyTimer = null;
+  function queueApply() {
+    clearTimeout(applyTimer);
+    applyTimer = setTimeout(function () { applyTimer = null; apply(); }, 40);
+  }
+  new MutationObserver(queueApply)
     .observe(document.documentElement, { childList: true, subtree: true });
+  // Пересчитываем inline-геометрию только при реальной смене ширины.
+  // Экранная клавиатура меняет высоту visual viewport — полный apply ей не нужен.
+  var applyWidth = window.innerWidth;
+  window.addEventListener('resize', function () {
+    if (window.innerWidth === applyWidth) return;
+    applyWidth = window.innerWidth;
+    queueApply();
+  }, { passive: true });
 })();
