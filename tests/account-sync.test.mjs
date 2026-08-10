@@ -20,10 +20,21 @@ function functionSource(name) {
   assert.fail(`No closing brace for ${name}().`);
 }
 
-test('cached Tilda profile is never accepted as authentication', () => {
+// ГОРЯЧИЙ ФИКС 10.08 (вечер): строгое требование accountVerified в member()
+// закрывало оформление заказа всем вошедшим — Tilda не подтверждает токен вне
+// браузера покупателя (журнал NG-2026-08-08-006). Гейт заказа верит локальному
+// профилю Tilda (поведение до 10.08); строгая серверная сверка остаётся
+// обязательной для данных: профиля, избранного и кэша аккаунта.
+test('checkout gate trusts the local Tilda profile; data stays verification-gated', () => {
   const member = functionSource('member');
-  assert.match(member, /!tok\s*\|\|\s*!accountVerified\s*\|\|\s*accountToken\s*!==\s*tok/);
-  assert.doesNotMatch(member, /!tok\s*&&\s*!p/);
+  assert.match(member, /!tok\s*&&\s*!p/,
+    'The order gate must accept the local Tilda session (pre-10.08 behaviour).');
+  assert.doesNotMatch(member, /accountVerified/,
+    'member() must not couple checkout to server-side verification.');
+  assert.match(functionSource('profileSettings'), /accountVerified/,
+    'Profile data must remain verification-gated.');
+  assert.match(functionSource('writeProfileSettings'), /accountVerified/,
+    'Profile writes must remain verification-gated.');
   assert.match(functionSource('applyAccountSnapshot'), /fixAuthGate\s*\(\s*\)/,
     'Successful verification must reopen checkout without waiting for another DOM mutation.');
 });
