@@ -1830,6 +1830,14 @@
     var token = '';
     try { token = (window.t_cart__getMembersToken && t_cart__getMembersToken()) || ''; } catch (e) {}
     if (token) return token;
+    // Это тот же официальный источник, который читает t_cart__getMauser()
+    // внутри tilda-cart-1.1. На страницах, где helper ещё не объявлен,
+    // профиль уже есть; токен всё равно обязательно проверяет Worker у Tilda.
+    try {
+      var mauser = JSON.parse(localStorage.getItem('tilda_members_profile' + TP) || 'null');
+      token = mauser && mauser.token ? String(mauser.token) : '';
+    } catch (e) {}
+    if (token) return token;
     // Tilda может убрать helper после инициализации, но наш checkout уже
     // сохранил подтверждаемый токен в скрытом поле формы.
     var input = document.querySelector('input[name="ngmember"]');

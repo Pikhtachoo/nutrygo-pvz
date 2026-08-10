@@ -44,6 +44,20 @@ test('profile and favorites use the token-only account API and scoped cache', ()
     'Legacy photos require an explicit upload action.');
 });
 
+test('official Tilda profile storage supplies the token before cart UI opens', () => {
+  const context = vm.createContext({
+    window: {}, TP: '27635446',
+    localStorage: {
+      getItem: (key) => key === 'tilda_members_profile27635446'
+        ? JSON.stringify({ token: 'verified-later-by-worker' }) : null,
+    },
+    document: { querySelector: () => null },
+  });
+  vm.runInContext(functionSource('memberToken'), context);
+  assert.equal(context.memberToken(), 'verified-later-by-worker');
+  assert.match(functionSource('memberToken'), /tilda_members_profile['"]\s*\+\s*TP/);
+});
+
 test('late account responses cannot cross an account switch', () => {
   const writes = [];
   const context = vm.createContext({
