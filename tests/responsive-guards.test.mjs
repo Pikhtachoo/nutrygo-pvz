@@ -221,6 +221,14 @@ test('compact filter hide selectors outrank the published record skin', () => {
   }
 });
 
+test('mobile search font outranks the published record input skin', () => {
+  const mobile = cssAtMost(stockCss, 600);
+  const selector = '#rec2502703571.ngr-catalog-record input.js-catalog-filter-search';
+  const rules = ruleBodies(mobile, selector);
+  assert.ok(rules.some((body) => /font-size\s*:\s*16px\s*!important/i.test(body)),
+    'The mobile search input must beat the 14px!important record skin and avoid iOS auto-zoom.');
+});
+
 test('catalog apply queue cannot starve and width changes bypass its delay', () => {
   const queue = namedFunctionSource(stock, 'queueApply');
   assert.match(queue,

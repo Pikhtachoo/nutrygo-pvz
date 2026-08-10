@@ -3086,7 +3086,7 @@
       '.ngr-smart-search__item small{font-size:12px;line-height:1.35;color:#6f7782;' +
       'display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}' +
       '.ngr-smart-search__note{padding:12px;font-size:13px;line-height:1.4;color:#6f7782}' +
-      '@media(max-width:600px){#rec2502703571 .js-catalog-filter-search{font-size:16px!important}' +
+      '@media(max-width:600px){#rec2502703571.ngr-catalog-record input.js-catalog-filter-search{font-size:16px!important}' +
       '.ngr-smart-search{width:100%!important;min-width:0!important}' +
       '.ngr-smart-search__panel{left:0;right:auto;width:100%;max-width:100%;min-width:0;' +
       'max-height:50dvh;overflow-x:hidden}}' +
