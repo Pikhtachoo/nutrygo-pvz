@@ -3015,11 +3015,11 @@
       // срабатывало только на следующем JS-проходе, поэтому старые чипы успевали
       // появиться на кадр. Постоянное правило не даёт им участвовать в раскладке
       // ни на главной витрине, ни в полном каталоге.
-      '#rec2502703571 .t-catalog__filter__item{display:none!important;margin:0!important}' +
+      '#rec2502703571.ngr-catalog-record .t-catalog__filter__options > .t-catalog__filter__item{display:none!important;margin:0!important}' +
       // Поиск и сортировка уезжали на второй этаж: блок с фильтрами
       // занимал всю ширину. Ставим их в один ряд, справа.
       '.t-catalog__filter__controls-wrapper{align-items:center!important;gap:12px!important}' +
-      '#rec2502703571 .t-catalog__filter__options,' +
+      '#rec2502703571.ngr-catalog-record .t-catalog__filter__controls-wrapper > .t-catalog__filter__options,' +
       '#rec2502703571 .js-catalog-filter-mob-btn,' +
       '#rec2502703571 .js-catalog-sort-mob-btn,' +
       '#rec2502703571 .js-catalog-search-mob-btn,' +

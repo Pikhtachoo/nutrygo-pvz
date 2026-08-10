@@ -177,11 +177,13 @@ test('catalog toolbar has one deterministic 320-1000px layout', () => {
 });
 
 test('native filter chips cannot flash during search rerenders', () => {
-  const chipRules = ruleBodies(stockCss, '#rec2502703571 .t-catalog__filter__item');
+  const chipRules = ruleBodies(stockCss,
+    '#rec2502703571.ngr-catalog-record .t-catalog__filter__options > .t-catalog__filter__item');
   assert.ok(chipRules.some((body) => /display\s*:\s*none\s*!important/i.test(body)),
     'Native Tilda filter chips need a permanent record-scoped CSS hide, not delayed inline cleanup.');
 
-  const optionRules = ruleBodies(stockCss, '#rec2502703571 .t-catalog__filter__options');
+  const optionRules = ruleBodies(stockCss,
+    '#rec2502703571.ngr-catalog-record .t-catalog__filter__controls-wrapper > .t-catalog__filter__options');
   assert.ok(optionRules.some((body) => /display\s*:\s*none\s*!important/i.test(body)),
     'The native options row must stay out of layout while Tilda rebuilds the search DOM.');
 
@@ -204,6 +206,19 @@ test('native filter chips cannot flash during search rerenders', () => {
   const smartInit = namedFunctionSource(stock, 'initSmartSearch');
   assert.doesNotMatch(smartInit, /if\s*\(\s*!onCatalogPage\(\)\s*\)\s*return/,
     'Description/typo search must initialize anywhere the catalog search input is present.');
+});
+
+test('compact filter hide selectors outrank the published record skin', () => {
+  const optionsSelector = '#rec2502703571.ngr-catalog-record '
+    + '.t-catalog__filter__controls-wrapper > .t-catalog__filter__options';
+  const itemSelector = '#rec2502703571.ngr-catalog-record '
+    + '.t-catalog__filter__options > .t-catalog__filter__item';
+
+  for (const selector of [optionsSelector, itemSelector]) {
+    const rules = ruleBodies(stockCss, selector);
+    assert.ok(rules.some((body) => /display\s*:\s*none\s*!important/i.test(body)),
+      `${selector} must beat the record-scoped display:flex!important rules in custom.css.`);
+  }
 });
 
 test('catalog apply queue cannot starve and width changes bypass its delay', () => {
