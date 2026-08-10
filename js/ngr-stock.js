@@ -2008,14 +2008,16 @@
    * читаемое название, заметная цена.
    */
   /**
-   * Серая выноска с суммой у корзины. Tilda показывает её, проставляя стиль
-   * прямо на элемент из своего скрипта, поэтому правилом CSS её не убрать —
-   * снимаем со страницы (замечание Александра 08.08).
+   * Серая выноска с суммой у корзины скрывается стилем в cartCss().
+   *
+   * Важно: узел .t706__carticon-text обязан оставаться в DOM. Штатный
+   * tilda-cart-1.1.min.js обращается к нему без null-check при перерисовке
+   * счётчика. Физическое удаление обрывало инициализацию корзины на mobile:
+   * window.tcart не создавался, а клик по иконке ничего не открывал.
    */
   function dropCartTip() {
-    document.querySelectorAll('.t706__carticon-text').forEach(function (e) {
-      if (e.parentNode) e.parentNode.removeChild(e);
-    });
+    // Сохраняем обязательную нативную разметку Tilda. Визуальное скрытие —
+    // только через CSS ниже, чтобы tcart__reDrawCartIcon не падал на null.style.
   }
 
   /**
@@ -2303,7 +2305,7 @@
       // Серая выноска с суммой выезжает при наведении на корзину
       // и портит вид (замечание Александра 08.08). Значок и счётчик
       // остаются, выноску убираем.
-      '.t706__carticon-text{display:none!important}' +
+      '.ngr-ready .t706__carticon .t706__carticon-text{display:none!important}' +
       '@supports (height:100dvh){' +
       '.t706__cartwin{height:100dvh!important;max-height:100dvh!important}}' +
       '.t706__cartwin-content{-webkit-overflow-scrolling:touch}' +
