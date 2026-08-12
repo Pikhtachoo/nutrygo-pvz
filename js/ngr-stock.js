@@ -95,6 +95,78 @@
     } catch (e) {}
   })();
 
+  /**
+   * Пауза автозагрузчика, пока человек работает с поиском или сортировкой.
+   *
+   * Замечание Александра 13.08: «навожусь на сортировку, выбрать к примеру по
+   * цене, и он начинает моргать, то видно список сортировки, то нет; так же с
+   * поиском — написал что-то и вижу, как текст то видно, то нет».
+   *
+   * Замер это подтвердил дословно. За шесть секунд поле поиска пересоздалось
+   * семь раз и селект сортировки семь раз: узлы, взятые в начале замера,
+   * оказались выброшены из документа (isConnected === false), а набранный
+   * текст пропадал вместе с ними — в 22 пробах из 24 поле было пустым.
+   * В событиях DOM видно, как Tilda заново строит всю панель фильтров:
+   * в js-catalog-filter-tree-container добавляется новый
+   * .t-catalog__filter-tree-wrapper, в .t-catalog__filter__options — новый
+   * .t-catalog__filter__item_sort-mobile (таких блоков к концу загрузки
+   * накапливается девять).
+   *
+   * Тактирует это автозагрузчик каталога — инлайновый блок NG2LoadAll2 в
+   * записи rec2514481201: он раз в 500–600 мс жмёт кнопку «Загрузить ещё»
+   * (до 500 раз), Tilda на каждую догрузку перестраивает панель фильтров, а
+   * перестроенная панель — это новые input и select. Отсюда и «раз в
+   * полсекунды»: открытый список сортировки закрывается, потому что элемента,
+   * которому он принадлежал, больше нет.
+   *
+   * Останавливать загрузку насовсем нельзя — без неё каталог отдаёт горстку
+   * товаров. Поэтому загрузку откладываем ровно на то время, пока человек
+   * печатает в поиске или выбирает сортировку, а потом продолжаем с того же
+   * места. Настоящий щелчок человека по кнопке не трогаем.
+   */
+  (function () {
+    if (window.NGR_LOADER_PAUSE) return;
+    window.NGR_LOADER_PAUSE = 1;
+    var КНОПКА = '.js-catalog-load-more-btn';
+    var отложено = false;
+
+    function человекЗанят() {
+      var ae = document.activeElement;
+      if (ae && ae.classList &&
+          (ae.classList.contains('js-catalog-filter-search') ||
+           ae.classList.contains('t-catalog__sort-select'))) return true;
+      // Непустое поле поиска — тоже работа: человек читает выдачу по своему
+      // запросу, и перестройка панели сотрёт ему текст.
+      var inp = document.querySelector('#rec2502703571 .js-catalog-filter-search');
+      return !!(inp && inp.value);
+    }
+
+    document.addEventListener('click', function (e) {
+      // Живой щелчок человека пропускаем всегда: он сам решил догрузить.
+      if (e.isTrusted) return;
+      var t = e.target;
+      if (!t || !t.closest || !t.closest(КНОПКА)) return;
+      if (!человекЗанят()) return;
+      e.stopImmediatePropagation();
+      e.preventDefault();
+      отложено = true;
+    }, true);
+
+    function продолжить() {
+      if (!отложено || человекЗанят()) return;
+      var btn = document.querySelector('#rec2502703571 ' + КНОПКА) ||
+                document.querySelector(КНОПКА);
+      if (!btn) return;
+      отложено = false;
+      btn.click();
+    }
+    // Проверяем и по событиям, и раз в секунду: поле могло исчезнуть вместе
+    // с панелью, и событие blur тогда не придёт.
+    document.addEventListener('blur', продолжить, true);
+    document.addEventListener('change', продолжить, true);
+    setInterval(продолжить, 1000);
+  })();
+
   var API = 'https://nutrygo-integrator.pikhtovnikov-alieksandr.workers.dev';
 
   /**
