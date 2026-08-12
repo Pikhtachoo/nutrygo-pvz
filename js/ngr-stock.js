@@ -3140,6 +3140,36 @@
       "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238a919b' stroke-width='2'><circle cx='11' cy='11' r='7'/><path d='M20 20l-3.5-3.5'/></svg>" +
       '")!important;background-repeat:no-repeat!important;background-position:14px center!important;' +
       'background-size:18px 18px!important}' +
+      // ------------------------------------------------------------------
+      // Перекрытие custom.css. На nutry-go.ru лежит отдельный файл
+      // /custom.css (478 правил), где панель каталога описана ещё одной
+      // схемой оформления, и селекторы там сильнее наших:
+      //   #rec2502703571.ngr-catalog-record .t-catalog__filter   (1 id, 2 класса)
+      //   #rec2502703571.ngr-catalog-record input, ... select    (1 id, 1 класс, 1 тег)
+      // против наших #rec2502703571 .t-catalog__filter (1 id, 1 класс).
+      // Оба набора с !important, поэтому решает специфичность — выигрывал
+      // custom.css. Класс ngr-catalog-record вешает наш же JS, так что до
+      // него правила custom.css не срабатывают, а после срабатывают: отсюда
+      // и переключение оформления, которое Александр снял на скриншотах
+      // 13.08 (лупа наезжает на «Поиск» — это padding-left:14px вместо 42;
+      // голубая коробка — background #f5f9fc + border-radius 18 + padding 20;
+      // высокая панель — .t-catalog__filter__options{display:flex}).
+      // Ниже те же значения, что и выше, но с префиксом html и с классом
+      // записи: 1 id + 2-3 класса + тег, то есть заведомо сильнее.
+      // Дублирование намеренное: правила без ngr-catalog-record выше нужны
+      // для кадров до того, как JS повесил класс.
+      'html #rec2502703571.ngr-catalog-record .t-catalog__filter{background:transparent!important;' +
+      'border:0!important;border-radius:0!important;padding:0!important;margin:0 0 14px!important}' +
+      'html #rec2502703571.ngr-catalog-record .t-catalog__filter__options{display:none!important}' +
+      // Удвоение класса — обычный приём поднятия специфичности; не завязываемся
+      // на имя тега, потому что размётку строки Tilda может поменять.
+      'html #rec2502703571.ngr-catalog-record .t-catalog__sort-select.t-catalog__sort-select{' +
+      'height:44px!important;min-height:44px!important;font-size:14.5px!important;' +
+      'border-radius:12px!important;padding:0 38px 0 14px!important}' +
+      'html #rec2502703571.ngr-catalog-record .js-catalog-filter-search.js-catalog-filter-search{' +
+      'height:44px!important;min-height:44px!important;font-size:14.5px!important;' +
+      'border-radius:12px!important;padding:0 14px 0 42px!important;' +
+      'background-position:14px center!important;background-size:18px 18px!important}' +
       // На desktop Tilda задаёт wrapper-ам flex:1. После добавления панели
       // подсказок сортировка забирала все 510px, а host поиска схлопывался в 0.
       '@media(min-width:1001px){' +
