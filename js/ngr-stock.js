@@ -268,6 +268,16 @@
   }
 
   /* NGR_PROMO_RECOVERY_BEGIN */
+  // ОТКЛЮЧЕНО 12.08.2026 (решение после инцидента с «полуприменённым» промокодом).
+  // Компонент пересоздавал родное поле Tilda со своей инициализацией; после
+  // этого «Применить» срабатывал наполовину: Tilda рисовала строки скидки
+  // в итогах, но в корзину (tcart.promocode/amount) код не записывала —
+  // покупатель видел цену со скидкой, а к оплате уходила полная. Замер
+  // Александра 12.08: итоги «Промокод: 50%, Итоговая 1 168», при этом
+  // tcart = {amount: 2336, prodamount: 2336, promocode: undefined}.
+  // До переработки под живым браузером промокодами управляет только сама
+  // Tilda — её штатный поток пишет скидку в корзину целиком.
+  var PROMO_RECOVERY_ENABLED = false;
   var PROMO_GROUP_SELECTOR =
     '.t706__orderform .t-input-group_pc[data-field-type="pc"],' +
     'form[data-formcart="y"] .t-input-group_pc[data-field-type="pc"],' +
@@ -722,6 +732,7 @@
   }
 
   function fixPromocode() {
+    if (!PROMO_RECOVERY_ENABLED) return;
     promoCss();
     document.querySelectorAll(PROMO_GROUP_SELECTOR).forEach(function (group) {
       bindPromoGroup(group);
