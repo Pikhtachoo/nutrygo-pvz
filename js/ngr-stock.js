@@ -308,9 +308,32 @@
 
   /** Read-only: the recovery component never installs, removes or recalculates a promo. */
   function activePositivePromo() {
-    var cartPromo = window.tcart && window.tcart.promocode;
+    var cart = window.tcart;
+    var cartPromo = cart && cart.promocode;
+    // Инцидент 12.08 (повторно): скидка видна в итогах Tilda, а детектор
+    // не признавал код применённым, потому что смотрел только внутрь объекта
+    // tcart.promocode. Tilda хранит применённый код по-разному: строкой,
+    // объектом с полями скидки, объектом без них — а сумму скидки может
+    // держать на верхнем уровне корзины (prodamount_discountsum) или уже
+    // вычтенной из amount против prodamount. Признаём код применённым, если
+    // Tilda сама его записала в корзину, каким бы способом ни хранила.
+    if (typeof cartPromo === 'string' && cartPromo.trim()) {
+      return { promocode: cartPromo.trim() };
+    }
     if (positivePromoObject(cartPromo)) return cartPromo;
+    if (cartPromo && typeof cartPromo === 'object' &&
+        String(cartPromo.promocode || '').trim() && cart &&
+        (promoNumber(cart.prodamount_discountsum) > 0 ||
+         (promoNumber(cart.prodamount) > 0 && promoNumber(cart.amount) > 0 &&
+          promoNumber(cart.amount) < promoNumber(cart.prodamount)))) {
+      // Поля скидки в объекте нулевые/устаревшие, но корзина реально ужата —
+      // верим корзине, а не полям.
+      return cartPromo;
+    }
     var heldPromo = window.cartCalculator && window.cartCalculator.appliedPromocode;
+    if (typeof heldPromo === 'string' && heldPromo.trim()) {
+      return { promocode: heldPromo.trim() };
+    }
     if (positivePromoObject(heldPromo)) return heldPromo;
     // No t_cart__promocode global exists in the Tilda 1.1 runtime currently loaded by NutryGo.
     return null;

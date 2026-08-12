@@ -379,6 +379,39 @@ test('a cart promo without discount fields is trusted as applied', () => {
   assert.match(h.wrapper.textContent, /BARE/);
 });
 
+// Повтор инцидента 12.08: Tilda этой версии может хранить применённый код
+// строкой, а сумму скидки — на верхнем уровне корзины, не внутри объекта.
+test('a string-shaped cart promo counts as applied', () => {
+  const h = createHarness();
+  h.window.tcart.promocode = 'test2026';
+  h.context.fixPromocode();
+
+  assert.equal(h.group.querySelector('.t-inputpromocode'), null,
+    'the editor must not appear when Tilda stores the promo as a plain string');
+  assert.match(h.wrapper.textContent, /test2026/);
+});
+
+test('zero promo fields with a top-level cart discount still mean applied', () => {
+  const h = createHarness();
+  h.window.tcart.promocode = { promocode: 'TEST2026', discountsum: 0 };
+  h.window.tcart.prodamount_discountsum = '2 336';
+  h.context.fixPromocode();
+
+  assert.equal(h.group.querySelector('.t-inputpromocode'), null);
+  assert.match(h.wrapper.textContent, /TEST2026/);
+});
+
+test('zero promo fields with a shrunken cart amount still mean applied', () => {
+  const h = createHarness();
+  h.window.tcart.promocode = { promocode: 'TEST2026', discountsum: '0' };
+  h.window.tcart.prodamount = 4672;
+  h.window.tcart.amount = 2336;
+  h.context.fixPromocode();
+
+  assert.equal(h.group.querySelector('.t-inputpromocode'), null);
+  assert.match(h.wrapper.textContent, /TEST2026/);
+});
+
 test('zero-valued promo objects do not masquerade as successful discounts', () => {
   const h = createHarness();
   h.window.tcart.promocode = { promocode: 'ZERO', discountsum: '0', discountpercent: 0 };
