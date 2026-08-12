@@ -757,6 +757,146 @@
   }
   /* NGR_PROMO_RECOVERY_END */
 
+  /* NGR_ORDER_MIRROR_BEGIN */
+  // Зеркало заказа, 12.08.2026.
+  //
+  // С вечера 07.08 сервер Tilda перестал доносить вебхук заказа до
+  // интегратора: настройки в кабинете целы (сервис «Активировано», у формы
+  // корзины на опубликованной странице стоит formservices[]), эндпоинт жив
+  // и логирует каждое обращение, но обращений — ноль. Заказы «оформляются»
+  // на сайте и исчезают: отправление на Ozon не создаётся.
+  //
+  // Пока доставка на стороне Tilda не восстановлена, копию заказа отправляет
+  // браузер покупателя — он достаёт воркер стабильно (витрина, остатки и ПВЗ
+  // работают через него). Зеркало пассивно: запрос Tilda не меняется и не
+  // блокируется, вся наша логика — в try/catch и после факта; упало зеркало —
+  // оформление идёт как шло. Дубликаты безопасны: интегратор хранит заказ по
+  // номеру и повторную копию того же заказа отбрасывает.
+  (function orderMirror() {
+    if (window.NGR_ORDER_MIRROR) return;
+    window.NGR_ORDER_MIRROR = 1;
+
+    // Форма Tilda уходит на forms*.tildacdn.com (путь /procces/ — да, с их
+    // опечаткой). Кабинетные API Tilda и вход в личный кабинет под этот
+    // фильтр не попадают — их не зеркалим.
+    function isTildaFormsUrl(u) {
+      try {
+        var h = new URL(u, location.href);
+        if (!/(^|\.)tilda(cdn)?\.(com|cc|ru|pro)$/.test(h.hostname) &&
+            h.hostname.indexOf('tilda') < 0) return false;
+        return h.pathname.indexOf('procces') >= 0 || /^forms\d*\./.test(h.hostname);
+      } catch (e) { return false; }
+    }
+
+    function bodyToParams(body) {
+      var p = new URLSearchParams();
+      try {
+        if (!body) return p;
+        if (typeof body === 'string') {
+          new URLSearchParams(body).forEach(function (v, k) { p.append(k, v); });
+        } else if (window.FormData && body instanceof FormData) {
+          body.forEach(function (v, k) { if (typeof v === 'string') p.append(k, v); });
+        } else if (window.URLSearchParams && body instanceof URLSearchParams) {
+          body.forEach(function (v, k) { p.append(k, v); });
+        }
+      } catch (e) {}
+      return p;
+    }
+
+    // Снимок корзины берём в момент ОТПРАВКИ: после успеха Tilda корзину
+    // чистит, и на момент ответа там уже пусто.
+    function cartSnapshot() {
+      try {
+        var tc = window.tcart;
+        if (!tc || !tc.products || !tc.products.length) {
+          tc = JSON.parse(localStorage.getItem('tcart') || 'null');
+        }
+        if (!tc || !tc.products || !tc.products.length) return '';
+        return JSON.stringify({
+          amount: tc.amount, prodamount: tc.prodamount, total: tc.total,
+          promocode: tc.promocode || null,
+          products: tc.products.map(function (x) {
+            return { name: x.name, sku: x.sku || x.uid || '', price: x.price,
+                     quantity: x.quantity, amount: x.amount };
+          })
+        }).slice(0, 4000);
+      } catch (e) { return ''; }
+    }
+
+    function mirror(params, snap, responseText) {
+      try {
+        // Зеркалим только заказ: телефон в форме и товары в корзине.
+        var phone = params.get('Phone') || params.get('phone') || '';
+        if (!/\d{5,}/.test(String(phone).replace(/\D/g, ''))) return;
+        if (!snap) return;
+        params.append('ngmirror', '1');
+        params.append('ngpage', String(location.href).slice(0, 300));
+        params.append('ngtcart', snap);
+        if (responseText) params.append('ngresponse', String(responseText).slice(0, 3000));
+        var url = API + '/tilda/order';
+        var sent = false;
+        try {
+          // sendBeacon переживает мгновенный уход на страницу оплаты.
+          var blob = new Blob([params.toString()],
+            { type: 'application/x-www-form-urlencoded' });
+          sent = !!(navigator.sendBeacon && navigator.sendBeacon(url, blob));
+        } catch (e) {}
+        if (!sent) {
+          fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: params.toString(),
+            keepalive: true
+          }).catch(function () {});
+        }
+      } catch (e) {}
+    }
+
+    var origOpen = XMLHttpRequest.prototype.open;
+    var origSend = XMLHttpRequest.prototype.send;
+    XMLHttpRequest.prototype.open = function (method, url) {
+      try { this.__ngrMirror = /post/i.test(String(method)) && isTildaFormsUrl(url); }
+      catch (e) {}
+      return origOpen.apply(this, arguments);
+    };
+    XMLHttpRequest.prototype.send = function (body) {
+      try {
+        if (this.__ngrMirror) {
+          var params = bodyToParams(body);
+          var snap = cartSnapshot();
+          var xhr = this;
+          xhr.addEventListener('load', function () {
+            try { if (xhr.status === 200) mirror(params, snap, xhr.responseText); }
+            catch (e) {}
+          });
+        }
+      } catch (e) {}
+      return origSend.apply(this, arguments);
+    };
+
+    var origFetch = window.fetch;
+    if (origFetch) {
+      window.fetch = function (input, init) {
+        var result = origFetch.apply(this, arguments);
+        try {
+          var url = (typeof input === 'string') ? input : ((input && input.url) || '');
+          var method = (init && init.method) || (input && input.method) || 'GET';
+          if (/post/i.test(String(method)) && isTildaFormsUrl(url)) {
+            var params = bodyToParams(init && init.body);
+            var snap = cartSnapshot();
+            result.then(function (res) {
+              if (!res || res.status !== 200) return;
+              res.clone().text().then(function (t) { mirror(params, snap, t); },
+                function () {});
+            }, function () {});
+          }
+        } catch (e) {}
+        return result;
+      };
+    }
+  })();
+  /* NGR_ORDER_MIRROR_END */
+
   /**
    * Дубль виджета доставки. Новый виджет («⌖ Ozon Доставка…») рисует основной
    * скрипт сайта; старый («📍 Доставка в…») остался старой копией в блоке
