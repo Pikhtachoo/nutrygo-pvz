@@ -2095,7 +2095,16 @@
       return applyAccountSnapshot(packet);
     }).catch(function (error) {
       if (accountToken === token && memberToken() === token) {
-        if (error && error.status === 401) accountVerified = false;
+        if (error && error.status === 401) {
+          accountVerified = false;
+          // 401 — сервер осознанно не признал этот токен (Tilda не подтверждает
+          // его вне браузера, см. журнал 12.08). Повторять тот же запрос на
+          // каждую перерисовку страницы бессмысленно — консоль покупателя
+          // заливало лавиной 401. Промис оставляем: повтор только по force
+          // (открытие кабинета) или при смене токена.
+          return null;
+        }
+        // Сетевые сбои — временные: разрешаем повтор при следующем проходе.
         accountPromise = null;
       }
       return null;
