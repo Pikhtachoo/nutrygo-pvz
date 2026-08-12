@@ -3117,6 +3117,11 @@
       '#rec2502703571 .t-catalog__filter{background:transparent!important;padding:0!important;' +
       'border-radius:0!important;margin:0 0 14px!important}' +
       '#rec2502703571 .t-catalog__filter__options{display:none!important}' +
+      // Сами элементы строки фильтров — на случай, если Tilda перенесёт их
+      // из скрытой обёртки. Раньше их гасил инлайном syncSideFilters на
+      // каждом проходе, и между перерисовкой Tilda и проходом строка успевала
+      // мелькнуть. Правилу мелькать нечем: оно действует сразу при вставке.
+      '#rec2502703571 .t-catalog__filter__item{display:none!important}' +
       '#rec2502703571 .js-catalog-filter-mob-btn,#rec2502703571 .js-catalog-sort-mob-btn,' +
       '#rec2502703571 .js-catalog-search-mob-btn,#rec2502703571 .js-catalog-search-mob-close-btn{' +
       'display:none!important}' +
@@ -3165,6 +3170,7 @@
       'html #rec2502703571.ngr-catalog-record .t-catalog__filter{background:transparent!important;' +
       'border:0!important;border-radius:0!important;padding:0!important;margin:0 0 14px!important}' +
       'html #rec2502703571.ngr-catalog-record .t-catalog__filter__options{display:none!important}' +
+      'html #rec2502703571.ngr-catalog-record .t-catalog__filter__item{display:none!important}' +
       // Удвоение класса — обычный приём поднятия специфичности; не завязываемся
       // на имя тега, потому что размётку строки Tilda может поменять.
       'html #rec2502703571.ngr-catalog-record .t-catalog__sort-select.t-catalog__sort-select{' +
@@ -3730,15 +3736,20 @@
     side.querySelectorAll('.ngr-side__o').forEach(function (row) {
       var lab = liveOpt(row.getAttribute('data-g'), row.getAttribute('data-v'));
       var inp = lab && lab.querySelector('input');
-      row.className = 'ngr-side__o' + (inp && inp.checked ? ' on' : '') + (lab ? '' : ' off');
+      var next = 'ngr-side__o' + (inp && inp.checked ? ' on' : '') + (lab ? '' : ' off');
+      // Пишем только при настоящем изменении. Замер 13.08: проход переписывал
+      // класс всем 74 строкам колонки, и переписывал тем же самым значением —
+      // 74 пересчёта стиля на каждый вызов, на видимой колонке. Это и есть
+      // «скачут фильтры» при вводе в поиск (замечание Александра 13.08).
+      if (row.className !== next) row.className = next;
     });
-    // Прячем всю строку фильтров Tilda, включая кнопку «Сортировка»:
-    // она повторяет список выбора справа от поиска и при этом норовит
-    // закрыться от любого щелчка мимо — выбрать в ней ничего не успеть
-    // (замечание Александра 09.08). Сортировка остаётся одна, справа.
-    document.querySelectorAll('.t-catalog__filter__item').forEach(function (it) {
-      if (it.style.display !== 'none') it.style.setProperty('display', 'none', 'important');
-    });
+    // Строку фильтров Tilda (она повторяет список выбора справа от поиска и
+    // закрывается от любого щелчка мимо — замечание Александра 09.08) раньше
+    // прятали здесь, инлайном, на каждом проходе. Это и был мигающий фильтр:
+    // Tilda перерисовывает строку, кадр она видна, следующий проход её гасит.
+    // Теперь строка скрыта правилом в таблице стилей — оно действует в тот же
+    // миг, когда узел вставлен, и проходу тут делать нечего.
+    // См. .t-catalog__filter__item и .t-catalog__filter__options в filterBarCss.
     // Кнопка фильтров должна быть одна: лишние остаются от прежних сборок.
     var btns = document.querySelectorAll('.ngr-sidebtn');
     for (var b = 0; b < btns.length - 1; b++) btns[b].remove();
