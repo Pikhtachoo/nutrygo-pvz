@@ -3092,7 +3092,9 @@
       '#rec2502703571 .js-catalog-search-mob-btn,' +
       '#rec2502703571 .js-catalog-search-mob-close-btn{display:none!important}' +
       '#rec2502703571 .t-catalog__filter__search-and-sort{flex:0 0 auto!important;' +
-      'margin-left:286px!important;display:flex!important;gap:10px!important;align-items:center!important}' +
+      // 275px — столько же ставит JS и второй блок стилей ниже. Здесь стояло
+      // 286, и панель прыгала на 11px при каждом сбросе инлайновых стилей.
+      'margin-left:275px!important;display:flex!important;gap:10px!important;align-items:center!important}' +
       '@media(max-width:1000px){#rec2502703571 .t-catalog__filter__search-and-sort{margin-left:0!important;' +
       'display:grid!important;grid-template-columns:minmax(104px,.78fr) minmax(0,1.22fr)!important;' +
       'width:100%!important}}' +
@@ -3102,8 +3104,22 @@
        * пустой (замечание Александра 08.08). Убираем коробку и ставим
        * их над сеткой товаров, как на Ozon: сортировка слева, поиск рядом.
        */
-      '#rec2502703571 .t-catalog__filter__search-and-sort{margin-left:286px!important;' +
+      // 275px, а не 286: ровно столько ставит JS ниже. Пока значения
+      // расходились, панель прыгала на 11px каждый раз, когда Tilda сбрасывала
+      // инлайновые стили и страница откатывалась к одному только CSS.
+      '#rec2502703571 .t-catalog__filter__search-and-sort{margin-left:275px!important;' +
       'display:flex!important;gap:10px!important;align-items:center!important;width:auto!important}' +
+      // Ниже — то, что раньше делал только JS. Пока этого не было в CSS, между
+      // сбросом инлайновых стилей и следующим проходом apply страница успевала
+      // показать тильдовский вид: голубая коробка вокруг панели, пустой блок
+      // фильтров во всю ширину, дублирующие мобильные кнопки. Это и читалось
+      // как «переключение стилей поиска» (замечание Александра 13.08).
+      '#rec2502703571 .t-catalog__filter{background:transparent!important;padding:0!important;' +
+      'border-radius:0!important;margin:0 0 14px!important}' +
+      '#rec2502703571 .t-catalog__filter__options{display:none!important}' +
+      '#rec2502703571 .js-catalog-filter-mob-btn,#rec2502703571 .js-catalog-sort-mob-btn,' +
+      '#rec2502703571 .js-catalog-search-mob-btn,#rec2502703571 .js-catalog-search-mob-close-btn{' +
+      'display:none!important}' +
       // Порядок обязан стоять на обёртках Tilda — это и есть флекс-элементы
       // строки. Ниже те же order задаются из JS, но JS отрабатывает уже после
       // первой отрисовки, и панель успевала прыгнуть: кадр в порядке DOM
@@ -3117,11 +3133,13 @@
       'font-size:14.5px!important;color:#14171c!important;padding:0 38px 0 14px!important}' +
       '#rec2502703571 .js-catalog-filter-search{order:1;height:44px!important;width:260px!important;' +
       'border:1px solid #e3e8ee!important;border-radius:12px!important;background:#fff!important;' +
-      'font-size:14.5px!important;padding:0 14px 0 38px!important;box-sizing:border-box!important;' +
+      // 42px слева, как и в JS: при 38px слово «Поиск» на пару пикселей
+      // наезжало на лупу, и это было видно в момент переключения.
+      'font-size:14.5px!important;padding:0 14px 0 42px!important;box-sizing:border-box!important;' +
       'background-image:url("data:image/svg+xml;utf8,' +
       "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238a919b' stroke-width='2'><circle cx='11' cy='11' r='7'/><path d='M20 20l-3.5-3.5'/></svg>" +
-      '")!important;background-repeat:no-repeat!important;background-position:12px center!important;' +
-      'background-size:17px 17px!important}' +
+      '")!important;background-repeat:no-repeat!important;background-position:14px center!important;' +
+      'background-size:18px 18px!important}' +
       // На desktop Tilda задаёт wrapper-ам flex:1. После добавления панели
       // подсказок сортировка забирала все 510px, а host поиска схлопывался в 0.
       '@media(min-width:1001px){' +
