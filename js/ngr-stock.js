@@ -3128,9 +3128,13 @@
       // те же значения. Замечание Александра 13.08 «скачет фильтр».
       '#rec2502703571 .t-catalog__filter__sort{order:0!important}' +
       '#rec2502703571 .t-catalog__filter__search{order:1!important}' +
+      // display:block и padding-right:36px — ровно то, что ставит JS ниже.
+      // Раньше в CSS было inline-block и 38px, и в кадрах без инлайновых
+      // стилей селект вёл себя чуть иначе.
       '#rec2502703571 .t-catalog__sort-select{order:0;height:44px!important;min-width:210px;' +
+      'display:block!important;' +
       'border:1px solid #e3e8ee!important;border-radius:12px!important;background:#fff!important;' +
-      'font-size:14.5px!important;color:#14171c!important;padding:0 38px 0 14px!important}' +
+      'font-size:14.5px!important;color:#14171c!important;padding:0 36px 0 14px!important}' +
       '#rec2502703571 .js-catalog-filter-search{order:1;height:44px!important;width:260px!important;' +
       'border:1px solid #e3e8ee!important;border-radius:12px!important;background:#fff!important;' +
       // 42px слева, как и в JS: при 38px слово «Поиск» на пару пикселей
@@ -3164,8 +3168,8 @@
       // Удвоение класса — обычный приём поднятия специфичности; не завязываемся
       // на имя тега, потому что размётку строки Tilda может поменять.
       'html #rec2502703571.ngr-catalog-record .t-catalog__sort-select.t-catalog__sort-select{' +
-      'height:44px!important;min-height:44px!important;font-size:14.5px!important;' +
-      'border-radius:12px!important;padding:0 38px 0 14px!important}' +
+      'height:44px!important;min-height:44px!important;font-size:14.5px!important;display:block!important;' +
+      'border-radius:12px!important;padding:0 36px 0 14px!important}' +
       'html #rec2502703571.ngr-catalog-record .js-catalog-filter-search.js-catalog-filter-search{' +
       'height:44px!important;min-height:44px!important;font-size:14.5px!important;' +
       'border-radius:12px!important;padding:0 14px 0 42px!important;' +
