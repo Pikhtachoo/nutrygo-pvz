@@ -3104,6 +3104,14 @@
        */
       '#rec2502703571 .t-catalog__filter__search-and-sort{margin-left:286px!important;' +
       'display:flex!important;gap:10px!important;align-items:center!important;width:auto!important}' +
+      // Порядок обязан стоять на обёртках Tilda — это и есть флекс-элементы
+      // строки. Ниже те же order задаются из JS, но JS отрабатывает уже после
+      // первой отрисовки, и панель успевала прыгнуть: кадр в порядке DOM
+      // (поиск слева), затем перестановка (сортировка слева). Правило здесь
+      // применяется сразу, поэтому первый же кадр верный, а JS лишь повторяет
+      // те же значения. Замечание Александра 13.08 «скачет фильтр».
+      '#rec2502703571 .t-catalog__filter__sort{order:0!important}' +
+      '#rec2502703571 .t-catalog__filter__search{order:1!important}' +
       '#rec2502703571 .t-catalog__sort-select{order:0;height:44px!important;min-width:210px;' +
       'border:1px solid #e3e8ee!important;border-radius:12px!important;background:#fff!important;' +
       'font-size:14.5px!important;color:#14171c!important;padding:0 38px 0 14px!important}' +
