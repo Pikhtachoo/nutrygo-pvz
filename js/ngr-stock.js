@@ -4531,6 +4531,15 @@
       applyPromptTimer = null;
     }
     apply();
+    // apply() сам меняет DOM: цены, классы карточек, ссылки, галереи. Эти
+    // мутации видит наблюдатель ниже и снова ставит apply в очередь — проход
+    // гонялся по кругу без остановки. Замер 13.08 на каталоге из 730 карточек:
+    // 1208 мутаций в секунду непрерывно, из-за чего строку фильтров дёргало
+    // примерно дважды в секунду (замечание Александра «скачет фильтр, это цикл»).
+    // Забираем и выбрасываем записи, накопленные за время самого прохода:
+    // чужие изменения, пришедшие после него, поставят apply в очередь как обычно.
+    if (applyObserver) applyObserver.takeRecords();
+    applyPending = false;
   }
 
   function queueApply(prompt) {
@@ -4552,8 +4561,10 @@
       applyMaxTimer = setTimeout(runQueuedApply, APPLY_MAX_WAIT);
     }
   }
-  new MutationObserver(queueApply)
-    .observe(document.documentElement, { childList: true, subtree: true });
+  // Наблюдатель держим в переменной: runQueuedApply гасит через него мутации,
+  // которые породил сам apply, иначе проход будит сам себя по кругу.
+  var applyObserver = new MutationObserver(queueApply);
+  applyObserver.observe(document.documentElement, { childList: true, subtree: true });
   // Пересчитываем inline-геометрию только при реальной смене ширины.
   // Экранная клавиатура меняет высоту visual viewport — полный apply ей не нужен.
   var applyWidth = window.innerWidth;
