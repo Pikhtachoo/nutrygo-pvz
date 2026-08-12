@@ -16,6 +16,65 @@
   if (window.NGR_STOCK_GUARD) return;
   window.NGR_STOCK_GUARD = 1;
 
+  /**
+   * Гасим холостые записи в DOM.
+   *
+   * Присвоение узлу того значения, которое у него уже стоит, не меняет
+   * ничего видимого, но обходится дорого: браузер помечает узел грязным и
+   * пересчитывает стиль, а MutationObserver получает запись — и если этот
+   * наблюдатель сам же запускает проход, который снова пишет то же самое,
+   * получается круг.
+   *
+   * Замер на живом каталоге 13.08.2026, первые секунды после загрузки, пока
+   * догружаются карточки: 5612 мутаций за три секунды, из них
+   *   1620  class у .js-product
+   *   1332  hidden у .ng2-brand-qty
+   *    288  href у ссылок карточек
+   * Источник — инлайновые блоки Tilda в записи rec2514481201 (NG2LoadAll2 и
+   * BrandCardFix): три записи hidden, две className и пять setAttribute,
+   * и ни одной сверки перед записью, всё под двумя MutationObserver.
+   * Тех блоков нет в этом репозитории, поэтому чиним со своей стороны.
+   *
+   * Приём безопасен по смыслу: мы отменяем только записи, которые и так
+   * ничего не меняют. Сравнение стоит одну операцию и выполняется до записи,
+   * поэтому настоящие изменения проходят как прежде.
+   */
+  (function () {
+    if (window.NGR_NOOP_GUARD) return;
+    window.NGR_NOOP_GUARD = 1;
+    try {
+      var cn = Object.getOwnPropertyDescriptor(Element.prototype, 'className');
+      if (cn && cn.get && cn.set) {
+        Object.defineProperty(Element.prototype, 'className', {
+          configurable: true, enumerable: cn.enumerable,
+          get: function () { return cn.get.call(this); },
+          set: function (v) { if (v === cn.get.call(this)) return; cn.set.call(this, v); }
+        });
+      }
+      var hd = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'hidden');
+      if (hd && hd.get && hd.set) {
+        Object.defineProperty(HTMLElement.prototype, 'hidden', {
+          configurable: true, enumerable: hd.enumerable,
+          get: function () { return hd.get.call(this); },
+          // Только чистые true/false: у hidden бывает ещё значение
+          // 'until-found', и сводить его к булеву нельзя.
+          set: function (v) {
+            if ((v === true || v === false) && v === hd.get.call(this)) return;
+            hd.set.call(this, v);
+          }
+        });
+      }
+      // Только class и href: остальные атрибуты трогать незачем, а лишняя
+      // сверка на каждом setAttribute — это расход на всём, что рисует Tilda.
+      var sa = Element.prototype.setAttribute;
+      Element.prototype.setAttribute = function (name, value) {
+        if ((name === 'class' || name === 'href') &&
+            this.getAttribute(name) === String(value)) return;
+        return sa.apply(this, arguments);
+      };
+    } catch (e) {}
+  })();
+
   var API = 'https://nutrygo-integrator.pikhtovnikov-alieksandr.workers.dev';
 
   /**
