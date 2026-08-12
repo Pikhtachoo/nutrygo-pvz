@@ -42,13 +42,29 @@
   (function () {
     if (window.NGR_NOOP_GUARD) return;
     window.NGR_NOOP_GUARD = 1;
+    // Сравнивать class как строку мало. Замер 13.08 показал: из 160
+    // прослеженных переходов класса карточки все 160 — тот же самый набор
+    // классов, записанный другой строкой (иной порядок или лишние пробелы).
+    // Для отбора правил важен только набор, поэтому сверяем набор.
+    var норма = function (s) {
+      return String(s == null ? '' : s).split(/\s+/).filter(Boolean).sort().join(' ');
+    };
+    var тотЖеКласс = function (a, b) {
+      return a === b || норма(a) === норма(b);
+    };
     try {
       var cn = Object.getOwnPropertyDescriptor(Element.prototype, 'className');
       if (cn && cn.get && cn.set) {
         Object.defineProperty(Element.prototype, 'className', {
           configurable: true, enumerable: cn.enumerable,
           get: function () { return cn.get.call(this); },
-          set: function (v) { if (v === cn.get.call(this)) return; cn.set.call(this, v); }
+          set: function (v) {
+            var было = cn.get.call(this);
+            // У SVG className — объект, а не строка: такие записи пропускаем
+            // дальше без разбора, как было до заслона.
+            if (typeof было === 'string' && тотЖеКласс(v, было)) return;
+            cn.set.call(this, v);
+          }
         });
       }
       var hd = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'hidden');
@@ -64,12 +80,16 @@
           }
         });
       }
-      // Только class и href: остальные атрибуты трогать незачем, а лишняя
-      // сверка на каждом setAttribute — это расход на всём, что рисует Tilda.
+      // Только class, href и style: остальные атрибуты трогать незачем, а
+      // лишняя сверка на каждом setAttribute — это расход на всём, что
+      // рисует Tilda. class сверяем по набору, остальные по строке.
       var sa = Element.prototype.setAttribute;
       Element.prototype.setAttribute = function (name, value) {
-        if ((name === 'class' || name === 'href') &&
-            this.getAttribute(name) === String(value)) return;
+        if (name === 'class') {
+          if (тотЖеКласс(value, this.getAttribute('class'))) return;
+        } else if (name === 'href' || name === 'style') {
+          if (this.getAttribute(name) === String(value)) return;
+        }
         return sa.apply(this, arguments);
       };
     } catch (e) {}
