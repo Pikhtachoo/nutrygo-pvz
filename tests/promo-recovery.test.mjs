@@ -354,6 +354,31 @@ test('a promo held only by the new calculator also blocks recovery', () => {
   assert.deepEqual(h.storageCalls, []);
 });
 
+// Инцидент 12.08: скидка 50% была в итогах корзины, но поле промокода краснело
+// «не даёт скидку», а Tilda блокировала оформление «активируйте промокод» —
+// детектор не признавал строковые проценты и объекты без полей скидки.
+test('a percent-string discount ("50%") counts as an applied promo', () => {
+  const h = createHarness();
+  h.window.tcart.promocode = { promocode: 'TEST2026', discountpercent: '50%' };
+  const before = cartSnapshot(h);
+  h.context.fixPromocode();
+
+  assert.equal(h.group.querySelector('.t-inputpromocode'), null,
+    'the editor must not replace an applied promo');
+  assert.match(h.wrapper.textContent, /TEST2026/);
+  assert.equal(h.initCalls.length, 0);
+  assert.deepEqual(cartSnapshot(h), before);
+});
+
+test('a cart promo without discount fields is trusted as applied', () => {
+  const h = createHarness();
+  h.window.tcart.promocode = { promocode: 'BARE' };
+  h.context.fixPromocode();
+
+  assert.equal(h.group.querySelector('.t-inputpromocode'), null);
+  assert.match(h.wrapper.textContent, /BARE/);
+});
+
 test('zero-valued promo objects do not masquerade as successful discounts', () => {
   const h = createHarness();
   h.window.tcart.promocode = { promocode: 'ZERO', discountsum: '0', discountpercent: 0 };

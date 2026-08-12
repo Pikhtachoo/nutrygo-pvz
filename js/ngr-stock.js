@@ -277,13 +277,33 @@
   var promoMessageSeq = 0;
 
   function promoNumber(value) {
-    var n = Number(String(value === undefined || value === null ? '' : value).replace(',', '.'));
+    // parseFloat вместо Number: Tilda хранит скидку и как число, и как строку
+    // вида «50%» или «1 168,5» — Number на них даёт NaN, и применённый промокод
+    // выглядел как «без скидки» (инцидент 12.08: скидка в итогах есть, поле
+    // красное, оформление заблокировано).
+    var s = String(value === undefined || value === null ? '' : value)
+      .replace(/\s+/g, '').replace(',', '.');
+    var n = parseFloat(s);
     return Number.isFinite(n) ? n : 0;
   }
 
+  var PROMO_DISCOUNT_FIELDS = ['discountsum', 'discountpercent', 'discount', 'discountprice'];
+
   function positivePromoObject(promo) {
-    return !!(promo && typeof promo === 'object' &&
-      (promoNumber(promo.discountsum) > 0 || promoNumber(promo.discountpercent) > 0));
+    if (!promo || typeof promo !== 'object') return false;
+    var present = [];
+    for (var i = 0; i < PROMO_DISCOUNT_FIELDS.length; i++) {
+      var v = promo[PROMO_DISCOUNT_FIELDS[i]];
+      if (v === undefined || v === null || String(v) === '') continue;
+      if (promoNumber(v) > 0) return true;
+      present.push(PROMO_DISCOUNT_FIELDS[i]);
+    }
+    // Поля скидки есть, и все нули — честный случай «код принят, но для этой
+    // корзины скидки не даёт»: остаёмся в редакторе с пояснением.
+    if (present.length) return false;
+    // Полей скидки нет вовсе — не гадаем за Tilda: раз код лежит в корзине,
+    // считаем его применённым (сумму всё равно считает Tilda, не мы).
+    return !!String(promo.promocode || '').trim();
   }
 
   /** Read-only: the recovery component never installs, removes or recalculates a promo. */
