@@ -2076,6 +2076,11 @@
       'font-weight:500;color:#14171c;cursor:pointer}' +
       '.ngr-cab__nav b:hover{background:#f5f7fa}' +
       '.ngr-cab__nav b.on{background:#eef4fb;color:#2f6ba8;font-weight:700}' +
+      // Выход отделён чертой и приглушён: это не раздел кабинета, а действие,
+      // и попасть в него случайно вместо «Профиля» не должно быть легко.
+      '.ngr-cab__nav b.ngr-cab__out{margin-top:14px;padding-top:14px;' +
+      'border-top:1px solid #eceff3;border-radius:0;color:#8a919b}' +
+      '.ngr-cab__nav b.ngr-cab__out:hover{background:transparent;color:#c0392b}' +
       '.ngr-cab h2{margin:0 0 16px;font-size:26px;font-weight:800;letter-spacing:-.6px;color:#14171c}' +
       '.ngr-cab__card{border:1px solid #e8ecf1;border-radius:16px;padding:18px;margin-bottom:14px}' +
       '.ngr-cab__row{display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:10px}' +
@@ -2781,6 +2786,44 @@
     }
   }
 
+  /**
+   * Выход из кабинета.
+   *
+   * Выходим руками Tilda: tma__userbar__sendLogout — её же функция, ту самую
+   * кнопку «Выйти» показывает Tilda в форме заказа. Своими силами сессию не
+   * гасим: чем гасить, знает только Tilda, а расходиться с ней в этом вопросе
+   * опасно — можно оставить полусостояние, когда профиль стёрт, а сессия жива.
+   *
+   * Локальный слепок профиля стираем сами: по нему ngr-stock решает, вошёл ли
+   * покупатель, и без этого страница до перезагрузки считала бы, что он всё
+   * ещё внутри. Ключ проекта не зашиваем — снимаем все tilda_members_profile*.
+   */
+  function cabLogout(btn) {
+    if (btn) { btn.textContent = 'Выходим…'; btn.style.pointerEvents = 'none'; }
+    var завершить = function () {
+      try {
+        var убрать = [];
+        for (var i = 0; i < localStorage.length; i++) {
+          var k = localStorage.key(i);
+          if (k && k.indexOf('tilda_members_profile') === 0) убрать.push(k);
+        }
+        убрать.forEach(function (k) { localStorage.removeItem(k); });
+      } catch (e) {}
+      location.reload();
+    };
+    try {
+      if (typeof window.tma__userbar__sendLogout === 'function') {
+        var r = window.tma__userbar__sendLogout();
+        // Функция Tilda ничего не возвращает и сама не перезагружает страницу,
+        // поэтому даём ей секунду на свой запрос и уходим сами.
+        if (r && typeof r.then === 'function') { r.then(завершить, завершить); return; }
+        setTimeout(завершить, 1000);
+        return;
+      }
+    } catch (e) {}
+    завершить();
+  }
+
   function openCabinet() {
     var me = member();
     if (!me) { location.href = '#openmembersbar'; return; }
@@ -2798,10 +2841,17 @@
       '<b data-s="purchases">Купленные товары</b>' +
       '<b data-s="fav">Избранное</b>' +
       '<b data-s="profile">Профиль</b>' +
+      // Выхода в кабинете не было вовсе: сменить аккаунт можно было только
+      // через кнопку Tilda в форме заказа, а её видно лишь при оформлении
+      // (замечание Александра 13.08).
+      '<b data-s="logout" class="ngr-cab__out">Выйти</b>' +
       '</div></div><div class="ngr-cab__main"><div class="ngr-cab__empty">Загружаем…</div></div></div>';
 
     body.querySelectorAll('.ngr-cab__nav b').forEach(function (b) {
-      b.addEventListener('click', function () { cabSection(b.getAttribute('data-s')); });
+      b.addEventListener('click', function () {
+        if (b.getAttribute('data-s') === 'logout') { cabLogout(b); return; }
+        cabSection(b.getAttribute('data-s'));
+      });
     });
 
     var token = memberToken();
