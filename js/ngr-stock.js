@@ -2372,6 +2372,14 @@
   };
 
   function orderStatus(o) {
+    // Состояние от Ozon старше всех остальных: наш собственный статус — это
+    // лишь этап обработки («передан в доставку»), и он не меняется после
+    // создания отправления. Замечание Александра 13.08: заказ уже получен, а
+    // в карточке сверху висело «Передан в Ozon Доставку».
+    if (o.shipment && o.shipment.text) {
+      var т = String(o.shipment.text);
+      return т.charAt(0).toUpperCase() + т.slice(1);
+    }
     var s = o.delivery_status || o.status_name || o.status || o.state || '';
     if (s && typeof s === 'object') s = s.name || s.title || s.text || s.value || '';
     s = String(s || '');
@@ -2512,13 +2520,14 @@
               код === 'posting_in_pickup_point') ? '' : ' ngr-cab__ship_wait');
           // Собираем узлами, а не строкой HTML: текст приходит от Ozon, и
           // подставлять чужую строку в разметку незачем.
-          ship.appendChild(document.createTextNode('Доставка Ozon: '));
-          var жирным = document.createElement('b');
-          жирным.textContent = String(o.shipment.text);
-          ship.appendChild(жирным);
+          // Само состояние уже стоит в заголовке карточки, здесь — только
+          // номер отправления, иначе одно и то же слово в карточке дважды.
+          ship.appendChild(document.createTextNode('Доставка Ozon'));
           if (o.shipment.posting) {
-            ship.appendChild(document.createElement('br'));
-            ship.appendChild(document.createTextNode('отправление ' + String(o.shipment.posting)));
+            ship.appendChild(document.createTextNode(', отправление '));
+            var жирным = document.createElement('b');
+            жирным.textContent = String(o.shipment.posting);
+            ship.appendChild(жирным);
           }
           c.appendChild(ship);
         }
