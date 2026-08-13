@@ -2379,10 +2379,16 @@
     return STATUS_RU[key] || (s ? s : 'Оформлен');
   }
 
-  /** Номер заказа: у Tilda он лежит под разными именами. */
+  /**
+   * Номер заказа: у Tilda он лежит под разными именами.
+   *
+   * formsref добавлен 13.08: именно им пронумерованы заказы в панели
+   * личного кабинета, а в списке его не было. Из-за этого номер выходил
+   * пустым, наши заказы не находили пары в панели и не показывались вовсе.
+   */
   function orderNo(o) {
-    return String(o.id || o.orderid || o.order_id || o.number || o.num ||
-      o.uid || o.paymentid || '').trim();
+    return String(o.formsref || o.id || o.orderid || o.order_id || o.number ||
+      o.num || o.uid || o.paymentid || '').trim();
   }
 
   function orderItems(o) {
