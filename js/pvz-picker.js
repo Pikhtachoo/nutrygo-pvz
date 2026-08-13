@@ -324,18 +324,34 @@
      * кому-то ещё. Различить может только сам покупатель, поэтому не
      * запрещаем, а спрашиваем один раз.
      */
-    st.profilePhone = '';
-    (function () {
-      var token = '';
-      try { token = (window.t_cart__getMembersToken && t_cart__getMembersToken()) || ''; } catch (e) {}
-      if (!token) return;
-      fetch(API + '/account/state', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: token })
-      }).then(function (r) { return r.json(); }).then(function (j) {
-        if (j && j.phone) st.profilePhone = String(j.phone).replace(/\D/g, '');
-      }).catch(function () {});
-    })();
+    /**
+     * Телефон профиля — читаем локально, из хранилища Tilda.
+     *
+     * Первая версия спрашивала его у воркера через /account/state, и это
+     * не работало по построению: Tilda отказывается подтверждать токен
+     * покупателя вне его браузера (горячий фикс 10.08 в ngr-stock.js,
+     * журнал NG-2026-08-08-006). Воркер честно отвечал «нужен вход в
+     * кабинет», телефон профиля оставался пустым, и сверка молчала.
+     *
+     * Тот же локальный слепок профиля читает ngr-stock.js, когда решает,
+     * вошёл ли покупатель. Ключ проекта не зашиваем: перебираем все
+     * ключи tilda_members_profile*, чтобы смена проекта ничего не сломала.
+     */
+    function профильныйТелефон() {
+      try {
+        for (var i = 0; i < localStorage.length; i++) {
+          var k = localStorage.key(i);
+          if (!k || k.indexOf('tilda_members_profile') !== 0) continue;
+          if (/_timestamp$/.test(k)) continue;
+          var p = JSON.parse(localStorage.getItem(k) || 'null');
+          var t = p && p.phone ? String(p.phone).replace(/\D/g, '') : '';
+          if (t.length === 10) t = '7' + t;
+          if (t.length === 11 && t.charAt(0) === '8') t = '7' + t.slice(1);
+          if (t.length === 11) return t;
+        }
+      } catch (e) {}
+      return '';
+    }
 
     /**
      * Телефон заказа. Ozon создаёт отправление в пункт выдачи только на номер,
@@ -433,8 +449,8 @@
       applyGate();
     }
 
-    function askConfirmPhone(digits) {
-      gate.mismatch = 'В вашем профиле другой номер: <b>' + красиво(st.profilePhone) + '</b>, ' +
+    function askConfirmPhone(digits, профиль) {
+      gate.mismatch = 'В вашем профиле другой номер: <b>' + красиво(профиль) + '</b>, ' +
         'а заказ уйдёт на <b>' + красиво(digits) + '</b> — код получения придёт туда, ' +
         'и по нему выдадут посылку.' +
         '<br><button type="button" class="ngpvz__okphone" style="margin-top:9px;border:0;' +
@@ -594,9 +610,10 @@
         }
         unblockPhone();
         showPhoneNote(тел);
-        if (st.profilePhone && тел.length === 11 && тел !== st.profilePhone &&
+        var профиль = профильныйТелефон();
+        if (профиль && тел.length === 11 && тел !== профиль &&
             st.phoneConfirmed !== тел) {
-          askConfirmPhone(тел);
+          askConfirmPhone(тел, профиль);
           st.checkedSig = sig;
           if (done) done(true);
           return;
