@@ -2432,7 +2432,10 @@
     var host = document.querySelector('.ngr-cab__main');
     if (!host) return;
     document.querySelectorAll('.ngr-cab__nav b').forEach(function (b) {
-      b.className = b.getAttribute('data-s') === name ? 'on' : '';
+      // Переключаем только «on». Раньше здесь переписывался весь className, и
+      // это сдирало с пункта «Выйти» его класс ngr-cab__out вместе с
+      // оформлением — пункт был, но выглядел как обычный раздел.
+      b.classList.toggle('on', b.getAttribute('data-s') === name);
     });
     var d = cabData.dash || {};
     var p = cabData.profile || {};
