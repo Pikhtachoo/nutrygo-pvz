@@ -2390,11 +2390,39 @@
     return Array.isArray(a) ? a : [];
   }
 
-  function loadIntegratorOrders(token) {
+  /**
+   * Наши заказы для кабинета.
+   *
+   * Токен Tilda воркер подтвердить не может: тот же токен работает из
+   * браузера покупателя и не работает из сети Cloudflare (девять опытов,
+   * журнал NG-2026-08-13-025). Поэтому вместе с токеном шлём предъявление —
+   * почту из профиля и по каждому заказу номер, сумму и время создания,
+   * взятые из панели самой Tilda. Всё это видно только вошедшему, и воркер
+   * отдаёт заказ, лишь когда сходится всё сразу.
+   *
+   * Мера временная и слабее настоящей сессии; следующим шагом — свой вход
+   * по коду на почту.
+   */
+  function loadIntegratorOrders(token, profile, dash) {
     if (!token) return Promise.resolve({ orders: [] });
+    var тело = { token: token };
+    var почта = (profile && (profile.login || profile.email)) || '';
+    var список = (dash && dash.last_orders) || [];
+    if (почта && список.length) {
+      тело.claim = {
+        email: String(почта),
+        orders: список.map(function (o) {
+          return {
+            id: String(orderNo(o) || ''),
+            amount: Number(o.amount_total || o.amount_final || o.amount || 0),
+            created: String(o.created || '')
+          };
+        }).filter(function (o) { return o.id; })
+      };
+    }
     return fetch(API + '/orders/my', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      cache: 'no-store', body: JSON.stringify({ token: token })
+      cache: 'no-store', body: JSON.stringify(тело)
     }).then(function (r) { if (!r.ok) throw new Error('orders HTTP ' + r.status); return r.json(); })
       .catch(function () { return { orders: [] }; });
   }
@@ -2892,9 +2920,15 @@
     Promise.all([
       noToken ? Promise.resolve(null) : tildaPost('https://members.tildaapi.com/api/getprofile/').catch(function () { return null; }),
       noToken ? Promise.resolve(null) : tildaPost('https://store.tildaapi.com/api/orders/getdashboard/').catch(function () { return null; }),
-      noToken ? Promise.resolve(null) : syncAccount(false),
-      noToken ? Promise.resolve({ orders: [] }) : loadIntegratorOrders(token)
-    ]).then(function (res) {
+      noToken ? Promise.resolve(null) : syncAccount(false)
+    ]).then(function (первые) {
+      // За нашими заказами идём после панели: из неё берётся предъявление.
+      var проф = (первые[0] && первые[0].data) || null;
+      var панель = (первые[1] && первые[1].data) || первые[1] || null;
+      return (noToken ? Promise.resolve({ orders: [] })
+                      : loadIntegratorOrders(token, проф, панель))
+        .then(function (наши) { return первые.concat([наши]); });
+    }).then(function (res) {
       // На страницах без корзины Tilda не выдаёт токен — показываем то,
       // что знаем из профиля, и честно говорим про заказы.
       cabData.profile = (res[0] && res[0].data) || memberProfile() || {};
