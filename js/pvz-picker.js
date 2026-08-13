@@ -310,11 +310,138 @@
     }
 
     /**
-     * Причин не пускать к кассе две: товар нельзя доставить и покупатель
-     * не вошёл в кабинет. Держим их отдельно, иначе снятие одной блокировки
-     * снимало бы и вторую.
+     * Причин не пускать к кассе три: товар нельзя доставить, покупатель не
+     * вошёл в кабинет и телефон заказа неизвестен Ozon. Держим их отдельно,
+     * иначе снятие одной блокировки снимало бы и остальные.
      */
-    var gate = { stock: null, auth: null };
+    var gate = { stock: null, auth: null, phone: null, mismatch: null };
+
+    /**
+     * Номер профиля — чтобы заметить чужой номер в заказе.
+     *
+     * Заказ у нас оформляют только после входа, а в профиле Tilda есть
+     * телефон. Если в заказе номер другой — это либо опечатка, либо доставка
+     * кому-то ещё. Различить может только сам покупатель, поэтому не
+     * запрещаем, а спрашиваем один раз.
+     */
+    st.profilePhone = '';
+    (function () {
+      var token = '';
+      try { token = (window.t_cart__getMembersToken && t_cart__getMembersToken()) || ''; } catch (e) {}
+      if (!token) return;
+      fetch(API + '/account/state', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: token })
+      }).then(function (r) { return r.json(); }).then(function (j) {
+        if (j && j.phone) st.profilePhone = String(j.phone).replace(/\D/g, '');
+      }).catch(function () {});
+    })();
+
+    /**
+     * Телефон заказа. Ozon создаёт отправление в пункт выдачи только на номер,
+     * у которого есть аккаунт Ozon.
+     *
+     * Случай из жизни, 13.08.2026, заказ 1868559242: покупатель оплатил
+     * 1470 ₽, а отправление не создалось — «user with specified phone number
+     * was not found». Проверено: тот же пункт и товар с номером, у которого
+     * аккаунт есть, оформляются нормально, а формат номера ни при чём.
+     * Значит спрашивать надо до кассы, а не после списания денег.
+     */
+    /**
+     * Телефон у Tilda собран из трёх полей, и это ловушка:
+     *   input[name="Phone"]                    скрытое, полный номер с кодом
+     *   input[name="tildaspec-phone-part[]"]   видимая маска, БЕЗ кода страны
+     *   input[name="tildaspec-phone-part[]-iso"] скрытое, страна
+     *
+     * Первая версия брала поле одним querySelector со списком селекторов через
+     * запятую. Он возвращает первое совпадение по порядку в документе, а не по
+     * порядку селекторов, и отдавал маску: десять цифр вместо одиннадцати.
+     * Проверка отправляется только с одиннадцати — и не запускалась ни разу.
+     * Нашёл Александр 13.08: подставил выдуманный номер, а корзина пропустила
+     * к оплате, «как будто поля бутафория».
+     *
+     * Поэтому берём то поле, где цифр больше, и дописываем код страны сами,
+     * когда пришла голая десятка.
+     */
+    function phoneDigits() {
+      var полное = form.querySelector('input[name="Phone"]') ||
+                   form.querySelector('input[name="phone"]');
+      var маска = form.querySelector('input.t-input-phonemask') ||
+                  form.querySelector('input[type="tel"]');
+      var a = полное ? String(полное.value || '').replace(/\D/g, '') : '';
+      var b = маска ? String(маска.value || '').replace(/\D/g, '') : '';
+      var d = a.length >= b.length ? a : b;
+      var iso = form.querySelector('input[name="tildaspec-phone-part[]-iso"]');
+      var страна = iso ? String(iso.value || '').toUpperCase() : '';
+      // Код страны дописываем только для России: доставка Ozon внутри РФ, а
+      // для чужой страны угадывать код нельзя.
+      if (d.length === 10 && (страна === 'RU' || страна === '')) d = '7' + d;
+      if (d.length === 11 && d.charAt(0) === '8') d = '7' + d.slice(1);
+      return d;
+    }
+    function красиво(digits) {
+      return digits.length === 11
+        ? ('+' + digits.charAt(0) + ' ' + digits.slice(1, 4) + ' ' + digits.slice(4, 7) +
+           '-' + digits.slice(7, 9) + '-' + digits.slice(9))
+        : digits;
+    }
+
+    /**
+     * Напоминание, куда придёт код получения.
+     *
+     * Замечание Александра 13.08: заказ можно случайно оформить на чужой
+     * номер. Проверка у Ozon этого не ловит — она отвечает «аккаунт на номере
+     * существует», а не «он ваш», и почти любой действующий мобильный номер
+     * такую проверку проходит. А отправление создаётся уже после оплаты, так
+     * что владельцу чужого аккаунта придёт не просьба заплатить, а готовая
+     * посылка с кодом получения: заплатил один, забрать может другой.
+     *
+     * Подтвердить владение номером может только код в SMS, которого у нас
+     * нет. Пока — прямо говорим покупателю, что этот номер и есть ключ от
+     * заказа: человек перечитывает номер, когда понимает, зачем он нужен.
+     */
+    function phoneNote() {
+      var box = form.querySelector('.ngpvz__phone-note');
+      if (!box) {
+        box = document.createElement('div');
+        box.className = 'ngpvz__phone-note';
+        box.style.cssText = 'margin:10px 0 0;padding:10px 12px;border-radius:10px;' +
+          'background:#f4f7fb;color:#42506a;font-size:13.5px;line-height:1.45';
+        wrap.parentNode.insertBefore(box, wrap.nextSibling);
+      }
+      return box;
+    }
+    function showPhoneNote(digits) {
+      var box = phoneNote();
+      if (!digits || digits.length !== 11) { box.style.display = 'none'; box.innerHTML = ''; return; }
+      box.style.display = '';
+      box.innerHTML = 'Код получения придёт на <b>' + красиво(digits) + '</b>. ' +
+        'По этому номеру в пункте выдадут заказ — проверьте, что он ваш и без опечаток.';
+    }
+
+    function blockPhone(digits) {
+      var вид = красиво(digits);
+      gate.phone = 'На номер <b>' + вид + '</b> доставку в пункт выдачи Ozon оформить нельзя: ' +
+        'у этого номера нет аккаунта Ozon.' +
+        '<br>Укажите номер, на который зарегистрирован ваш аккаунт Ozon, — или заведите его ' +
+        'на <a href="https://www.ozon.ru" target="_blank" rel="noopener">ozon.ru</a>, это бесплатно ' +
+        'и занимает минуту. Без аккаунта пункт выдачи не сможет отдать вам заказ.';
+      applyGate();
+    }
+    function unblockPhone() {
+      gate.phone = null;
+      applyGate();
+    }
+
+    function askConfirmPhone(digits) {
+      gate.mismatch = 'В вашем профиле другой номер: <b>' + красиво(st.profilePhone) + '</b>, ' +
+        'а заказ уйдёт на <b>' + красиво(digits) + '</b> — код получения придёт туда, ' +
+        'и по нему выдадут посылку.' +
+        '<br><button type="button" class="ngpvz__okphone" style="margin-top:9px;border:0;' +
+        'background:#f28c28;color:#fff;border-radius:10px;padding:9px 16px;font-size:14px;' +
+        'font-family:inherit;cursor:pointer">Да, доставить на этот номер</button>';
+      applyGate();
+    }
 
     function stopperBox() {
       var box = form.querySelector('.ngpvz__stopper');
@@ -329,7 +456,9 @@
     }
 
     function applyGate() {
-      var msg = gate.stock;
+      // Недоставляемый товар важнее: он мешает заказу целиком, а телефон
+      // покупатель может просто поправить.
+      var msg = gate.stock || gate.phone || gate.mismatch;
       var btn = submitBtn();
       // Вход проверяет ngr-stock — он работает на всём оформлении, а не только
       // на шаге с пунктом выдачи. Здесь только не снимаем его блокировку.
@@ -341,7 +470,14 @@
           btn.style.opacity = '0.45';
           btn.style.cursor = 'not-allowed';
         }
-        stopperBox().innerHTML = msg;
+        var box = stopperBox();
+        box.innerHTML = msg;
+        var ok = box.querySelector('.ngpvz__okphone');
+        if (ok) ok.onclick = function () {
+          st.phoneConfirmed = phoneDigits();
+          gate.mismatch = null;
+          applyGate();
+        };
         return;
       }
       if (btn && btn.getAttribute('data-ngpvz-blocked') === '1') {
@@ -382,7 +518,9 @@
      * повторяется, а перед самой отправкой формы — ещё раз.
      */
     function cartSig() {
-      return cartItems().map(function (i) {
+      // Телефон входит в подпись: сменил номер — проверка пойдёт заново тем же
+      // самым путём, что и при изменении состава корзины.
+      return phoneDigits() + '#' + cartItems().map(function (i) {
         return i.offer_id + 'x' + i.quantity;
       }).sort().join('|');
     }
@@ -401,6 +539,9 @@
     form.addEventListener('submit', function (e) {
       if (!loggedIn()) return;   // остановит ngr-stock, он же покажет причину
       if (!st.picked) return;
+      // Телефон без аккаунта Ozon — стоп независимо от подписи корзины:
+      // кнопка уже отключена, но форму можно отправить и с клавиатуры.
+      if (gate.phone || gate.mismatch) { e.preventDefault(); e.stopPropagation(); applyGate(); return; }
       // Повторная отправка после успешной проверки — пропускаем без вопросов,
       // иначе при сбое сети форма ушла бы в бесконечный круг.
       if (st.passOnce) { st.passOnce = false; return; }
@@ -422,9 +563,14 @@
       var items = cartItems();
       var sig = cartSig();
       if (!items.length) { if (eta) eta.textContent = ''; st.checkedSig = sig; if (done) done(false); return; }
+      // Телефон шлём только целиком: на полунабранном номере Ozon ответит
+      // «не найден» у кого угодно, и корзина ругалась бы на каждой цифре.
+      var тел = phoneDigits();
+      var тело = { point_id: p.i, items: items };
+      if (тел.length >= 11) тело.phone = тел;
       fetch(API + '/delivery/eta', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ point_id: p.i, items: items })
+        body: JSON.stringify(тело)
       }).then(function (r) { return r.json(); }).then(function (j) {
         if (j && j.blocked && j.blocked.length) {
           var names = j.blocked.map(function (b) {
@@ -438,6 +584,25 @@
           return;
         }
         unblockCheckout();
+        if (j && j.phone_known === false) {
+          st.checkedSig = sig;
+          if (eta) eta.textContent = '';
+          showPhoneNote('');
+          blockPhone(тел);
+          if (done) done(true);
+          return;
+        }
+        unblockPhone();
+        showPhoneNote(тел);
+        if (st.profilePhone && тел.length === 11 && тел !== st.profilePhone &&
+            st.phoneConfirmed !== тел) {
+          askConfirmPhone(тел);
+          st.checkedSig = sig;
+          if (done) done(true);
+          return;
+        }
+        gate.mismatch = null;
+        applyGate();
         st.checkedSig = sig;
         if (eta) {
           if (j && j.ok && j.from) {
