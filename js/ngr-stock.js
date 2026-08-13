@@ -2086,6 +2086,13 @@
       '.ngr-cab__row{display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:10px}' +
       '.ngr-cab__st{font-size:13px;font-weight:700;color:#1a8f4c}' +
       '.ngr-cab__sum{font-size:18px;font-weight:800;color:#14171c}' +
+      // Состояние доставки — самое нужное в карточке заказа, поэтому у него
+      // своя плашка, а не строчка мелким шрифтом среди прочего.
+      '.ngr-cab__ship{margin-top:10px;padding:9px 12px;border-radius:10px;' +
+      'background:#f1f6f2;color:#2f6b3f;font-size:13.5px;line-height:1.4}' +
+      '.ngr-cab__ship_wait{background:#f5f7fa;color:#4a5464}' +
+      '.ngr-cab__ship_off{background:#fdf3f2;color:#a8433c}' +
+      '.ngr-cab__ship b{font-weight:700}' +
       '.ngr-cab__items{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}' +
       '.ngr-cab__it{width:74px;text-align:center;cursor:pointer}' +
       '.ngr-cab__it i{display:block;width:74px;height:74px;border-radius:10px;border:1px solid #eef1f5;' +
@@ -2405,6 +2412,7 @@
         id: id, date: o.at || '', amount: Number(o.amount) || 0,
         delivery_status: o.status || '', city: o.city || '', address: o.address || '',
         point: o.point || '', ozon_order: o.ozon_order || '',
+        shipment: o.shipment || null,
         items: (o.items || []).map(function (it) {
           return { name: it.name || '', sku: it.sku || '', quantity: Number(it.qty) || 1, price: Number(it.price) || 0 };
         })
@@ -2415,6 +2423,9 @@
         current.city = current.city || mapped.city;
         current.address = current.address || mapped.address;
         current.ozon_order = current.ozon_order || mapped.ozon_order;
+        // Состояние доставки всегда берём наше: Tilda о нём не знает, её
+        // поле статуса ставит руками оператор (журнал NG-2026-08-13-021).
+        if (mapped.shipment) current.shipment = mapped.shipment;
         if (!orderItems(current).length && mapped.items.length) current.items = mapped.items;
       } else {
         orders.push(mapped);
@@ -2458,6 +2469,25 @@
           '<div class="ngr-cab__mail">' + String(o.date || o.created || o.datetime || '').slice(0, 16) + '</div></div>' +
           '<div style="text-align:right"><div class="ngr-cab__sum">' + money(Number(o.amount) || 0) + '</div>' +
           '<div class="ngr-cab__st">' + (o.delivery_status ? 'Статус доставки: ' : '') + orderStatus(o) + '</div></div></div>';
+        if (o.shipment && o.shipment.text) {
+          var ship = document.createElement('div');
+          var код = String(o.shipment.code || '');
+          ship.className = 'ngr-cab__ship' +
+            (код === 'posting_canceled' ? ' ngr-cab__ship_off' :
+             (код === 'posting_delivered' || код === 'posting_received' ||
+              код === 'posting_in_pickup_point') ? '' : ' ngr-cab__ship_wait');
+          // Собираем узлами, а не строкой HTML: текст приходит от Ozon, и
+          // подставлять чужую строку в разметку незачем.
+          ship.appendChild(document.createTextNode('Доставка Ozon: '));
+          var жирным = document.createElement('b');
+          жирным.textContent = String(o.shipment.text);
+          ship.appendChild(жирным);
+          if (o.shipment.posting) {
+            ship.appendChild(document.createElement('br'));
+            ship.appendChild(document.createTextNode('отправление ' + String(o.shipment.posting)));
+          }
+          c.appendChild(ship);
+        }
         if (o.address) {
           var delivery = document.createElement('div');
           delivery.className = 'ngr-cab__hint';
