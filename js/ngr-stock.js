@@ -2692,24 +2692,49 @@
    * пропадёт только наш блок, а вход сайта продолжит работать.
    */
   (function нашВходВОкне() {
+    /**
+     * Белая карточка внутри окна.
+     *
+     * Класть блок в сам #authModal нельзя: это подложка во весь экран, и блок
+     * уезжает мимо окна — так и вышло с первого раза. Ищем поле пароля или
+     * кнопку, поднимаемся от них до прямого потомка подложки: это и есть
+     * карточка, что бы у неё ни было за класс.
+     */
+    function карточка(окно) {
+      var якорь = окно.querySelector('input[type="password"]') ||
+                  окно.querySelector('button') ||
+                  окно.querySelector('input');
+      if (!якорь) return null;
+      var у = якорь;
+      while (у && у.parentElement && у.parentElement !== окно) у = у.parentElement;
+      return у && у.parentElement === окно ? у : null;
+    }
+
     function встроить(окно) {
       if (!окно || окно.querySelector('.ngr-lg-inline')) return;
-      var где = окно.querySelector('form') || окно.firstElementChild || окно;
+      var куда = карточка(окно);
+      // Пока карточки нет, встраивать некуда: окно ещё не собрано.
+      if (!куда) return;
       var обёртка = document.createElement('div');
       обёртка.className = 'ngr-lg-inline';
-      обёртка.style.cssText = 'margin:18px auto 0;max-width:420px;padding-top:16px;' +
+      обёртка.style.cssText = 'margin:20px auto 4px;max-width:100%;padding-top:18px;' +
         'border-top:1px solid #e8ecf1';
       var подпись = document.createElement('div');
-      подпись.style.cssText = 'text-align:center;font-size:13px;color:#8a919b;margin-bottom:12px';
+      подпись.style.cssText = 'text-align:center;font-size:13.5px;color:#6b7280;margin-bottom:14px';
       подпись.textContent = 'или войдите по коду — пароль не нужен';
       обёртка.appendChild(подпись);
-      обёртка.appendChild(формаВхода(function () {
+      var форма = формаВхода(function () {
         // После входа окно закрываем и обновляем страницу: дальше человек
         // сам решит, идти в кабинет или продолжить покупки.
         try { окно.classList.remove('show'); } catch (e) {}
         location.reload();
-      }));
-      (где.parentNode || окно).appendChild(обёртка);
+      });
+      // Внутри окна своя рамка не нужна — карточка уже есть.
+      форма.style.cssText = 'margin:0;padding:0;border:0;background:transparent;max-width:100%';
+      var заголовок = форма.firstElementChild;
+      if (заголовок) заголовок.style.display = 'none';
+      обёртка.appendChild(форма);
+      куда.appendChild(обёртка);
     }
     function поискать(узел) {
       if (!узел || узел.nodeType !== 1) return;
