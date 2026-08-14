@@ -1529,7 +1529,15 @@
           if (!s) return 1e9 + Number(c.getAttribute('data-ngr-pos') || 0);
           return -Number(s);
         });
-        плашка(сырое, видно);
+        // Считаем не совпавшие, а видимые. Часть карточек прячет сама Tilda
+        // (замер 14.08: 130 из 730), и обещать «нашли 120», когда на экране
+        // 102, нельзя — человек пересчитает.
+        var наЭкране = 0;
+        список.forEach(function (c) {
+          if (c.classList.contains('ngr-search-off')) return;
+          if (c.offsetParent !== null) наЭкране++;
+        });
+        плашка(сырое, наЭкране || видно);
       });
     }
 
