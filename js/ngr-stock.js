@@ -3828,7 +3828,98 @@
       '.ngr-smart-search{width:100%!important;min-width:0!important}' +
       '.ngr-smart-search__panel{left:0;right:auto;width:100%;max-width:100%;min-width:0;' +
       'max-height:50dvh;overflow-x:hidden}}' +
-      '.t-catalog__filter__item-title{border-radius:12px!important}';
+      '.t-catalog__filter__item-title{border-radius:12px!important}' +
+      /*
+       * У оформления строки поиска должен быть один хозяин.
+       *
+       * Замечание Александра 14.08: «визуально прыгает поиск, от одного
+       * визуала к другому», «как будто два кода борются». Так и есть, и вот
+       * кто с кем. На сайте лежит /custom.css (72 КБ, июльская схема
+       * оформления), где та же строка описана иначе:
+       *
+       *   #rec2502703571.ngr-catalog-record input,
+       *   #rec2502703571.ngr-catalog-record select
+       *     { border-color:#cfd9e1!important; min-height:46px!important;
+       *       padding-left:14px!important; ... }
+       *
+       * Специфичность этого правила выше наших, поэтому в стилях выигрывал
+       * custom.css, а наш вид держался только инлайновыми стилями, которые
+       * дописывал JS. Tilda пересобирает панель на каждую догрузку каталога
+       * — за загрузку это тринадцать раз, — и каждый раз новый узел рождался
+       * без инлайнов: кадр в оформлении custom.css, потом проход JS
+       * возвращал наше. Замер 14.08 на 1280 px показал, что именно менялось:
+       *
+       *   | свойство         | наш JS   | custom.css |
+       *   | border-color     | #e3e8ee  | #cfd9e1    |
+       *   | max-width        | none     | 100%       |
+       *   | min-width селекта| 0        | 210px      |
+       *   | лупа             | один SVG | другой SVG |
+       *
+       * Лечим не третьим слоем поверх, а тем, что забираем оформление в
+       * стили целиком: правила ниже сильнее custom.css, поэтому верен уже
+       * первый кадр после вставки узла, и дописывать инлайны больше не
+       * нужно — соответствующий кусок trimFilterBar() удалён.
+       */
+      'html #rec2502703571 .t-catalog__filter__search-and-sort input.js-catalog-filter-search,' +
+      'html #rec2502703571.ngr-catalog-record .t-catalog__filter__search-and-sort input.js-catalog-filter-search{' +
+      'height:44px!important;min-height:44px!important;border:1px solid #e3e8ee!important;' +
+      'border-radius:12px!important;background-color:#fff!important;color:#14171c!important;' +
+      'box-sizing:border-box!important;min-width:0!important;order:1!important;' +
+      'padding:0 14px 0 42px!important;' +
+      'background-image:url("data:image/svg+xml;utf8,' +
+      "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238a919b' stroke-width='2' stroke-linecap='round'><circle cx='11' cy='11' r='7'/><path d='M20 20l-3.6-3.6'/></svg>" +
+      '")!important;background-repeat:no-repeat!important;background-position:14px center!important;' +
+      'background-size:18px 18px!important}' +
+      'html #rec2502703571 .t-catalog__filter__search-and-sort select.t-catalog__sort-select,' +
+      'html #rec2502703571.ngr-catalog-record .t-catalog__filter__search-and-sort select.t-catalog__sort-select{' +
+      'height:44px!important;min-height:44px!important;border:1px solid #e3e8ee!important;' +
+      'border-radius:12px!important;background-color:#fff!important;color:#14171c!important;' +
+      'box-sizing:border-box!important;min-width:0!important;order:0!important;display:block!important;' +
+      'padding:0 36px 0 14px!important}' +
+      // Обёртка поиска рисует свою рамку — вертикальная черта рядом с полем.
+      'html #rec2502703571 .t-catalog__search-wrapper,' +
+      'html #rec2502703571.ngr-catalog-record .t-catalog__search-wrapper{border:0!important;' +
+      'background:transparent!important;box-shadow:none!important;padding:0!important;' +
+      'min-width:0!important}' +
+      // Размеры зависят от ширины окна, поэтому — медиазапросами, а не JS.
+      // Их место в файле последнее: правила равной силы решает порядок.
+      '@media(min-width:1001px){' +
+      'html #rec2502703571 .t-catalog__filter__search-and-sort,' +
+      'html #rec2502703571.ngr-catalog-record .t-catalog__filter__search-and-sort{' +
+      'display:flex!important;gap:10px!important;align-items:center!important;width:auto!important;' +
+      'min-width:0!important;margin-left:275px!important}' +
+      'html #rec2502703571 .t-catalog__filter__search-and-sort input.js-catalog-filter-search,' +
+      'html #rec2502703571.ngr-catalog-record .t-catalog__filter__search-and-sort input.js-catalog-filter-search{' +
+      'width:260px!important;max-width:none!important;font-size:14.5px!important}' +
+      'html #rec2502703571 .t-catalog__filter__search-and-sort select.t-catalog__sort-select,' +
+      'html #rec2502703571.ngr-catalog-record .t-catalog__filter__search-and-sort select.t-catalog__sort-select{' +
+      'width:210px!important;max-width:none!important;font-size:14.5px!important}' +
+      'html #rec2502703571 .t-catalog__search-wrapper{width:auto!important}}' +
+      '@media(max-width:1000px){' +
+      'html #rec2502703571 .t-catalog__filter__search-and-sort,' +
+      'html #rec2502703571.ngr-catalog-record .t-catalog__filter__search-and-sort{' +
+      'display:grid!important;gap:10px!important;align-items:center!important;' +
+      'grid-template-columns:minmax(104px,.78fr) minmax(0,1.22fr)!important;' +
+      'width:100%!important;min-width:0!important;margin-left:0!important}' +
+      'html #rec2502703571 .t-catalog__filter__search-and-sort>*,' +
+      'html #rec2502703571.ngr-catalog-record .t-catalog__filter__search-and-sort>*{' +
+      'display:block!important;width:100%!important;min-width:0!important}' +
+      'html #rec2502703571 .t-catalog__filter__search-and-sort input.js-catalog-filter-search,' +
+      'html #rec2502703571.ngr-catalog-record .t-catalog__filter__search-and-sort input.js-catalog-filter-search,' +
+      'html #rec2502703571 .t-catalog__filter__search-and-sort select.t-catalog__sort-select,' +
+      'html #rec2502703571.ngr-catalog-record .t-catalog__filter__search-and-sort select.t-catalog__sort-select{' +
+      'width:100%!important;max-width:100%!important;font-size:14.5px!important}' +
+      'html #rec2502703571 .t-catalog__search-wrapper{width:100%!important}}' +
+      '@media(max-width:600px){' +
+      'html #rec2502703571 .t-catalog__filter__search-and-sort,' +
+      'html #rec2502703571.ngr-catalog-record .t-catalog__filter__search-and-sort{' +
+      'grid-template-columns:minmax(0,1fr)!important}' +
+      'html #rec2502703571 .t-catalog__filter__search-and-sort>*,' +
+      'html #rec2502703571.ngr-catalog-record .t-catalog__filter__search-and-sort>*{grid-column:1!important}' +
+      // 16px — чтобы телефон не увеличивал страницу при фокусе в поле.
+      'html #rec2502703571 .t-catalog__filter__search-and-sort input.js-catalog-filter-search,' +
+      'html #rec2502703571.ngr-catalog-record .t-catalog__filter__search-and-sort input.js-catalog-filter-search{' +
+      'font-size:16px!important}}';
     document.head.appendChild(st);
   }
 
@@ -3842,125 +3933,17 @@
     var cat = onCatalogPage();
     document.documentElement.classList.toggle('ngr-catpage', cat);
 
-    // Голубую коробку вокруг поиска Tilda задаёт правилом с номером блока,
-    // и обычным стилем его не перебить. Ставим прямо на элемент.
-    if (cat) {
-      var bar = document.querySelector('.t-catalog__filter');
-      if (bar && bar.style.background !== 'transparent') {
-        bar.style.setProperty('background', 'transparent', 'important');
-        bar.style.setProperty('padding', '0', 'important');
-        bar.style.setProperty('border-radius', '0', 'important');
-        bar.style.setProperty('margin', '0 0 14px', 'important');
-      }
-      // Блок фильтров Tilda в каталоге пуст — все его пункты живут в нашей
-      // колонке. Пустой он всё равно занимал всю ширину и отжимал поиск
-      // с сортировкой к правому краю.
-      var opts = document.querySelector('.t-catalog__filter__options');
-      if (opts && opts.style.display !== 'none') opts.style.setProperty('display', 'none', 'important');
-
-      // На телефоне Tilda рисует свои кнопки «Фильтры» и «Поиск» — они
-      // повторяют нашу кнопку фильтров и видимое поле поиска. Оставляем
-      // только её сортировку (замечание Александра 08.08).
-      ['.js-catalog-filter-mob-btn', '.js-catalog-sort-mob-btn',
-        '.js-catalog-search-mob-btn', '.js-catalog-search-mob-close-btn'].forEach(function (sel) {
-        document.querySelectorAll(sel).forEach(function (b) {
-          if (b.style.display !== 'none') b.style.setProperty('display', 'none', 'important');
-        });
-      });
-
-      var ss = document.querySelector('.t-catalog__filter__search-and-sort');
-      if (ss) {
-        var узкаяПанель = innerWidth <= 1000;
-        var оченьУзко = innerWidth <= 600;
-        ss.style.setProperty('display', узкаяПанель ? 'grid' : 'flex', 'important');
-        ss.style.setProperty('gap', '10px', 'important');
-        ss.style.setProperty('align-items', 'center', 'important');
-        ss.style.setProperty('width', узкаяПанель ? '100%' : 'auto', 'important');
-        ss.style.setProperty('grid-template-columns', оченьУзко ? 'minmax(0,1fr)' :
-          (узкаяПанель ? 'minmax(104px,.78fr) minmax(0,1.22fr)' : 'none'), 'important');
-        ss.style.setProperty('min-width', '0', 'important');
-        // Ровно над сеткой товаров: колонка фильтров 262 плюс отступ 24.
-        ss.style.setProperty('margin-left', innerWidth > 1000 ? '275px' : '0', 'important');
-        // Сортировка слева, поиск рядом — как в каталоге Ozon. Оформление
-        // задаём прямо на элементах: свои правила Tilda пишет с номером
-        // блока, и обычным стилем их не перебить (замечание Александра 08.08
-        // про слово «Поиск», заезжающее на лупу).
-        var s = ss.querySelector('select'), q = ss.querySelector('input');
-        var лупа = 'url("data:image/svg+xml;utf8,' +
-          "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' " +
-          "stroke='%238a919b' stroke-width='2' stroke-linecap='round'>" +
-          "<circle cx='11' cy='11' r='7'/><path d='M20 20l-3.6-3.6'/></svg>\")";
-        function ставь(e, prop, val) {
-          if (!e || e.style.getPropertyValue(prop) === val) return;
-          e.style.setProperty(prop, val, 'important');
-        }
-        function поле(e, w) {
-          if (!e) return;
-          ставь(e, 'height', '44px');
-          ставь(e, 'width', w);
-          ставь(e, 'border', '1px solid #e3e8ee');
-          ставь(e, 'border-radius', '12px');
-          ставь(e, 'background-color', '#fff');
-          ставь(e, 'font-size', '14.5px');
-          ставь(e, 'color', '#14171c');
-          ставь(e, 'box-sizing', 'border-box');
-        }
-        var узко = узкаяПанель;
-        поле(s, узко ? '100%' : '210px');
-        поле(q, узко ? '100%' : '260px');
-        if (q) ставь(q, 'font-size', оченьУзко ? '16px' : '14.5px');
-        // Порядок задаём на прямых детях строки: сами поля лежат внутри
-        // обёрток Tilda, и свойство на них ничего не решает.
-        [].slice.call(ss.children).forEach(function (c) {
-          if (s && (c === s || c.contains(s))) {
-            c.style.setProperty('order', '0', 'important');
-            if (узко) {
-              c.style.setProperty('display', 'block', 'important');
-              c.style.setProperty('width', '100%', 'important');
-              c.style.setProperty('min-width', '0', 'important');
-              c.style.setProperty('grid-column', оченьУзко ? '1' : 'auto', 'important');
-            }
-          } else if (q && (c === q || c.contains(q))) {
-            c.style.setProperty('order', '1', 'important');
-            if (узко) {
-              c.style.setProperty('display', 'block', 'important');
-              c.style.setProperty('width', '100%', 'important');
-              c.style.setProperty('min-width', '0', 'important');
-              c.style.setProperty('grid-column', оченьУзко ? '1' : 'auto', 'important');
-            }
-          }
-        });
-        if (s) {
-          ставь(s, 'order', '0');
-          ставь(s, 'display', 'block');
-          ставь(s, 'min-width', '0');
-          ставь(s, 'max-width', узко ? '100%' : 'none');
-          ставь(s, 'padding', '0 36px 0 14px');
-        }
-        if (q) {
-          ставь(q, 'order', '1');
-          ставь(q, 'min-width', '0');
-          ставь(q, 'max-width', узко ? '100%' : 'none');
-          // Слева оставляем место под лупу, иначе подпись наезжает на неё.
-          ставь(q, 'padding', '0 14px 0 42px');
-          ставь(q, 'background-image', лупа);
-          ставь(q, 'background-repeat', 'no-repeat');
-          ставь(q, 'background-position', '14px center');
-          ставь(q, 'background-size', '18px 18px');
-          // У обёртки поиска своя рамка — она рисовала вертикальную черту
-          // рядом с полем (замечание Александра 08.08).
-          if (q.parentNode && q.parentNode !== ss) {
-            ставь(q.parentNode, 'order', '1');
-            ставь(q.parentNode, 'width', узко ? '100%' : 'auto');
-            ставь(q.parentNode, 'min-width', '0');
-            ставь(q.parentNode, 'border', '0');
-            ставь(q.parentNode, 'background', 'transparent');
-            ставь(q.parentNode, 'box-shadow', 'none');
-            ставь(q.parentNode, 'padding', '0');
-          }
-        }
-      }
-    }
+    /*
+     * Оформление панели каталога целиком в таблице стилей (filterBarCss).
+     *
+     * Раньше те же значения дописывались отсюда инлайном. Замер 14.08
+     * показал, что все шесть узлов — сама панель, пустой блок фильтров и
+     * четыре мобильные кнопки Tilda — выглядят одинаково с инлайнами и без
+     * них: правила уже сильнее чужих, а проход JS переписывал их тем же
+     * самым. Для строки поиска расхождение было настоящим (цвет рамки,
+     * лупа, ширины) — из-за него вид и переключался на глазах. Теперь
+     * хозяин один: стили.
+     */
 
     // Ползунки цены закрашены белым и прячут дорожку. Правило со стилем
     // Tilda перебивает своим, поэтому снимаем фон прямо на элементах.
