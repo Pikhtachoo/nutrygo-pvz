@@ -1486,14 +1486,25 @@
       if (p) p.remove();
     }
     function плашка(запрос, сколько, совпало) {
-      var поле = document.querySelector('.t-catalog__filter__search-and-sort');
-      if (!поле || !поле.parentNode) return;
+      /*
+       * Место плашки — прямо над сеткой товаров.
+       *
+       * Сперва я вставлял её сразу за строкой поиска, но строка лежит внутри
+       * гибкой обёртки Tilda, и на телефоне плашка становилась её соседом и
+       * уезжала ВЫШЕ самого поиска (видно на снимке 375 px 14.08). У сетки
+       * такой беды нет: перед ней плашка читается в правильном порядке —
+       * поиск, фильтры, «нашли столько-то», товары.
+       */
+      var сетка = document.querySelector('#rec2502703571 .js-catalog-grid-cont') ||
+                  (document.querySelector('#rec2502703571 .js-product') || {}).parentNode;
+      var якорь = сетка || document.querySelector('.t-catalog__filter__search-and-sort');
+      if (!якорь || !якорь.parentNode) return;
       var p = document.getElementById('ngr-search-note');
       if (!p) {
         p = document.createElement('div');
         p.id = 'ngr-search-note';
         p.className = 'ngr-search-note';
-        поле.parentNode.insertBefore(p, поле.nextSibling);
+        якорь.parentNode.insertBefore(p, якорь);
       }
       p.innerHTML = '';
       var t = document.createElement('span');
