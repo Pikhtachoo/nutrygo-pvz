@@ -4031,7 +4031,7 @@
       // 275px — столько же ставит JS и второй блок стилей ниже. Здесь стояло
       // 286, и панель прыгала на 11px при каждом сбросе инлайновых стилей.
       'margin-left:275px!important;display:flex!important;gap:10px!important;align-items:center!important}' +
-      '@media(max-width:1000px){#rec2502703571 .t-catalog__filter__search-and-sort{margin-left:0!important;' +
+      '@media(max-width:860px){#rec2502703571 .t-catalog__filter__search-and-sort{margin-left:0!important;' +
       'display:grid!important;grid-template-columns:minmax(104px,.78fr) minmax(0,1.22fr)!important;' +
       'width:100%!important}}' +
       /*
@@ -4118,7 +4118,7 @@
       'background-position:14px center!important;background-size:18px 18px!important}' +
       // На desktop Tilda задаёт wrapper-ам flex:1. После добавления панели
       // подсказок сортировка забирала все 510px, а host поиска схлопывался в 0.
-      '@media(min-width:1001px){' +
+      '@media(min-width:861px){' +
       '#rec2502703571 .t-catalog__filter__sort{width:210px!important;min-width:210px!important;' +
       'max-width:210px!important;flex:0 0 210px!important}' +
       '#rec2502703571 .t-catalog__filter__search{width:260px!important;min-width:0!important;' +
@@ -4126,7 +4126,7 @@
       '#rec2502703571 .t-catalog__filter__sort .t-catalog__sort-select,' +
       '#rec2502703571 .t-catalog__filter__search .js-catalog-filter-search{' +
       'width:100%!important;max-width:100%!important;box-sizing:border-box!important}}' +
-      '@media(max-width:1000px){#rec2502703571 .t-catalog__filter__search-and-sort{margin-left:0!important;' +
+      '@media(max-width:860px){#rec2502703571 .t-catalog__filter__search-and-sort{margin-left:0!important;' +
       'display:grid!important;grid-template-columns:minmax(104px,.78fr) minmax(0,1.22fr)!important;' +
       'width:100%!important;min-width:0!important}' +
       '#rec2502703571 .t-catalog__filter__search-and-sort>*{width:100%!important;min-width:0!important}' +
@@ -4262,7 +4262,15 @@
       'min-width:0!important}' +
       // Размеры зависят от ширины окна, поэтому — медиазапросами, а не JS.
       // Их место в файле последнее: правила равной силы решает порядок.
-      '@media(min-width:1001px){' +
+      // Граница «широкий экран» — 861 px, а не 1000.
+      //
+      // Замечание Александра 14.08: «когда с телефона смотришь в режиме ПК,
+      // фильтры слева не прогружаются». Колонка при этом собрана и полна —
+      // 73 фильтра, — но спрятана: телефон в режиме ПК даёт около 980 px, а
+      // это была наша «узкая» полоса, где фильтры живут за кнопкой. В режиме
+      // ПК человек ждёт вида ПК, и место под колонку там есть: 861 − 275
+      // оставляет под сетку почти 600 px, то есть две карточки в ряд.
+      '@media(min-width:861px){' +
       'html #rec2502703571 .t-catalog__filter__search-and-sort,' +
       'html #rec2502703571.ngr-catalog-record .t-catalog__filter__search-and-sort{' +
       'display:flex!important;gap:10px!important;align-items:center!important;width:auto!important;' +
@@ -4274,7 +4282,7 @@
       'html #rec2502703571.ngr-catalog-record .t-catalog__filter__search-and-sort select.t-catalog__sort-select{' +
       'width:210px!important;max-width:none!important;font-size:14.5px!important}' +
       'html #rec2502703571 .t-catalog__search-wrapper{width:auto!important}}' +
-      '@media(max-width:1000px){' +
+      '@media(max-width:860px){' +
       'html #rec2502703571 .t-catalog__filter__search-and-sort,' +
       'html #rec2502703571.ngr-catalog-record .t-catalog__filter__search-and-sort{' +
       'display:grid!important;gap:10px!important;align-items:center!important;' +
@@ -4590,7 +4598,7 @@
       '.ngr-side__up.on{opacity:1;pointer-events:auto}' +
       '.ngr-side__up:hover{background:#f6f8fa}' +
       '.ngr-sidebtn{display:none}' +
-      '@media(max-width:1000px){' +
+      '@media(max-width:860px){' +
       'html.ngr-side-lock,html.ngr-side-lock body{overflow:hidden!important;overscroll-behavior:none}' +
       '.ngr-withside{grid-template-columns:minmax(0,1fr)}' +
       '.ngr-withside>*{grid-column:1}' +
@@ -4603,7 +4611,7 @@
       '.ngr-side__close{display:block;position:sticky;top:0;z-index:5;width:100%;margin:0 0 8px;' +
       'padding:13px;border:0;border-radius:12px;' +
       'background:#4984c4;color:#fff;font-size:15px;font-weight:700;cursor:pointer}}' +
-      '@media(min-width:1001px){.ngr-side__close{display:none}}';
+      '@media(min-width:861px){.ngr-side__close{display:none}}';
     document.head.appendChild(st);
   }
 

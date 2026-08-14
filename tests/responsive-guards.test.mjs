@@ -110,14 +110,17 @@ test('mobile cart control uses a non-obstructing geometry', () => {
   );
 });
 
+// Граница узкой раскладки — 860px (была 1000). Телефон в режиме «ПК» даёт
+// около 980px, и на этой ширине человек ждёт колонку фильтров слева, а не
+// кнопку (замечание Александра 14.08).
 test('mobile filters drawer has a reachable close lifecycle', () => {
-  const tablet = cssAtMost(stockCss, 1000);
+  const tablet = cssAtMost(stockCss, 860);
   const closeRules = ruleBodies(tablet, '.ngr-side__close');
   assert.ok(
     closeRules.some((body) => /position\s*:\s*sticky/i.test(body)
       && /top\s*:\s*(?:0|\d+px)/i.test(body)
       && /z-index\s*:/i.test(body)),
-    'At <=1000px .ngr-side__close must be sticky at the top, not only after the 1420px filter list.',
+    'At <=860px .ngr-side__close must be sticky at the top, not only after the 1420px filter list.',
   );
 
   assert.match(stock, /function\s+closeSideFilters\s*\(/,
@@ -146,8 +149,8 @@ test('mobile checkout auth action stays inside the cart viewport', () => {
   'At <=640px .js-cart-log-out must be static and capped to the auth row width.');
 });
 
-test('catalog toolbar has one deterministic 320-1000px layout', () => {
-  const tablet = cssAtMost(stockCss, 1000);
+test('catalog toolbar has one deterministic 320-860px layout', () => {
+  const tablet = cssAtMost(stockCss, 860);
   const rowRules = ruleBodies(tablet, '.t-catalog__filter__search-and-sort');
   const inputRules = ruleBodies(tablet, '.js-catalog-filter-search');
   const sortRules = ruleBodies(tablet, '.t-catalog__sort-select');
@@ -155,7 +158,7 @@ test('catalog toolbar has one deterministic 320-1000px layout', () => {
   assert.ok(rowRules.some((body) => /display\s*:\s*grid/i.test(body)
     && /grid-template-columns\s*:/i.test(body)
     && /width\s*:\s*100%/i.test(body)),
-  'Use one full-width CSS grid for sort + search from 320 through 1000px.');
+  'Use one full-width CSS grid for sort + search from 320 through 860px.');
   assert.ok(inputRules.some((body) => /min-width\s*:\s*0/i.test(body)
     && /width\s*:\s*100%/i.test(body)),
   'Search must be width:100%; min-width:0 inside the responsive grid.');
