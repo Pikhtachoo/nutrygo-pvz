@@ -1266,7 +1266,54 @@
     return smartIndexPromise;
   }
 
+  /**
+   * Наши узлы в строке поиска обязаны переживать её пересборку.
+   *
+   * Замечание Александра 14.08 со снимками: «кнопка то появляется, то
+   * пропадает». Так и было. Кнопку «Найти» и панель подсказок мы вешаем на
+   * поле Tilda, а Tilda пересобирает панель на каждую догрузку каталога —
+   * тринадцать раз за загрузку. Новое поле приходит без наших узлов, и до
+   * следующего прохода apply (он отложен) кнопки нет: кадр с кнопкой, кадр
+   * без.
+   *
+   * Стилями это не лечится — узел настоящий. Поэтому следим за самой
+   * строкой отдельным наблюдателем: его обработчик вызывается до отрисовки,
+   * в той же задаче, что и вставка. Значит первый же нарисованный кадр
+   * будет с кнопкой.
+   */
+  var смотрительПоиска = null;
+  var кореньПоиска = null;
+  function следитьЗаПоиском() {
+    // Панель могли пересобрать вместе с корнем — тогда наблюдатель повис в
+    // пустоте и его надо поставить заново.
+    if (смотрительПоиска && кореньПоиска && кореньПоиска.isConnected) return;
+    if (смотрительПоиска) { смотрительПоиска.disconnect(); смотрительПоиска = null; }
+    // Следим только за панелью фильтров: там пересобирается строка. Ставить
+    // наблюдателя на весь документ нельзя — в каталоге 730 карточек, и его
+    // обработчик срабатывал бы на каждой вставке товара.
+    var корень = document.querySelector('#rec2502703571 .t-catalog__filter');
+    if (!корень) return;   // панели ещё нет — попробуем на следующем проходе
+    кореньПоиска = корень;
+    смотрительПоиска = new MutationObserver(function (записи) {
+      for (var i = 0; i < записи.length; i++) {
+        var m = записи[i];
+        if (m.type !== 'childList' || !m.addedNodes.length) continue;
+        for (var j = 0; j < m.addedNodes.length; j++) {
+          var n = m.addedNodes[j];
+          if (n.nodeType !== 1) continue;
+          if ((n.classList && n.classList.contains('js-catalog-filter-search')) ||
+              (n.querySelector && n.querySelector('.js-catalog-filter-search'))) {
+            initSmartSearch();
+            return;
+          }
+        }
+      }
+    });
+    смотрительПоиска.observe(корень, { childList: true, subtree: true });
+  }
+
   function initSmartSearch() {
+    следитьЗаПоиском();
     var inp = searchInput();
     if (!inp) return;
     var existing = document.getElementById('ngr-smart-search-results');
@@ -1379,8 +1426,35 @@
     function карточки() {
       return [].slice.call(document.querySelectorAll('#rec2502703571 .js-product'));
     }
+    /**
+     * Порядок карточек в сетке.
+     *
+     * Запоминаем исходный номер один раз: после поиска сетку надо вернуть
+     * ровно как было, иначе каталог навсегда останется перетасованным.
+     */
+    function запомнитьПорядок(список) {
+      список.forEach(function (c, i) {
+        if (!c.hasAttribute('data-ngr-pos')) c.setAttribute('data-ngr-pos', String(i));
+      });
+    }
+    function разложить(список, ключ) {
+      var сетка = список[0] && список[0].parentNode;
+      if (!сетка) return;
+      var нужный = список.slice().sort(function (a, b) { return ключ(a) - ключ(b); });
+      // Переставляем, только если порядок и правда другой: лишние appendChild
+      // — это лишние перерисовки сетки и лишняя работа наблюдателям.
+      var сейчас = [].slice.call(сетка.children).filter(function (c) {
+        return c.classList && c.classList.contains('js-product');
+      });
+      var надо = нужный.some(function (c, i) { return сейчас[i] !== c; });
+      if (!надо) return;
+      нужный.forEach(function (c) { сетка.appendChild(c); });
+    }
+
     function снятьВыдачу() {
-      карточки().forEach(function (c) { c.classList.remove('ngr-search-off'); });
+      var список = карточки();
+      список.forEach(function (c) { c.classList.remove('ngr-search-off'); });
+      разложить(список, function (c) { return Number(c.getAttribute('data-ngr-pos') || 0); });
       var p = document.getElementById('ngr-search-note');
       if (p) p.remove();
     }
