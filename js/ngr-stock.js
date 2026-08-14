@@ -2623,6 +2623,10 @@
       '<button class="ngr-lg__go" type="button" style="margin-top:12px;width:100%;border:0;' +
       'background:#f28c28;color:#fff;border-radius:10px;padding:12px 16px;font-size:15px;' +
       'font-weight:700;font-family:inherit;cursor:pointer">Прислать код</button>' +
+      '<div class="ngr-lg__again" style="display:none;margin-top:10px;text-align:center">' +
+      '<button type="button" class="ngr-lg__resend" style="border:0;background:none;padding:0;' +
+      'color:#2f6ba8;font-size:13.5px;font-family:inherit;cursor:pointer;text-decoration:underline">' +
+      'Прислать код ещё раз</button></div>' +
       '<div class="ngr-lg__msg" style="margin-top:10px;font-size:13.5px;line-height:1.45"></div>';
 
     var поле = к.querySelector('.ngr-lg__mail');
@@ -2630,7 +2634,26 @@
     var полеКода = к.querySelector('.ngr-lg__code');
     var кнопка = к.querySelector('.ngr-lg__go');
     var сообщение = к.querySelector('.ngr-lg__msg');
+    var ещёРаз = к.querySelector('.ngr-lg__again');
+    var кнЕщё = к.querySelector('.ngr-lg__resend');
     var этап = 1;
+
+    /**
+     * Возврат к первому шагу.
+     *
+     * Замечание Александра 14.08: он ошибся адресом и оказался в тупике —
+     * поле почты я блокировал, а запросить код заново было нечем. Теперь
+     * почта остаётся доступной, и любая её правка возвращает сюда.
+     */
+    function кПервомуШагу(скажиЧто) {
+      этап = 1;
+      шаг2.style.display = 'none';
+      ещёРаз.style.display = 'none';
+      полеКода.value = '';
+      поле.readOnly = false;
+      кнопка.textContent = 'Прислать код';
+      скажи(скажиЧто || '');
+    }
 
     function скажи(текст, плохо) {
       сообщение.textContent = текст || '';
@@ -2658,7 +2681,7 @@
           if (о && о.error) { скажи(о.error, true); return; }
           этап = 2;
           шаг2.style.display = '';
-          поле.readOnly = true;
+          ещёРаз.style.display = '';
           кнопка.textContent = 'Войти';
           скажи('Код отправлен на ' + адрес + '. Он годен 10 минут.');
           полеКода.focus();
@@ -2691,6 +2714,20 @@
     };
     полеКода.addEventListener('keydown', поЕнтеру);
     поле.addEventListener('keydown', поЕнтеру);
+    поле.addEventListener('input', function () {
+      if (этап === 2) кПервомуШагу('Адрес изменён — запросите код заново.');
+    });
+    кнЕщё.addEventListener('click', function () {
+      var адрес = String(поле.value || '').trim().toLowerCase();
+      занята(true); скажи('Отправляем…');
+      послать('/auth/request', { email: адрес }).then(function (о) {
+        занята(false);
+        // Воркер не чаще письма в минуту на адрес и честно об этом говорит —
+        // показываем его слова, а не «отправлено», которого не было.
+        скажи((о && о.note) ? о.note : ('Код отправлен на ' + адрес + '. Он годен 10 минут.'));
+        полеКода.focus();
+      }).catch(function () { занята(false); скажи('Не получилось отправить код', true); });
+    });
     return к;
   }
 
