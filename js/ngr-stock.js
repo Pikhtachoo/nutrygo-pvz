@@ -3218,6 +3218,34 @@
     avaCss();
     var chosen = me.avatar || '';
 
+    var avaПоказано = 0;
+    /** Догрузка остальных аватаров: наблюдаем сам список, а не страницу. */
+    function догрузитьАватары(список) {
+      var ждут = [].slice.call(список.querySelectorAll('img[data-src]'));
+      if (!ждут.length) return;
+      var прокрутка = список;
+      while (прокрутка && прокрутка !== document.body) {
+        var o = getComputedStyle(прокрутка).overflowY;
+        if (o === 'auto' || o === 'scroll') break;
+        прокрутка = прокрутка.parentElement;
+      }
+      var включить = function (im) {
+        var u = im.getAttribute('data-src');
+        if (!u) return;
+        im.removeAttribute('data-src');
+        im.src = u;
+      };
+      if (!('IntersectionObserver' in window)) { ждут.forEach(включить); return; }
+      var сторож = new IntersectionObserver(function (записи) {
+        записи.forEach(function (з) {
+          if (!з.isIntersecting) return;
+          включить(з.target);
+          сторож.unobserve(з.target);
+        });
+      }, { root: (прокрутка && прокрутка !== document.body) ? прокрутка : null, rootMargin: '300px' });
+      ждут.forEach(function (im) { сторож.observe(im); });
+    }
+
     // Кружок аватара. Подписи в ряду нет — название читается наведением
     // и озвучивается голосовым доступом.
     function avaCard(a) {
@@ -3230,10 +3258,30 @@
       b.title = a[3];
       b.setAttribute('data-id', a[0]);
       var im = document.createElement('img');
-      im.loading = 'lazy';
+      /*
+       * Аватары грузим сами, без loading="lazy".
+       *
+       * Замечание Александра 14.08: «аватары не прогружаются в личном
+       * кабинете». Проверка на его же странице: все шестьдесят картинок
+       * висят с complete=false, naturalWidth=0, и **ни одного сетевого
+       * запроса** — при том, что первая из них занимает 68×68 прямо в
+       * видимой части экрана, а файлы отдаются с кодом 200.
+       *
+       * Дело в самом lazy: кабинет — это наложение поверх страницы со своей
+       * прокруткой, и браузер не считает нужным грузить картинки внутри
+       * него. Проверено там же: стоит поставить eager и перезадать адрес,
+       * как все шесть подопытных загружаются (512×512).
+       *
+       * Поэтому откладываем загрузку сами и по своим правилам: первые
+       * восемнадцать (три ряда, которые видно сразу) грузятся немедленно,
+       * остальные — когда доедут до края списка. Наблюдатель привязан к
+       * самому списку, а не к странице, — в этом и была разница.
+       */
       im.decoding = 'async';
       im.alt = '';
-      im.src = AVA_URL + a[1];
+      if (avaПоказано < 18) { im.src = AVA_URL + a[1]; }
+      else { im.setAttribute('data-src', AVA_URL + a[1]); }
+      avaПоказано++;
       b.appendChild(im);
       b.addEventListener('click', function () { pickAva(a[0]); });
       return b;
@@ -3276,6 +3324,7 @@
     var row = host.querySelector('.ngr-avc__all');
     function drawRow() {
       row.innerHTML = '';
+      avaПоказано = 0;
       AVA_CATS.forEach(function (c) {
         var head = document.createElement('div');
         head.className = 'ngr-avc__cap';
@@ -3286,6 +3335,7 @@
         AVATARS.forEach(function (a) { if (a[2] === c) line.appendChild(avaCard(a)); });
         row.appendChild(line);
       });
+      догрузитьАватары(row);
     }
     drawRow();
 
