@@ -3715,6 +3715,133 @@
   }
 
   /**
+   * Корзина подставляет то, что покупатель уже вводил.
+   *
+   * Замечание Александра 14.08: «человек тут не пишет номер телефона, имя.
+   * Когда он будет создавать заказ, то его профиль должен автоматически
+   * заполниться». В тот же день вход в кабинет перевели на одноразовый код
+   * с почты — Tilda при таком входе не спрашивает ни имени, ни телефона,
+   * так что у нового покупателя в профиле нет ничего, кроме адреса почты.
+   * Значит источник данных один: прошлый заказ этого человека.
+   *
+   * Берём по порядку — что вводили в прошлый раз на этом устройстве, затем
+   * профиль Tilda. Заполняем только пустые поля и только один раз на форму:
+   * набранное руками не трогаем никогда, стёртое нарочно не возвращаем.
+   *
+   * Пункт выдачи и адрес не подставляем сознательно. Адрес пишет виджет
+   * вместе с номером пункта, и если вписать туда прошлый адрес, номер
+   * останется от прежнего выбора: заказ уедет не в тот пункт, а покупатель
+   * увидит в корзине верную строку. Цена ошибки здесь выше пользы.
+   */
+  var КЛЮЧ_ПОКУПАТЕЛЯ = 'ngr_buyer_v1';
+
+  function покупательИзПамяти() {
+    try { return JSON.parse(localStorage.getItem(КЛЮЧ_ПОКУПАТЕЛЯ) || 'null') || {}; }
+    catch (e) { return {}; }
+  }
+
+  function запомнитьПокупателя(v) {
+    var cur = покупательИзПамяти();
+    ['name', 'phone', 'email'].forEach(function (k) { if (v[k]) cur[k] = v[k]; });
+    try { localStorage.setItem(КЛЮЧ_ПОКУПАТЕЛЯ, JSON.stringify(cur)); } catch (e) {}
+  }
+
+  /** Профиль Tilda лежит в браузере под ключом с номером проекта. */
+  function покупательИзПрофиля() {
+    try {
+      for (var i = 0; i < localStorage.length; i++) {
+        var k = localStorage.key(i);
+        if (!k || k.indexOf('tilda_members_profile') !== 0 || /_timestamp$/.test(k)) continue;
+        var p = JSON.parse(localStorage.getItem(k) || 'null');
+        if (p) return { name: p.name || '', phone: p.phone || '', email: p.login || p.email || '' };
+      }
+    } catch (e) {}
+    return {};
+  }
+
+  function цифрыТелефона(v) {
+    var d = String(v || '').replace(/\D/g, '');
+    if (d.length === 10) d = '7' + d;
+    if (d.length === 11 && d.charAt(0) === '8') d = '7' + d.slice(1);
+    return d.length === 11 ? d : '';
+  }
+
+  function вписать(поле, знач) {
+    if (!поле || !знач || поле === document.activeElement) return false;
+    if (String(поле.value || '').trim()) return false;
+    поле.value = знач;
+    поле.dispatchEvent(new Event('input', { bubbles: true }));
+    поле.dispatchEvent(new Event('change', { bubbles: true }));
+    return true;
+  }
+
+  /**
+   * Телефон у Tilda собран из трёх полей: видимая маска без кода страны,
+   * скрытый Phone с кодом и скрытый iso. Замер 14.08: достаточно вписать
+   * маску и послать input — обработчик Tilda сам пересчитал Phone
+   * («+7 (905) 333-85-34») и iso. Скрытые поля дописываем только если он
+   * почему-то не сработал: заказ без номера в пункте выдачи не отдадут.
+   *
+   * И только вслед за видимой маской. Замер 14.08: когда маску заполнить не
+   * удалось (в ней стоял курсор), скрытое поле всё равно получало номер —
+   * покупатель видел пустую строку телефона, а заказ уходил с номером,
+   * которого он не видел. Такого расхождения быть не должно.
+   */
+  function вписатьТелефон(form, цифры) {
+    if (!цифры) return;
+    var маска = form.querySelector('input.t-input-phonemask') ||
+                form.querySelector('input[type="tel"]');
+    var n = цифры.slice(1);
+    if (!вписать(маска, '(' + n.slice(0, 3) + ') ' + n.slice(3, 6) + '-' +
+                        n.slice(6, 8) + '-' + n.slice(8))) return;
+    var скрытое = form.querySelector('input[name="Phone"]');
+    if (скрытое && String(скрытое.value || '').replace(/\D/g, '').length < 11) {
+      скрытое.value = '+' + цифры;
+      скрытое.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+  }
+
+  function cartForm() {
+    var mark = document.querySelector('input[name="tildaspec-formname"][value="Cart"]');
+    return (mark && mark.form) || null;
+  }
+
+  function prefillCart() {
+    var form = cartForm();
+    if (!form || form.__ngrPrefill) return;
+    var свои = покупательИзПамяти();
+    var профиль = покупательИзПрофиля();
+    var имя = свои.name || профиль.name || '';
+    var почта = свои.email || профиль.email || '';
+    var тел = цифрыТелефона(свои.phone || профиль.phone || '');
+    if (!имя && !почта && !тел) return;
+    form.__ngrPrefill = 1;
+    вписать(form.querySelector('input[name="Name"]'), имя);
+    вписать(form.querySelector('input[name="Email"]'), почта);
+    вписатьТелефон(form, тел);
+  }
+
+  /**
+   * Запоминаем покупателя в тот момент, когда он отправляет заказ: это
+   * единственная точка, где имя, почта и телефон заведомо заполнены и
+   * проверены самой Tilda.
+   */
+  document.addEventListener('submit', function (e) {
+    var f = e.target;
+    if (!f || !f.querySelector) return;
+    var mark = f.querySelector('input[name="tildaspec-formname"]');
+    if (!mark || mark.value !== 'Cart') return;
+    var скрытое = (f.querySelector('input[name="Phone"]') || {}).value || '';
+    var маска = (f.querySelector('input.t-input-phonemask') || {}).value || '';
+    var a = String(скрытое).replace(/\D/g, ''), b = String(маска).replace(/\D/g, '');
+    запомнитьПокупателя({
+      name: ((f.querySelector('input[name="Name"]') || {}).value || '').trim(),
+      email: ((f.querySelector('input[name="Email"]') || {}).value || '').trim(),
+      phone: цифрыТелефона(a.length >= b.length ? a : b)
+    });
+  }, true);
+
+  /**
    * Строка фильтров Tilda: то, что осталось на главной.
    *
    * Замечания Александра 08.08: верхняя лента разделов дублирует фильтр,
@@ -5229,7 +5356,7 @@
   function apply() {
     fixPopup(); fixCards(); fixCart(); fixPromocode(); fixDupDelivery(); fixUnits(); fixBrands();
     initSearchGuard(); fixSearch(); initSmartSearch(); fixAccountButton(); fixAuthGate();
-    fixRatings(); fixPopupReviews(); fixDescription(); fixDeliveryOrder(); fixCardPhotos(); fixPrices(); fixFilterValues(); fixRatingFilter(); applyRatingFilter(false); fixShelves(); fixSgr(); fixFav(); cartCss(); docsSearch(); filterBarCss(); trimFilterBar(); dropCartTip(); pullProfileOnce(); refreshBrands(); buildSideFilters(); syncSideFilters(); fixUrlSort();
+    fixRatings(); fixPopupReviews(); fixDescription(); fixDeliveryOrder(); fixCardPhotos(); fixPrices(); fixFilterValues(); fixRatingFilter(); applyRatingFilter(false); fixShelves(); fixSgr(); fixFav(); cartCss(); docsSearch(); filterBarCss(); trimFilterBar(); dropCartTip(); prefillCart(); pullProfileOnce(); refreshBrands(); buildSideFilters(); syncSideFilters(); fixUrlSort();
   }
 
   apply();
