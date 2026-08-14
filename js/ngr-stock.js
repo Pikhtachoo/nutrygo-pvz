@@ -2431,9 +2431,25 @@
       '.ngr-cab__copy:hover{background:#f5f7fa}' +
       '.ngr-cab__hint{font-size:12.5px;color:#8a919b;line-height:1.5;margin-top:8px}' +
       '.ngr-cab__photo{display:flex;align-items:center;gap:12px;flex-wrap:wrap}' +
-      '.ngr-cab__prev{width:64px;height:64px;border-radius:50%;border:1px solid #e3e8ee;' +
-      'background:#f3f5f8 center/cover no-repeat;flex:0 0 64px}' +
+      /*
+       * Блок фотографии — покрупнее и с понятной парой кнопок.
+       *
+       * Пожелание Александра 14.08: «это должно выглядеть современно,
+       * красиво и понятно». Кружок был 64 px и стоял в одну строку с
+       * кнопками, из-за чего читался как значок, а не как «вот так вас
+       * увидят». Теперь 96 px с мягким кольцом, рядом столбик: главное
+       * действие, второстепенное и подсказка про размер.
+       */
+      '.ngr-cab__prev{width:96px;height:96px;border-radius:50%;border:0;' +
+      'box-shadow:0 0 0 1px #e3e8ee,0 6px 18px rgba(20,23,28,.08);' +
+      'background:#f3f5f8 center/cover no-repeat;flex:0 0 96px}' +
+      '.ngr-cab__photo{gap:16px!important;align-items:center!important}' +
+      '.ngr-cab__photoacts{display:flex;flex-direction:column;gap:8px;align-items:flex-start;min-width:0}' +
+      '.ngr-cab__photohint{font-size:12.5px;line-height:1.35;color:#8a919b}' +
       'label.ngr-cab__copy{display:inline-block}' +
+      // Главное действие видно сразу, второстепенное — спокойное.
+      '.ngr-cab__photoacts label.ngr-cab__copy{background:#4984c4;border-color:#4984c4;color:#fff}' +
+      '.ngr-cab__photoacts label.ngr-cab__copy:hover{background:#3f76b1;border-color:#3f76b1}' +
       '@media(max-width:860px){' +
       '.ngr-cab{grid-template-columns:1fr;gap:16px;padding:12px 16px 26px}' +
       '.ngr-cab__side{position:static}' +
@@ -2486,7 +2502,23 @@
       '.ngr-avc__row{display:flex;flex-wrap:wrap;gap:12px;margin:4px 0 14px}' +
       '.ngr-avc__cap{font-size:12.5px;font-weight:700;color:#8a919b;text-transform:uppercase;' +
       'letter-spacing:.4px;margin:10px 0 2px}' +
-      '.ngr-avc__all{margin-top:4px}' +
+      /*
+       * Галерея аватаров: своя область с прокруткой, а не бесконечная лента.
+       *
+       * Шестьдесят кружков в шесть наборов растягивали профиль так, что
+       * кнопка «Сохранить» уезжала за экран. Ограничиваем высоту, подписи
+       * наборов прилипают к верху области — видно, где находишься.
+       */
+      '.ngr-avc__all{margin-top:4px;max-height:340px;overflow-y:auto;overflow-x:hidden;' +
+      'padding:2px 4px 4px;border:1px solid #eef1f5;border-radius:14px;background:#fcfdfe;' +
+      'overscroll-behavior:contain}' +
+      '.ngr-avc__cap{position:sticky;top:0;z-index:2;background:#fcfdfe;padding:8px 2px 4px}' +
+      // Выбранный виден без сомнений: кольцо и галочка.
+      '.ngr-avc.on::after{content:"";position:absolute;right:2px;bottom:2px;width:20px;height:20px;' +
+      'border-radius:50%;background:#4984c4 center/12px 12px no-repeat;' +
+      'background-image:url("data:image/svg+xml;utf8,' +
+      "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'><path d='M20 6L9 17l-5-5'/></svg>" +
+      '");box-shadow:0 0 0 2px #fff}' +
       '@media(max-width:560px){.ngr-avc{width:62px;height:62px}.ngr-avc__row{gap:9px}}' +
       '.ngr-avc__more{padding:9px 16px;border:1px solid #e3e8ee;background:#fff;border-radius:10px;' +
       'font-size:14px;font-weight:600;color:#14171c;cursor:pointer;font-family:inherit}' +
@@ -3211,12 +3243,16 @@
       '<div class="ngr-cab__prev"' +
       (me.photo ? ' style="background-image:url(' + me.photo + ')"'
         : (me.avatar ? ' style="background-image:url(' + avaFile(me.avatar) + ')"' : '')) + '></div>' +
+      '<div class="ngr-cab__photoacts">' +
       '<label class="ngr-cab__copy">Загрузить фото' +
       '<input type="file" accept="image/*" id="ngrPhoto" style="display:none"></label>' +
-      (me.photo ? '<button type="button" class="ngr-cab__copy ngr-cab__drop">Убрать</button>' : '') +
+      (me.photo ? '<button type="button" class="ngr-cab__copy ngr-cab__drop">Убрать фотографию</button>' : '') +
       (!me.photo && oldLocalPhoto
         ? '<button type="button" class="ngr-cab__copy ngr-cab__importphoto">Перенести фото с этого устройства</button>'
         : '') +
+      '<div class="ngr-cab__photohint">Подойдёт любое изображение — мы уменьшим его до 160 точек ' +
+      'прямо в браузере, на сервер оно не уходит.</div>' +
+      '</div>' +
       '</div></div>' +
       '<div class="ngr-cab__field"><u>Или выберите аватар</u>' +
       '<div class="ngr-avc__all" role="radiogroup" aria-label="Аватар"></div></div>' +
