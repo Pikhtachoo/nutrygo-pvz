@@ -4035,6 +4035,12 @@
       'z-index:3;height:36px;padding:0 14px;border:0;border-radius:9px;background:#f28c28;' +
       'color:#fff;font-family:inherit;font-size:13.5px;font-weight:700;cursor:pointer;line-height:1}' +
       '.ngr-smart-search__go:hover{background:#e07f1c}' +
+      // Свои значки Tilda в поле поиска: лупа и крестик очистки. Лупу мы
+      // рисуем фоном самого поля, крестик заменяет «Показать все», а у
+      // значков есть левая граница — она и осталась тонкой полоской за
+      // кнопкой «Найти» (замечание Александра 14.08 со снимком).
+      'html #rec2502703571 .t-catalog__search-wrapper > svg,' +
+      'html #rec2502703571.ngr-catalog-record .t-catalog__search-wrapper > svg{display:none!important}' +
       // Найденное показываем строкой под поиском: сколько нашли и как вернуть всё.
       '.ngr-search-note{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;' +
       'margin:10px 0 4px;font-size:13.5px;color:#42506a}' +
