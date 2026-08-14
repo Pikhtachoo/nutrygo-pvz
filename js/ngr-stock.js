@@ -2595,7 +2595,7 @@
    * показываем словами воркера, а не «что-то пошло не так»: человек должен
    * понимать, истёк ли код, не тот ли он или адрес набран с опечаткой.
    */
-  function формаВхода() {
+  function формаВхода(послеВхода) {
     var к = document.createElement('div');
     к.className = 'ngr-cab__login';
     к.style.cssText = 'margin-top:16px;padding:18px 20px;border:1px solid #e8ecf1;' +
@@ -2666,14 +2666,70 @@
         if (!о || !о.pass) { скажи((о && о.error) || 'Код не подошёл', true); return; }
         запомнитьПропуск(о.pass);
         скажи('Готово, обновляем заказы…');
-        // Перерисовываем кабинет заново: заказы теперь придут по пропуску.
-        setTimeout(function () { openCabinet(); }, 400);
+        // Что делать дальше, решает вызвавший: в кабинете — перерисовать его,
+        // в окне входа — закрыть окно и обновить страницу.
+        setTimeout(function () {
+          if (typeof послеВхода === 'function') послеВхода();
+          else openCabinet();
+        }, 400);
       }).catch(function () { занята(false); скажи('Не получилось проверить код', true); });
     });
     полеКода.addEventListener('keydown', function (e) { if (e.key === 'Enter') кнопка.click(); });
     поле.addEventListener('keydown', function (e) { if (e.key === 'Enter') кнопка.click(); });
     return к;
   }
+
+  /**
+   * Наш вход по коду прямо в окне входа сайта.
+   *
+   * Замечание Александра 14.08: «я думал мы делаем вход по коду с почты» —
+   * и он прав. Механизм был готов, но кнопка стояла внутри кабинета, куда
+   * незашедший человек и не попадает. Вход надо предлагать там, где его ищут.
+   *
+   * Окно входа (#authModal) строит чужой скрипт, которого нет ни в нашем коде,
+   * ни в разметке страницы. Искать его не нужно: мы просто дописываем свой
+   * блок внутрь, когда окно появляется. Если чужое окно однажды изменится,
+   * пропадёт только наш блок, а вход сайта продолжит работать.
+   */
+  (function нашВходВОкне() {
+    function встроить(окно) {
+      if (!окно || окно.querySelector('.ngr-lg-inline')) return;
+      var где = окно.querySelector('form') || окно.firstElementChild || окно;
+      var обёртка = document.createElement('div');
+      обёртка.className = 'ngr-lg-inline';
+      обёртка.style.cssText = 'margin:18px auto 0;max-width:420px;padding-top:16px;' +
+        'border-top:1px solid #e8ecf1';
+      var подпись = document.createElement('div');
+      подпись.style.cssText = 'text-align:center;font-size:13px;color:#8a919b;margin-bottom:12px';
+      подпись.textContent = 'или войдите по коду — пароль не нужен';
+      обёртка.appendChild(подпись);
+      обёртка.appendChild(формаВхода(function () {
+        // После входа окно закрываем и обновляем страницу: дальше человек
+        // сам решит, идти в кабинет или продолжить покупки.
+        try { окно.classList.remove('show'); } catch (e) {}
+        location.reload();
+      }));
+      (где.parentNode || окно).appendChild(обёртка);
+    }
+    function поискать(узел) {
+      if (!узел || узел.nodeType !== 1) return;
+      if (узел.id === 'authModal') встроить(узел);
+      else if (узел.querySelector) {
+        var о = узел.querySelector('#authModal');
+        if (о) встроить(о);
+      }
+    }
+    // Окно может быть уже в разметке к моменту загрузки скрипта.
+    поискать(document.getElementById('authModal'));
+    new MutationObserver(function (записи) {
+      for (var i = 0; i < записи.length; i++) {
+        var д = записи[i].addedNodes;
+        for (var k = 0; k < д.length; k++) поискать(д[k]);
+        if (записи[i].type === 'attributes') поискать(записи[i].target);
+      }
+    }).observe(document.documentElement,
+      { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
+  })();
 
   function cabSection(name) {
     var host = document.querySelector('.ngr-cab__main');
