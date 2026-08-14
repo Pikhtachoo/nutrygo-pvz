@@ -2427,8 +2427,15 @@
   function пропуск() {
     try { return localStorage.getItem(КЛЮЧ_ПРОПУСКА) || ''; } catch (e) { return ''; }
   }
-  function запомнитьПропуск(п) {
-    try { localStorage.setItem(КЛЮЧ_ПРОПУСКА, п); } catch (e) {}
+  function запомнитьПропуск(п, почта) {
+    try {
+      localStorage.setItem(КЛЮЧ_ПРОПУСКА, п);
+      if (почта) localStorage.setItem(КЛЮЧ_ПРОПУСКА + ':mail', почта);
+    } catch (e) {}
+  }
+  /** Почта, по которой вошли: кабинету нужно чем-то подписать шапку. */
+  function почтаПропуска() {
+    try { return localStorage.getItem(КЛЮЧ_ПРОПУСКА + ':mail') || ''; } catch (e) { return ''; }
   }
   function забытьПропуск() {
     try { localStorage.removeItem(КЛЮЧ_ПРОПУСКА); } catch (e) {}
@@ -2694,7 +2701,7 @@
       послать('/auth/confirm', { email: адрес, code: код }).then(function (о) {
         занята(false);
         if (!о || !о.pass) { скажи((о && о.error) || 'Код не подошёл', true); return; }
-        запомнитьПропуск(о.pass);
+        запомнитьПропуск(о.pass, о.email || адрес);
         скажи('Готово, обновляем заказы…');
         // Что делать дальше, решает вызвавший: в кабинете — перерисовать его,
         // в окне входа — закрыть окно и обновить страницу.
@@ -2783,8 +2790,14 @@
       обёртка.appendChild(подпись);
 
       var форма2 = формаВхода(function () {
-        // Мы внутри iframe: перезагружать надо всю страницу целиком.
-        try { window.top.location.reload(); } catch (e) { location.reload(); }
+        // Не перезагружаем вслепую. Наш код не делает человека вошедшим в
+        // Tilda — шапка останется прежней, и после простой перезагрузки
+        // успех выглядел бы как «ничего не произошло» (замечание Александра
+        // 14.08: «логин не сработал»). Поэтому закрываем окно и сразу
+        // показываем то, ради чего вход и нужен, — заказы.
+        var о = document.getElementById('authModal');
+        if (о) о.classList.remove('show');
+        openCabinet();
       });
       форма2.style.cssText = 'margin:0;padding:0;border:0;background:transparent;max-width:100%';
       var заголовок = форма2.firstElementChild;
