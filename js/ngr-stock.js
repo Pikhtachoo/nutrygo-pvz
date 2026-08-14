@@ -1495,17 +1495,24 @@
        * такой беды нет: перед ней плашка читается в правильном порядке —
        * поиск, фильтры, «нашли столько-то», товары.
        */
-      var сетка = document.querySelector('#rec2502703571 .js-catalog-grid-cont') ||
-                  (document.querySelector('#rec2502703571 .js-product') || {}).parentNode;
-      var якорь = сетка || document.querySelector('.t-catalog__filter__search-and-sort');
-      if (!якорь || !якорь.parentNode) return;
+      var первая = document.querySelector('#rec2502703571 .js-product');
+      var сетка = первая && первая.parentNode;
+      if (!сетка) return;
       var p = document.getElementById('ngr-search-note');
-      if (!p) {
+      if (!p || p.parentNode !== сетка) {
+        if (p) p.remove();
         p = document.createElement('div');
         p.id = 'ngr-search-note';
         p.className = 'ngr-search-note';
-        якорь.parentNode.insertBefore(p, якорь);
       }
+      // Кладём первым ребёнком самой сетки товаров.
+      //
+      // Соседом строки поиска плашку ставить нельзя: строка лежит в гибкой
+      // обёртке Tilda, и на телефоне плашка уезжала выше поиска. Соседом
+      // сетки — тоже: у сетки своя колонка в раскладке, и плашка всплывала
+      // над фильтрами (замеры 14.08, 375 px). Внутри сетки место
+      // однозначное: прямо над первой карточкой.
+      if (сетка.firstChild !== p) сетка.insertBefore(p, сетка.firstChild);
       p.innerHTML = '';
       var t = document.createElement('span');
       // Совпадения могут быть, а на экране пусто: карточки с остатком меньше
@@ -4122,7 +4129,7 @@
       'html #rec2502703571.ngr-catalog-record .t-catalog__search-wrapper > svg{display:none!important}' +
       // Найденное показываем строкой под поиском: сколько нашли и как вернуть всё.
       '.ngr-search-note{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;' +
-      'margin:10px 0 4px;font-size:13.5px;color:#42506a}' +
+      'margin:2px 0 12px;font-size:13.5px;color:#42506a;grid-column:1/-1;width:100%}' +
       '.ngr-search-note__off{border:1px solid #e3e8ee;background:#fff;border-radius:9px;' +
       'padding:7px 12px;font-family:inherit;font-size:13px;color:#2f6ba8;cursor:pointer}' +
       '.ngr-search-note__off:hover{background:#f6f8fa}' +
