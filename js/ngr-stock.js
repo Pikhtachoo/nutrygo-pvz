@@ -2452,38 +2452,45 @@
    * страницы на каждое изменение — это тот самый холостой обход, который мы
    * уже вычищали из каталога.
    */
-  (function прячемЗаготовки() {
-    var МЕТКА = /\{\{[a-z0-9_]{3,40}\}\}/i;
-    // Надписи взяты с той же формы, когда она успела загрузиться, — то есть
-    // это ровно то, что Tilda и показывает, а не мой перевод.
-    var НАШИ_НАДПИСИ = {
-      form_login_title: 'Авторизация',
-      form_login_field_email: 'Эл. почта',
-      form_login_placeholder_email: 'Введите эл. почту',
-      form_login_field_password: 'Пароль',
-      form_login_placeholder_password: 'Введите свой пароль',
-      form_login_submit: 'Войти',
-      form_login_link_signup: 'Зарегистрироваться',
-      form_login_link_rec: 'Восстановить пароль'
-    };
-    function подменитьЗнакомые(корень) {
-      var замена = function (текст) {
-        return String(текст).replace(/\{\{([a-z0-9_]+)\}\}/gi, function (всё, ключ) {
-          return Object.prototype.hasOwnProperty.call(НАШИ_НАДПИСИ, ключ)
-            ? НАШИ_НАДПИСИ[ключ] : всё;
-        });
-      };
-      // Только текстовые узлы и подсказки полей: разметку не трогаем.
-      var ходок = document.createTreeWalker(корень, NodeFilter.SHOW_TEXT, null);
-      var узел, правки = [];
-      while ((узел = ходок.nextNode())) {
-        if (МЕТКА.test(узел.nodeValue || '')) правки.push(узел);
-      }
-      правки.forEach(function (t) { t.nodeValue = замена(t.nodeValue); });
-      корень.querySelectorAll('input[placeholder],textarea[placeholder]').forEach(function (п) {
-        if (МЕТКА.test(п.placeholder || '')) п.placeholder = замена(п.placeholder);
+  /**
+   * Заготовки Tilda вида {{ключ}} и наши запасные надписи.
+   *
+   * Держим в общей области: этим пользуются и заслон в основном документе, и
+   * починка внутри iframe с формой входа.
+   */
+  var МЕТКА = /\{\{[a-z0-9_]{3,40}\}\}/i;
+  // Надписи взяты с той же формы, когда она успела загрузиться, — то есть
+  // это ровно то, что Tilda и показывает, а не мой перевод.
+  var НАШИ_НАДПИСИ = {
+    form_login_title: 'Авторизация',
+    form_login_field_email: 'Эл. почта',
+    form_login_placeholder_email: 'Введите эл. почту',
+    form_login_field_password: 'Пароль',
+    form_login_placeholder_password: 'Введите свой пароль',
+    form_login_submit: 'Войти',
+    form_login_link_signup: 'Зарегистрироваться',
+    form_login_link_rec: 'Восстановить пароль'
+  };
+  function подменитьЗнакомые(корень) {
+    var замена = function (текст) {
+      return String(текст).replace(/\{\{([a-z0-9_]+)\}\}/gi, function (всё, ключ) {
+        return Object.prototype.hasOwnProperty.call(НАШИ_НАДПИСИ, ключ)
+          ? НАШИ_НАДПИСИ[ключ] : всё;
       });
+    };
+    // Только текстовые узлы и подсказки полей: разметку не трогаем.
+    var ходок = document.createTreeWalker(корень, NodeFilter.SHOW_TEXT, null);
+    var узел, правки = [];
+    while ((узел = ходок.nextNode())) {
+      if (МЕТКА.test(узел.nodeValue || '')) правки.push(узел);
     }
+    правки.forEach(function (t) { t.nodeValue = замена(t.nodeValue); });
+    корень.querySelectorAll('input[placeholder],textarea[placeholder]').forEach(function (п) {
+      if (МЕТКА.test(п.placeholder || '')) п.placeholder = замена(п.placeholder);
+    });
+  }
+
+  (function прячемЗаготовки() {
     function окно(el) {
       return (el.closest && el.closest('[class*=popup],[class*=modal],[class*=t-form]')) || null;
     }
@@ -2691,69 +2698,84 @@
    * блок внутрь, когда окно появляется. Если чужое окно однажды изменится,
    * пропадёт только наш блок, а вход сайта продолжит работать.
    */
+  /**
+   * Наш вход по коду — внутрь окна входа сайта.
+   *
+   * Устройство окна выяснилось только 14.08, и оно объясняет две прежние
+   * неудачи разом: #authModal — это подложка, внутри которой лежит iframe со
+   * страницей /members/login того же домена. Форма живёт в отдельном
+   * документе. Поэтому мой блок уезжал мимо окна (я вставлял его в подложку),
+   * а заслон от меток {{form_login_...}} не срабатывал вовсе — метки мелькают
+   * в чужом документе, которого он не видел.
+   *
+   * Домен тот же, значит документ доступен: и блок вставляем внутрь него, и
+   * метки чиним там же.
+   */
   (function нашВходВОкне() {
-    /**
-     * Белая карточка внутри окна.
-     *
-     * Класть блок в сам #authModal нельзя: это подложка во весь экран, и блок
-     * уезжает мимо окна — так и вышло с первого раза. Ищем поле пароля или
-     * кнопку, поднимаемся от них до прямого потомка подложки: это и есть
-     * карточка, что бы у неё ни было за класс.
-     */
-    function карточка(окно) {
-      var якорь = окно.querySelector('input[type="password"]') ||
-                  окно.querySelector('button') ||
-                  окно.querySelector('input');
-      if (!якорь) return null;
-      var у = якорь;
-      while (у && у.parentElement && у.parentElement !== окно) у = у.parentElement;
-      return у && у.parentElement === окно ? у : null;
+    function документОкна() {
+      var ф = document.querySelector('#authModal iframe');
+      if (!ф) return null;
+      try { return ф.contentDocument || null; } catch (e) { return null; }
     }
 
-    function встроить(окно) {
-      if (!окно || окно.querySelector('.ngr-lg-inline')) return;
-      var куда = карточка(окно);
-      // Пока карточки нет, встраивать некуда: окно ещё не собрано.
-      if (!куда) return;
+    function встроить() {
+      var д = документОкна();
+      if (!д || !д.body || д.querySelector('.ngr-lg-inline')) return;
+      var форма = д.querySelector('form');
+      var куда = (форма && форма.parentElement) || д.body;
+
       var обёртка = document.createElement('div');
       обёртка.className = 'ngr-lg-inline';
-      обёртка.style.cssText = 'margin:20px auto 4px;max-width:100%;padding-top:18px;' +
-        'border-top:1px solid #e8ecf1';
+      обёртка.style.cssText = 'margin:22px auto 8px;max-width:420px;padding-top:18px;' +
+        'border-top:1px solid #e8ecf1;font-family:-apple-system,BlinkMacSystemFont,' +
+        '"Segoe UI",Roboto,Arial,sans-serif';
       var подпись = document.createElement('div');
       подпись.style.cssText = 'text-align:center;font-size:13.5px;color:#6b7280;margin-bottom:14px';
       подпись.textContent = 'или войдите по коду — пароль не нужен';
       обёртка.appendChild(подпись);
-      var форма = формаВхода(function () {
-        // После входа окно закрываем и обновляем страницу: дальше человек
-        // сам решит, идти в кабинет или продолжить покупки.
-        try { окно.classList.remove('show'); } catch (e) {}
-        location.reload();
+
+      var форма2 = формаВхода(function () {
+        // Мы внутри iframe: перезагружать надо всю страницу целиком.
+        try { window.top.location.reload(); } catch (e) { location.reload(); }
       });
-      // Внутри окна своя рамка не нужна — карточка уже есть.
-      форма.style.cssText = 'margin:0;padding:0;border:0;background:transparent;max-width:100%';
-      var заголовок = форма.firstElementChild;
+      форма2.style.cssText = 'margin:0;padding:0;border:0;background:transparent;max-width:100%';
+      var заголовок = форма2.firstElementChild;
       if (заголовок) заголовок.style.display = 'none';
-      обёртка.appendChild(форма);
+      обёртка.appendChild(форма2);
+
+      // Узлы созданы в нашем документе, а кладём их в чужой — усыновляем,
+      // иначе часть браузеров отказывается их отрисовывать.
+      try { д.adoptNode(обёртка); } catch (e) {}
       куда.appendChild(обёртка);
     }
-    function поискать(узел) {
-      if (!узел || узел.nodeType !== 1) return;
-      if (узел.id === 'authModal') встроить(узел);
-      else if (узел.querySelector) {
-        var о = узел.querySelector('#authModal');
-        if (о) встроить(о);
-      }
+
+    // Метки чиним там же, где они появляются, — внутри окна.
+    function починитьМетки() {
+      var д = документОкна();
+      if (!д || !д.body) return;
+      if (!МЕТКА.test(д.body.textContent || '')) return;
+      подменитьЗнакомые(д.body);
     }
-    // Окно может быть уже в разметке к моменту загрузки скрипта.
-    поискать(document.getElementById('authModal'));
-    new MutationObserver(function (записи) {
-      for (var i = 0; i < записи.length; i++) {
-        var д = записи[i].addedNodes;
-        for (var k = 0; k < д.length; k++) поискать(д[k]);
-        if (записи[i].type === 'attributes') поискать(записи[i].target);
+
+    function присмотреть() { встроить(); починитьМетки(); }
+
+    var попыток = 0;
+    var часы = setInterval(function () {
+      присмотреть();
+      if (++попыток > 40) clearInterval(часы);   // две минуты и хватит
+    }, 3000);
+    присмотреть();
+
+    // И сразу, как только окно показывают или iframe перезагружается.
+    new MutationObserver(function () {
+      присмотреть();
+      var ф = document.querySelector('#authModal iframe');
+      if (ф && !ф.getAttribute('data-ngr-слежу')) {
+        ф.setAttribute('data-ngr-слежу', '1');
+        ф.addEventListener('load', function () { setTimeout(присмотреть, 300); });
       }
     }).observe(document.documentElement,
-      { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
+      { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'src'] });
   })();
 
   function cabSection(name) {
