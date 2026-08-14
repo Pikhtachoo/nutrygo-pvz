@@ -2611,14 +2611,36 @@
     return syncAccount(true);
   }
 
-  /** Личные настройки покупателя. В браузере — кэш, хранилище — интегратор. */
+  /**
+   * Где лежат личные настройки покупателя.
+   *
+   * Замечание Александра 14.08: «не сохраняет». Так и было, и вот почему.
+   * Ключ хранения складывался из подтверждённого воркером признака входа, а
+   * подтвердить вход воркер не может: Tilda отвечает ему отказом на проверку
+   * токена (журнал NG-2026-08-08-006, тупик подтверждён и 13.08). Значит
+   * признака нет, ключа нет, и запись отменялась ещё до попытки — человек
+   * видел «Не удалось синхронизировать» и терял выбранный аватар.
+   *
+   * Разводим два вопроса, которые были смешаны в один. Хранить настройки на
+   * этом устройстве можно всегда: это его же браузер и его же выбор. А вот
+   * переносить их между устройствами — только когда воркер согласился, что
+   * это тот самый человек. Ключ поэтому берём по возможности подтверждённый,
+   * а если подтверждения нет — по адресу почты из профиля Tilda. Настройки
+   * разных людей за одним браузером всё равно не смешаются.
+   */
+  function профильКлюч() {
+    if (accountSubject && accountVerified && accountToken === memberToken()) {
+      return accountCacheKey('ngr_me');
+    }
+    var m = memberProfile();
+    var почта = m ? String(m.login || m.email || '').trim().toLowerCase() : '';
+    return почта ? 'ngr_me:почта:' + почта : 'ngr_me';
+  }
   function profileSettings() {
-    if (!accountSubject || !accountVerified || accountToken !== memberToken()) return {};
-    try { return JSON.parse(localStorage.getItem(accountCacheKey('ngr_me')) || '{}'); } catch (e) { return {}; }
+    try { return JSON.parse(localStorage.getItem(профильКлюч()) || '{}'); } catch (e) { return {}; }
   }
   function writeProfileSettings(cur) {
-    if (!accountSubject || !accountVerified || accountToken !== memberToken()) return false;
-    try { localStorage.setItem(accountCacheKey('ngr_me'), JSON.stringify(cur)); return true; } catch (e) { return false; }
+    try { localStorage.setItem(профильКлюч(), JSON.stringify(cur)); return true; } catch (e) { return false; }
   }
   function saveProfileSettings(v) {
     var cur = profileSettings();
@@ -3311,10 +3333,15 @@
       }
       paintMe();
       fixAccountButton();
+      // Сохранено на этом устройстве — уже успех, и об этом надо сказать
+      // именно так. Перенос на другие устройства зависит от подтверждения
+      // входа воркером, а его Tilda не даёт; называть это «не удалось» —
+      // значит пугать человека там, где его выбор на самом деле сохранён.
+      if (ok && note) note.textContent = '✓ Аватар сохранён';
       if (ok) pushProfile().then(function () {
         if (note) note.textContent = '✓ Аватар сохранён на всех устройствах';
       }).catch(function () {
-        if (note) note.textContent = 'Не удалось синхронизировать. Попробуйте ещё раз.';
+        if (note) note.textContent = '✓ Аватар сохранён на этом устройстве';
       });
       drawRow();
     }
@@ -3409,14 +3436,16 @@
       // Запись в память браузера может не пройти молча — перечитываем
       // сохранённое и говорим покупателю правду.
       var now = profileSettings();
-      host.querySelector('.ngr-cab__saved').textContent =
-        (now.nick === nick && now.avatar === chosen) ? '✓ Сохранено' : 'Браузер не дал сохранить';
-      host.querySelector('.ngr-cab__saved').textContent = 'Сохраняем…';
+      var зам = host.querySelector('.ngr-cab__saved');
+      var сохранилось = (now.nick === nick && now.avatar === chosen);
+      зам.textContent = сохранилось ? '✓ Сохранено' : 'Браузер не дал сохранить';
+      if (!сохранилось) return;
+      paintMe(); fixAccountButton();
       pushProfile().then(function () {
-        host.querySelector('.ngr-cab__saved').textContent = '✓ Сохранено на всех устройствах';
+        зам.textContent = '✓ Сохранено на всех устройствах';
         paintMe(); fixAccountButton();
       }).catch(function () {
-        host.querySelector('.ngr-cab__saved').textContent = 'Не удалось синхронизировать. Попробуйте ещё раз.';
+        зам.textContent = '✓ Сохранено на этом устройстве';
       });
     });
 
@@ -4529,15 +4558,44 @@
       'min-width:56px!important;max-width:56px!important;height:56px!important;padding:0!important;' +
       'display:block!important;box-sizing:border-box!important;pointer-events:none!important}' +
       '.ngr-ready .t706__carticon-wrapper{width:56px!important;height:56px!important;' +
-      'pointer-events:auto!important}' +
-      '.ngr-ready .t706__carticon-counter{pointer-events:auto!important}' +
+      'pointer-events:auto!important;display:flex!important;align-items:center!important;' +
+      'justify-content:center!important;position:relative!important}' +
+      /*
+       * Значок и счётчик — по центру кружка, а не в углу.
+       *
+       * Замечание Александра 14.08: «при мобильной вёрстке криво
+       * показывается корзина». Замер на 375 px: кружок 56×56 в точке
+       * (307,744), а значок 48×48 внутри него — в точке (308,745), то есть
+       * прижат к левому верхнему углу вместо середины; счётчик же торчал за
+       * правый край кружка на пять пикселей.
+       */
+      '.ngr-ready .t706__carticon-img{position:static!important;margin:0!important;' +
+      'padding:0!important;width:26px!important;height:26px!important;display:block!important}' +
+      '.ngr-ready .t706__carticon-counter{pointer-events:auto!important;position:absolute!important;' +
+      'top:-2px!important;right:-2px!important;left:auto!important;bottom:auto!important;' +
+      'min-width:22px!important;height:22px!important;box-sizing:border-box!important}' +
       // Ссылка выхода в заголовке формы не должна выходить за viewport.
       '.t706__cartwin .t706__auth{display:flex!important;flex-wrap:wrap!important;gap:6px 10px!important;' +
       'align-items:center!important}' +
       '.t706__cartwin .js-cart-log-out{position:static!important;right:auto!important;' +
       'max-width:100%!important;box-sizing:border-box!important;overflow-wrap:anywhere}' +
       '.t706__cartwin-bottom .t-form__submit button,.t706__cartwin-bottom .t-submit{' +
-      'position:sticky;bottom:0;font-size:16px!important;padding:16px!important}}';
+      'position:sticky;bottom:0;font-size:16px!important;padding:16px!important}}' +
+      /*
+       * Крестик закрытия корзины — ровно в середине своей кнопки.
+       *
+       * Замечание Александра 14.08: «неровно находятся значки креста или
+       * круга, когда открываешь корзину». Замер на 1280 px: обёртка креста
+       * 43×43 в точке (1227,10), а кнопка внутри — шириной 23, и сам значок
+       * начинался на десять пикселей правее её левого края, вылезая за
+       * кнопку. Задаём середину явно, чтобы не зависеть от чужих отступов.
+       */
+      'html .t706__cartwin .t706__close.t706__cartwin-close{width:44px!important;height:44px!important;' +
+      'display:flex!important;align-items:center!important;justify-content:center!important;padding:0!important}' +
+      'html .t706__cartwin .t706__close-button{width:100%!important;height:100%!important;' +
+      'display:flex!important;align-items:center!important;justify-content:center!important;' +
+      'padding:0!important;margin:0!important}' +
+      'html .t706__cartwin .t706__close-button svg{display:block!important;margin:0!important}';
     document.head.appendChild(st);
   }
 
@@ -5668,12 +5726,30 @@
   // которые породил сам apply, иначе проход будит сам себя по кругу.
   var applyObserver = new MutationObserver(queueApply);
   applyObserver.observe(document.documentElement, { childList: true, subtree: true });
-  // Пересчитываем inline-геометрию только при реальной смене ширины.
-  // Экранная клавиатура меняет высоту visual viewport — полный apply ей не нужен.
+  /*
+   * Смена ширины окна больше не запускает полный проход.
+   *
+   * Замечание Александра 14.08: «когда работаю с окном, расширяю и сужаю —
+   * пропала плавность адаптации, видно, что фризит и догоняет размер экрана
+   * слишком медленно». Так и было: на каждое изменение ширины мы немедленно
+   * гнали apply() по всем 730 карточкам — цены, наличие, рейтинги, галереи, —
+   * и делали это десятки раз за одно перетаскивание края окна.
+   *
+   * Смысл в этом был, пока раскладку задавал JS инлайновыми размерами. Сегодня
+   * её задают медиазапросы, а браузер применяет их сам и мгновенно. Осталась
+   * одна мелочь, которой ширина ещё нужна, — метка страницы каталога; её и
+   * ставим, с задержкой в четверть секунды после того, как человек отпустил
+   * край окна.
+   */
   var applyWidth = window.innerWidth;
+  var ширинаТаймер = null;
   window.addEventListener('resize', function () {
     if (window.innerWidth === applyWidth) return;
     applyWidth = window.innerWidth;
-    queueApply(true);
+    if (ширинаТаймер !== null) clearTimeout(ширинаТаймер);
+    ширинаТаймер = setTimeout(function () {
+      ширинаТаймер = null;
+      try { trimFilterBar(); } catch (e) {}
+    }, 250);
   }, { passive: true });
 })();
