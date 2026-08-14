@@ -2417,9 +2417,31 @@
    * Мера временная и слабее настоящей сессии; следующим шагом — свой вход
    * по коду на почту.
    */
+  /**
+   * Пропуск нашего собственного входа.
+   *
+   * Живёт в браузере покупателя. Внутри только почта и срок, подписанные на
+   * стороне воркера, — секретов в нём нет, подделать нельзя.
+   */
+  var КЛЮЧ_ПРОПУСКА = 'ngr_pass_v1';
+  function пропуск() {
+    try { return localStorage.getItem(КЛЮЧ_ПРОПУСКА) || ''; } catch (e) { return ''; }
+  }
+  function запомнитьПропуск(п) {
+    try { localStorage.setItem(КЛЮЧ_ПРОПУСКА, п); } catch (e) {}
+  }
+  function забытьПропуск() {
+    try { localStorage.removeItem(КЛЮЧ_ПРОПУСКА); } catch (e) {}
+  }
+
   function loadIntegratorOrders(token, profile, dash) {
-    if (!token) return Promise.resolve({ orders: [] });
-    var тело = { token: token };
+    var свой = пропуск();
+    // Без входа в Tilda, но со своим пропуском заказы всё равно показываем:
+    // ради этого пропуск и заводился.
+    if (!token && !свой) return Promise.resolve({ orders: [] });
+    var тело = {};
+    if (token) тело.token = token;
+    if (свой) тело.pass = свой;
     var почта = (profile && (profile.login || profile.email)) || '';
     var список = (dash && dash.last_orders) || [];
     if (почта && список.length) {
@@ -2481,6 +2503,93 @@
     return out;
   }
 
+  /**
+   * Вход по коду на почту.
+   *
+   * Два шага в одном месте: сперва адрес, потом шесть цифр из письма. Ошибки
+   * показываем словами воркера, а не «что-то пошло не так»: человек должен
+   * понимать, истёк ли код, не тот ли он или адрес набран с опечаткой.
+   */
+  function формаВхода() {
+    var к = document.createElement('div');
+    к.className = 'ngr-cab__login';
+    к.style.cssText = 'margin-top:16px;padding:18px 20px;border:1px solid #e8ecf1;' +
+      'border-radius:14px;background:#fff;max-width:420px';
+    var почта = пропуск() ? '' : '';
+    к.innerHTML =
+      '<div style="font-size:15.5px;font-weight:700;color:#14171c">Войти по коду с почты</div>' +
+      '<div style="font-size:13.5px;color:#6b7280;margin:6px 0 14px;line-height:1.45">' +
+      'Пришлём шестизначный код на почту, которой вы оформляли заказ.</div>' +
+      '<input class="ngr-lg__mail" type="email" inputmode="email" autocomplete="email" ' +
+      'placeholder="Ваша почта" style="width:100%;box-sizing:border-box;padding:11px 13px;' +
+      'border:1px solid #dfe4ea;border-radius:10px;font-size:15px;font-family:inherit">' +
+      '<div class="ngr-lg__step2" style="display:none;margin-top:10px">' +
+      '<input class="ngr-lg__code" type="text" inputmode="numeric" autocomplete="one-time-code" ' +
+      'maxlength="6" placeholder="Код из письма" style="width:100%;box-sizing:border-box;' +
+      'padding:11px 13px;border:1px solid #dfe4ea;border-radius:10px;font-size:19px;' +
+      'letter-spacing:5px;font-family:inherit"></div>' +
+      '<button class="ngr-lg__go" type="button" style="margin-top:12px;width:100%;border:0;' +
+      'background:#f28c28;color:#fff;border-radius:10px;padding:12px 16px;font-size:15px;' +
+      'font-weight:700;font-family:inherit;cursor:pointer">Прислать код</button>' +
+      '<div class="ngr-lg__msg" style="margin-top:10px;font-size:13.5px;line-height:1.45"></div>';
+
+    var поле = к.querySelector('.ngr-lg__mail');
+    var шаг2 = к.querySelector('.ngr-lg__step2');
+    var полеКода = к.querySelector('.ngr-lg__code');
+    var кнопка = к.querySelector('.ngr-lg__go');
+    var сообщение = к.querySelector('.ngr-lg__msg');
+    var этап = 1;
+
+    function скажи(текст, плохо) {
+      сообщение.textContent = текст || '';
+      сообщение.style.color = плохо ? '#c0392b' : '#1f8a3b';
+    }
+    function занята(да) {
+      кнопка.disabled = !!да;
+      кнопка.style.opacity = да ? '.6' : '';
+      кнопка.style.cursor = да ? 'default' : 'pointer';
+    }
+    function послать(путь, тело) {
+      return fetch(API + путь, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(тело)
+      }).then(function (r) { return r.json().catch(function () { return {}; }); });
+    }
+
+    кнопка.addEventListener('click', function () {
+      var адрес = String(поле.value || '').trim().toLowerCase();
+      if (этап === 1) {
+        if (адрес.indexOf('@') < 1) { скажи('Проверьте адрес почты', true); поле.focus(); return; }
+        занята(true); скажи('Отправляем…');
+        послать('/auth/request', { email: адрес }).then(function (о) {
+          занята(false);
+          if (о && о.error) { скажи(о.error, true); return; }
+          этап = 2;
+          шаг2.style.display = '';
+          поле.readOnly = true;
+          кнопка.textContent = 'Войти';
+          скажи('Код отправлен на ' + адрес + '. Он годен 10 минут.');
+          полеКода.focus();
+        }).catch(function () { занята(false); скажи('Не получилось отправить код', true); });
+        return;
+      }
+      var код = String(полеКода.value || '').replace(/\D/g, '');
+      if (код.length !== 6) { скажи('Код из шести цифр', true); полеКода.focus(); return; }
+      занята(true); скажи('Проверяем…');
+      послать('/auth/confirm', { email: адрес, code: код }).then(function (о) {
+        занята(false);
+        if (!о || !о.pass) { скажи((о && о.error) || 'Код не подошёл', true); return; }
+        запомнитьПропуск(о.pass);
+        скажи('Готово, обновляем заказы…');
+        // Перерисовываем кабинет заново: заказы теперь придут по пропуску.
+        setTimeout(function () { openCabinet(); }, 400);
+      }).catch(function () { занята(false); скажи('Не получилось проверить код', true); });
+    });
+    полеКода.addEventListener('keydown', function (e) { if (e.key === 'Enter') кнопка.click(); });
+    поле.addEventListener('keydown', function (e) { if (e.key === 'Enter') кнопка.click(); });
+    return к;
+  }
+
   function cabSection(name) {
     var host = document.querySelector('.ngr-cab__main');
     if (!host) return;
@@ -2501,6 +2610,11 @@
             '<a href="/" style="color:#2f6ba8">Перейти на главную</a></div>'
           : '<div class="ngr-cab__empty">Здесь появятся ваши заказы с сайта.<br>' +
             'Заказы, оформленные до входа в кабинет, сюда не попадают.</div>'));
+      // Свой вход по коду. Нужен там, где Tilda не помогает: её токен воркер
+      // подтвердить не может (журнал NG-2026-08-13-025), поэтому без своего
+      // входа заказы приходится опознавать по косвенным признакам. Показываем
+      // форму, когда заказов не видно, — то есть ровно тогда, когда она нужна.
+      if (!orders.length) host.appendChild(формаВхода());
       orders.forEach(function (o) {
         var c = document.createElement('div');
         c.className = 'ngr-cab__card';
@@ -2940,8 +3054,7 @@
       // За нашими заказами идём после панели: из неё берётся предъявление.
       var проф = (первые[0] && первые[0].data) || null;
       var панель = (первые[1] && первые[1].data) || первые[1] || null;
-      return (noToken ? Promise.resolve({ orders: [] })
-                      : loadIntegratorOrders(token, проф, панель))
+      return loadIntegratorOrders(token, проф, панель)
         .then(function (наши) { return первые.concat([наши]); });
     }).then(function (res) {
       // На страницах без корзины Tilda не выдаёт токен — показываем то,
