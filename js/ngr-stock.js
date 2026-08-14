@@ -4605,6 +4605,13 @@
        * прижат к левому верхнему углу вместо середины; счётчик же торчал за
        * правый край кружка на пять пикселей.
        */
+      // Значок лежит не прямо в обёртке, а ещё в одной коробке —
+      // .t706__carticon-imgwrap; центрировать надо и её, иначе выравнивание
+      // обёртки ни на что не влияет (замер 14.08: значок 26×26 оказывался
+      // на десять пикселей выше и левее середины кружка).
+      '.ngr-ready .t706__carticon-imgwrap{position:static!important;width:100%!important;' +
+      'height:100%!important;display:flex!important;align-items:center!important;' +
+      'justify-content:center!important;margin:0!important;padding:0!important}' +
       '.ngr-ready .t706__carticon-img{position:static!important;margin:0!important;' +
       'padding:0!important;width:26px!important;height:26px!important;display:block!important}' +
       '.ngr-ready .t706__carticon-counter{pointer-events:auto!important;position:absolute!important;' +
