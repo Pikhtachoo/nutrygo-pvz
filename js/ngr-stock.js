@@ -1288,26 +1288,25 @@
     // пустоте и его надо поставить заново.
     if (смотрительПоиска && кореньПоиска && кореньПоиска.isConnected) return;
     if (смотрительПоиска) { смотрительПоиска.disconnect(); смотрительПоиска = null; }
-    // Следим только за панелью фильтров: там пересобирается строка. Ставить
-    // наблюдателя на весь документ нельзя — в каталоге 730 карточек, и его
-    // обработчик срабатывал бы на каждой вставке товара.
-    var корень = document.querySelector('#rec2502703571 .t-catalog__filter');
-    if (!корень) return;   // панели ещё нет — попробуем на следующем проходе
+    /*
+     * Корень выбран замером 14.08. Tilda пересобирает не строку поиска, а
+     * всю панель: на каждой из двенадцати догрузок каталога и
+     * .t-catalog__filter, и .t-catalog__filter__controls-wrapper — уже
+     * новые узлы. Наблюдатель на них умирал вместе с ними, и первая версия
+     * этой правки не сработала: кнопки не было ни в одном из двенадцати
+     * замеренных кадров.
+     *
+     * Переживает пересборку контейнер .js-catalog-parts-select-container —
+     * именно он был целью всех двенадцати вставок. На нём и стоим, а
+     * запасной вариант — сама запись каталога.
+     */
+    var корень = document.querySelector('#rec2502703571 .js-catalog-parts-select-container') ||
+                 document.querySelector('#rec2502703571');
+    if (!корень) return;   // записи ещё нет — попробуем на следующем проходе
     кореньПоиска = корень;
-    смотрительПоиска = new MutationObserver(function (записи) {
-      for (var i = 0; i < записи.length; i++) {
-        var m = записи[i];
-        if (m.type !== 'childList' || !m.addedNodes.length) continue;
-        for (var j = 0; j < m.addedNodes.length; j++) {
-          var n = m.addedNodes[j];
-          if (n.nodeType !== 1) continue;
-          if ((n.classList && n.classList.contains('js-catalog-filter-search')) ||
-              (n.querySelector && n.querySelector('.js-catalog-filter-search'))) {
-            initSmartSearch();
-            return;
-          }
-        }
-      }
+    смотрительПоиска = new MutationObserver(function () {
+      // Проверка одна и дешёвая: обработчик зовут и на вставку карточек.
+      if (!document.querySelector('.ngr-smart-search__go')) initSmartSearch();
     });
     смотрительПоиска.observe(корень, { childList: true, subtree: true });
   }
