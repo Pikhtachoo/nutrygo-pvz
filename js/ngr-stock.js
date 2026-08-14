@@ -1342,7 +1342,125 @@
         draw(out);
       });
     }
-    inp.addEventListener('input', function () { clearTimeout(smartTimer); smartTimer = setTimeout(run, 280); });
+    /**
+     * Кнопка «Найти» и настоящая фильтрация выдачи.
+     *
+     * Замечание Александра 14.08: «не могу нажать кнопку, чтобы он не только
+     * списком показывал, но и отфильтровал по поиску: в вебе могу, в мобилке
+     * нет». Причин две, и обе наши.
+     *
+     * Первая: своей кнопки у поиска не было вовсе, а мобильные кнопки Tilda
+     * («Поиск», «Фильтры») мы прячем — они дублировали наши. На компьютере
+     * оставался Enter, на телефоне не оставалось ничего.
+     *
+     * Вторая: собственный поиск Tilda выдачу почти не сужает. Замер 14.08 на
+     * 375 px по запросу «магний»: из 730 карточек скрылось 130, а 600
+     * остались на месте. То есть даже нажатый Enter не давал того, чего ждёт
+     * покупатель.
+     *
+     * Поэтому фильтруем сами, тем же указателем, по которому строится
+     * подсказка: он ищет по названию, бренду, артикулу и описанию, знает
+     * раскладку и латиницу. Карточку с указателем связываем по номеру
+     * товара из ссылки — он же стоит на карточке в data-product-uid.
+     */
+    var кнопка = document.createElement('button');
+    кнопка.type = 'button';
+    кнопка.className = 'ngr-smart-search__go';
+    кнопка.textContent = 'Найти';
+    кнопка.setAttribute('aria-label', 'Показать найденные товары');
+    host.appendChild(кнопка);
+    // Чтобы на телефоне в углу клавиатуры была «Поиск», а не «Готово».
+    inp.setAttribute('enterkeyhint', 'search');
+
+    function номерТовара(it) {
+      var m = /tproduct\/(\d+)/.exec(String(it && it.u || ''));
+      return m ? m[1] : '';
+    }
+    function карточки() {
+      return [].slice.call(document.querySelectorAll('#rec2502703571 .js-product'));
+    }
+    function снятьВыдачу() {
+      карточки().forEach(function (c) { c.classList.remove('ngr-search-off'); });
+      var p = document.getElementById('ngr-search-note');
+      if (p) p.remove();
+    }
+    function плашка(запрос, сколько) {
+      var поле = document.querySelector('.t-catalog__filter__search-and-sort');
+      if (!поле || !поле.parentNode) return;
+      var p = document.getElementById('ngr-search-note');
+      if (!p) {
+        p = document.createElement('div');
+        p.id = 'ngr-search-note';
+        p.className = 'ngr-search-note';
+        поле.parentNode.insertBefore(p, поле.nextSibling);
+      }
+      p.innerHTML = '';
+      var t = document.createElement('span');
+      t.textContent = сколько
+        ? ('Нашли ' + сколько + ' ' + словоТоваров(сколько) + ' по запросу «' + запрос + '»')
+        : ('По запросу «' + запрос + '» ничего не нашли');
+      var c = document.createElement('button');
+      c.type = 'button'; c.className = 'ngr-search-note__off'; c.textContent = 'Показать все';
+      c.addEventListener('click', function () {
+        inp.value = '';
+        inp.dispatchEvent(new Event('input', { bubbles: true }));
+        снятьВыдачу();
+        hide();
+      });
+      p.appendChild(t); p.appendChild(c);
+    }
+    function словоТоваров(n) {
+      var d = n % 10, dd = n % 100;
+      if (d === 1 && dd !== 11) return 'товар';
+      if (d >= 2 && d <= 4 && (dd < 10 || dd >= 20)) return 'товара';
+      return 'товаров';
+    }
+
+    function отфильтровать() {
+      var сырое = (inp.value || '').trim(), q = smartNorm(сырое);
+      hide();
+      if (q.length < 2) { снятьВыдачу(); return; }
+      loadSmartIndex().then(function (items) {
+        if (!items.length) return;   // без указателя выдачу не трогаем
+        var variants = [q], kb = keyboardVariant(q), tr = translitVariant(q);
+        if (kb && kb !== q) variants.push(kb);
+        if (tr && tr !== q && variants.indexOf(tr) < 0) variants.push(tr);
+        var годные = {};
+        items.forEach(function (it) {
+          for (var i = 0; i < variants.length; i++) {
+            if (rankSmart(it, variants[i])) {
+              var u = номерТовара(it);
+              if (u) годные[u] = 1;
+              break;
+            }
+          }
+        });
+        var видно = 0;
+        карточки().forEach(function (c) {
+          var u = c.getAttribute('data-product-uid') || c.getAttribute('data-product-gen-uid') || '';
+          var ok = !!годные[u];
+          c.classList.toggle('ngr-search-off', !ok);
+          if (ok) видно++;
+        });
+        плашка(сырое, видно);
+      });
+    }
+
+    кнопка.addEventListener('click', отфильтровать);
+    // Enter на компьютере и «Поиск» на клавиатуре телефона — один и тот же путь.
+    inp.addEventListener('keydown', function (e) {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      отфильтровать();
+    });
+    inp.addEventListener('search', отфильтровать);
+
+    inp.addEventListener('input', function () {
+      clearTimeout(smartTimer);
+      // Стёрли запрос — сразу возвращаем весь каталог, без нажатий.
+      if (!(inp.value || '').trim()) снятьВыдачу();
+      smartTimer = setTimeout(run, 280);
+    });
     inp.addEventListener('focus', function () { if (smartNorm(inp.value).length >= 2) run(); });
     inp.addEventListener('keydown', function (e) {
       if (e.key === 'Escape') hide();
@@ -3824,6 +3942,19 @@
       '.ngr-smart-search__item small{font-size:12px;line-height:1.35;color:#6f7782;' +
       'display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}' +
       '.ngr-smart-search__note{padding:12px;font-size:13px;line-height:1.4;color:#6f7782}' +
+      // Кнопка «Найти» внутри поля: на телефоне другого способа запустить
+      // поиск нет — мобильные кнопки Tilda мы прячем (замечание 14.08).
+      '.ngr-smart-search__go{position:absolute;right:4px;top:50%;transform:translateY(-50%);' +
+      'z-index:3;height:36px;padding:0 14px;border:0;border-radius:9px;background:#f28c28;' +
+      'color:#fff;font-family:inherit;font-size:13.5px;font-weight:700;cursor:pointer;line-height:1}' +
+      '.ngr-smart-search__go:hover{background:#e07f1c}' +
+      // Найденное показываем строкой под поиском: сколько нашли и как вернуть всё.
+      '.ngr-search-note{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;' +
+      'margin:10px 0 4px;font-size:13.5px;color:#42506a}' +
+      '.ngr-search-note__off{border:1px solid #e3e8ee;background:#fff;border-radius:9px;' +
+      'padding:7px 12px;font-family:inherit;font-size:13px;color:#2f6ba8;cursor:pointer}' +
+      '.ngr-search-note__off:hover{background:#f6f8fa}' +
+      '#rec2502703571 .js-product.ngr-search-off{display:none!important}' +
       '@media(max-width:600px){#rec2502703571.ngr-catalog-record input.js-catalog-filter-search{font-size:16px!important}' +
       '.ngr-smart-search{width:100%!important;min-width:0!important}' +
       '.ngr-smart-search__panel{left:0;right:auto;width:100%;max-width:100%;min-width:0;' +
@@ -3865,7 +3996,8 @@
       'height:44px!important;min-height:44px!important;border:1px solid #e3e8ee!important;' +
       'border-radius:12px!important;background-color:#fff!important;color:#14171c!important;' +
       'box-sizing:border-box!important;min-width:0!important;order:1!important;' +
-      'padding:0 14px 0 42px!important;' +
+      // справа место под кнопку «Найти»
+      'padding:0 96px 0 42px!important;' +
       'background-image:url("data:image/svg+xml;utf8,' +
       "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238a919b' stroke-width='2' stroke-linecap='round'><circle cx='11' cy='11' r='7'/><path d='M20 20l-3.6-3.6'/></svg>" +
       '")!important;background-repeat:no-repeat!important;background-position:14px center!important;' +
