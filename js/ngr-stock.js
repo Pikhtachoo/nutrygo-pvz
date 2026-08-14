@@ -1457,7 +1457,7 @@
       var p = document.getElementById('ngr-search-note');
       if (p) p.remove();
     }
-    function плашка(запрос, сколько) {
+    function плашка(запрос, сколько, совпало) {
       var поле = document.querySelector('.t-catalog__filter__search-and-sort');
       if (!поле || !поле.parentNode) return;
       var p = document.getElementById('ngr-search-note');
@@ -1469,9 +1469,15 @@
       }
       p.innerHTML = '';
       var t = document.createElement('span');
+      // Совпадения могут быть, а на экране пусто: карточки с остатком меньше
+      // четырёх мы не показываем. Врать «нашли 2», когда видно ноль, нельзя —
+      // замечание Александра 14.08 по запросу «NOW L-Arginine».
       t.textContent = сколько
         ? ('Нашли ' + сколько + ' ' + словоТоваров(сколько) + ' по запросу «' + запрос + '»')
-        : ('По запросу «' + запрос + '» ничего не нашли');
+        : (совпало
+            ? ('По запросу «' + запрос + '» есть ' + совпало + ' ' + словоТоваров(совпало) +
+               ', но сейчас их нет в наличии')
+            : ('По запросу «' + запрос + '» ничего не нашли'));
       var c = document.createElement('button');
       c.type = 'button'; c.className = 'ngr-search-note__off'; c.textContent = 'Показать все';
       c.addEventListener('click', function () {
@@ -1491,6 +1497,10 @@
 
     function отфильтровать() {
       var сырое = (inp.value || '').trim(), q = smartNorm(сырое);
+      // Гасим отложенную подсказку: иначе она всплывала поверх уже
+      // показанной выдачи через 280 мс после нажатия «Найти».
+      clearTimeout(smartTimer);
+      requestId++;
       hide();
       if (q.length < 2) { снятьВыдачу(); return; }
       loadSmartIndex().then(function (items) {
@@ -1537,7 +1547,7 @@
           if (c.classList.contains('ngr-search-off')) return;
           if (c.offsetParent !== null) наЭкране++;
         });
-        плашка(сырое, наЭкране || видно);
+        плашка(сырое, наЭкране, видно);
       });
     }
 
