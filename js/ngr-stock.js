@@ -2454,6 +2454,36 @@
    */
   (function прячемЗаготовки() {
     var МЕТКА = /\{\{[a-z0-9_]{3,40}\}\}/i;
+    // Надписи взяты с той же формы, когда она успела загрузиться, — то есть
+    // это ровно то, что Tilda и показывает, а не мой перевод.
+    var НАШИ_НАДПИСИ = {
+      form_login_title: 'Авторизация',
+      form_login_field_email: 'Эл. почта',
+      form_login_placeholder_email: 'Введите эл. почту',
+      form_login_field_password: 'Пароль',
+      form_login_placeholder_password: 'Введите свой пароль',
+      form_login_submit: 'Войти',
+      form_login_link_signup: 'Зарегистрироваться',
+      form_login_link_rec: 'Восстановить пароль'
+    };
+    function подменитьЗнакомые(корень) {
+      var замена = function (текст) {
+        return String(текст).replace(/\{\{([a-z0-9_]+)\}\}/gi, function (всё, ключ) {
+          return Object.prototype.hasOwnProperty.call(НАШИ_НАДПИСИ, ключ)
+            ? НАШИ_НАДПИСИ[ключ] : всё;
+        });
+      };
+      // Только текстовые узлы и подсказки полей: разметку не трогаем.
+      var ходок = document.createTreeWalker(корень, NodeFilter.SHOW_TEXT, null);
+      var узел, правки = [];
+      while ((узел = ходок.nextNode())) {
+        if (МЕТКА.test(узел.nodeValue || '')) правки.push(узел);
+      }
+      правки.forEach(function (t) { t.nodeValue = замена(t.nodeValue); });
+      корень.querySelectorAll('input[placeholder],textarea[placeholder]').forEach(function (п) {
+        if (МЕТКА.test(п.placeholder || '')) п.placeholder = замена(п.placeholder);
+      });
+    }
     function окно(el) {
       return (el.closest && el.closest('[class*=popup],[class*=modal],[class*=t-form]')) || null;
     }
@@ -2465,7 +2495,11 @@
       о.setAttribute('data-ngr-ждём', '1');
       var былаВидимость = о.style.visibility;
       о.style.visibility = 'hidden';
-      var показать = function () {
+      var показать = function (подставить) {
+        // Если Tilda так и не подставила надписи, ставим свои — но только те,
+        // что я видел своими глазами на загрузившейся форме. Выдумывать
+        // подписи к незнакомым ключам нельзя: лучше метка, чем неверное слово.
+        if (подставить) подменитьЗнакомые(о);
         о.style.visibility = былаВидимость || '';
         о.removeAttribute('data-ngr-ждём');
         clearInterval(таймер);
@@ -2474,7 +2508,7 @@
       var таймер = setInterval(function () {
         if (!МЕТКА.test(о.textContent || '')) показать();
       }, 60);
-      var предел = setTimeout(показать, 1500);
+      var предел = setTimeout(function () { показать(true); }, 1500);
     }
     var наблюдатель = new MutationObserver(function (записи) {
       for (var i = 0; i < записи.length; i++) {
