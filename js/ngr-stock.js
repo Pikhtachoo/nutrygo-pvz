@@ -1256,12 +1256,40 @@
     return matched >= need && score > 0 ? { score: score, match: match } : null;
   }
 
+  /**
+   * Характеристики и описания из кабинета Ozon.
+   *
+   * В каталоге Tilda описания нет: в указателе оно есть у 277 товаров из
+   * 729, у остальных 452 поле пустое. Поэтому поиск и находил только по
+   * названию (замечание Александра 14.08). Настоящий текст живёт у Ozon —
+   * воркер забирает его оттуда и отдаёт одной строкой на артикул, а мы
+   * подмешиваем её в тот же указатель, по которому уже ищем.
+   *
+   * Если прибавка не пришла, поиск работает как раньше: она не обязательна.
+   */
   function loadSmartIndex() {
     if (!smartIndexPromise) {
-      smartIndexPromise = fetch(SMART_SEARCH_INDEX, { credentials: 'omit', cache: 'no-cache' })
+      var основа = fetch(SMART_SEARCH_INDEX, { credentials: 'omit', cache: 'no-cache' })
         .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-        .then(function (j) { return (j && j.items) || []; })
-        .catch(function () { smartIndexPromise = null; return []; });
+        .then(function (j) { return (j && j.items) || []; });
+      var прибавка = fetch(API + '/catalog/searchtext', { credentials: 'omit' })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (j) { return (j && j.items) || null; })
+        .catch(function () { return null; });
+      smartIndexPromise = Promise.all([основа, прибавка]).then(function (пара) {
+        var items = пара[0], доп = пара[1];
+        if (доп) {
+          items.forEach(function (it) {
+            var t = доп[String(it.a)];
+            if (!t) return;
+            // Кладём в тот же нормализованный текст, по которому идёт поиск,
+            // и в подпись — чтобы человек видел, почему товар нашёлся.
+            it.s = (it.s || '') + ' ' + smartNorm(t);
+            if (!it.d) it.d = t.slice(0, 180);
+          });
+        }
+        return items;
+      }).catch(function () { smartIndexPromise = null; return []; });
     }
     return smartIndexPromise;
   }
