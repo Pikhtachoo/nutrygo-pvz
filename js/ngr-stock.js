@@ -2434,6 +2434,57 @@
     try { localStorage.removeItem(КЛЮЧ_ПРОПУСКА); } catch (e) {}
   }
 
+  /**
+   * Заготовки вида {{form_login_title}} в окне входа.
+   *
+   * Замечание Александра 14.08: при открытии окна входа на секунду видны
+   * служебные метки, потом подменяются настоящими надписями. Источник найти
+   * не удалось: ни в нашем коде, ни в разметке страницы, ни в загруженных
+   * файлах Tilda этих меток нет — окно строит скрипт, который подтягивается
+   * уже по нажатию «Войти».
+   *
+   * Поэтому лечим не причину, а то, что видит человек: пока в окне остаются
+   * метки, прячем его содержимое, и показываем, как только они подменились.
+   * Через полторы секунды показываем в любом случае — оставить человека перед
+   * пустым окном хуже, чем показать ему метки.
+   *
+   * Смотрим только на добавленные узлы, а не на весь документ: перебор всей
+   * страницы на каждое изменение — это тот самый холостой обход, который мы
+   * уже вычищали из каталога.
+   */
+  (function прячемЗаготовки() {
+    var МЕТКА = /\{\{[a-z0-9_]{3,40}\}\}/i;
+    function окно(el) {
+      return (el.closest && el.closest('[class*=popup],[class*=modal],[class*=t-form]')) || null;
+    }
+    function присмотреть(узел) {
+      if (!узел || узел.nodeType !== 1) return;
+      if (!МЕТКА.test(узел.textContent || '')) return;
+      var о = окно(узел) || узел;
+      if (о.getAttribute('data-ngr-ждём') === '1') return;
+      о.setAttribute('data-ngr-ждём', '1');
+      var былаВидимость = о.style.visibility;
+      о.style.visibility = 'hidden';
+      var показать = function () {
+        о.style.visibility = былаВидимость || '';
+        о.removeAttribute('data-ngr-ждём');
+        clearInterval(таймер);
+        clearTimeout(предел);
+      };
+      var таймер = setInterval(function () {
+        if (!МЕТКА.test(о.textContent || '')) показать();
+      }, 60);
+      var предел = setTimeout(показать, 1500);
+    }
+    var наблюдатель = new MutationObserver(function (записи) {
+      for (var i = 0; i < записи.length; i++) {
+        var доб = записи[i].addedNodes;
+        for (var k = 0; k < доб.length; k++) присмотреть(доб[k]);
+      }
+    });
+    наблюдатель.observe(document.documentElement, { childList: true, subtree: true });
+  })();
+
   function loadIntegratorOrders(token, profile, dash) {
     var свой = пропуск();
     // Без входа в Tilda, но со своим пропуском заказы всё равно показываем:
