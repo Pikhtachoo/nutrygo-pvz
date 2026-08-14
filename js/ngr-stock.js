@@ -2446,16 +2446,6 @@
   function пропуск() {
     try { return localStorage.getItem(КЛЮЧ_ПРОПУСКА) || ''; } catch (e) { return ''; }
   }
-  function запомнитьПропуск(п, почта) {
-    try {
-      localStorage.setItem(КЛЮЧ_ПРОПУСКА, п);
-      if (почта) localStorage.setItem(КЛЮЧ_ПРОПУСКА + ':mail', почта);
-    } catch (e) {}
-  }
-  /** Почта, по которой вошли: кабинету нужно чем-то подписать шапку. */
-  function почтаПропуска() {
-    try { return localStorage.getItem(КЛЮЧ_ПРОПУСКА + ':mail') || ''; } catch (e) { return ''; }
-  }
   function забытьПропуск() {
     try { localStorage.removeItem(КЛЮЧ_ПРОПУСКА); } catch (e) {}
   }
@@ -2622,218 +2612,22 @@
   }
 
   /**
-   * Вход по коду на почту.
+   * Метки {{form_login_...}} в окне входа сайта.
    *
-   * Два шага в одном месте: сперва адрес, потом шесть цифр из письма. Ошибки
-   * показываем словами воркера, а не «что-то пошло не так»: человек должен
-   * понимать, истёк ли код, не тот ли он или адрес набран с опечаткой.
-   */
-  function формаВхода(послеВхода) {
-    var к = document.createElement('div');
-    к.className = 'ngr-cab__login';
-    к.style.cssText = 'margin-top:16px;padding:18px 20px;border:1px solid #e8ecf1;' +
-      'border-radius:14px;background:#fff;max-width:420px';
-    var почта = пропуск() ? '' : '';
-    к.innerHTML =
-      '<div style="font-size:15.5px;font-weight:700;color:#14171c">Войти по коду с почты</div>' +
-      '<div style="font-size:13.5px;color:#6b7280;margin:6px 0 14px;line-height:1.45">' +
-      'Пришлём шестизначный код на почту, которой вы оформляли заказ.</div>' +
-      '<input class="ngr-lg__mail" type="email" inputmode="email" autocomplete="email" ' +
-      'placeholder="Ваша почта" style="width:100%;box-sizing:border-box;padding:11px 13px;' +
-      'border:1px solid #dfe4ea;border-radius:10px;font-size:15px;font-family:inherit">' +
-      '<div class="ngr-lg__step2" style="display:none;margin-top:10px">' +
-      '<input class="ngr-lg__code" type="text" inputmode="numeric" autocomplete="one-time-code" ' +
-      'maxlength="6" placeholder="Код из письма" style="width:100%;box-sizing:border-box;' +
-      'padding:11px 13px;border:1px solid #dfe4ea;border-radius:10px;font-size:19px;' +
-      'letter-spacing:5px;font-family:inherit"></div>' +
-      '<button class="ngr-lg__go" type="button" style="margin-top:12px;width:100%;border:0;' +
-      'background:#f28c28;color:#fff;border-radius:10px;padding:12px 16px;font-size:15px;' +
-      'font-weight:700;font-family:inherit;cursor:pointer">Прислать код</button>' +
-      '<div class="ngr-lg__again" style="display:none;margin-top:10px;text-align:center">' +
-      '<button type="button" class="ngr-lg__resend" style="border:0;background:none;padding:0;' +
-      'color:#2f6ba8;font-size:13.5px;font-family:inherit;cursor:pointer;text-decoration:underline">' +
-      'Прислать код ещё раз</button></div>' +
-      '<div class="ngr-lg__msg" style="margin-top:10px;font-size:13.5px;line-height:1.45"></div>';
-
-    var поле = к.querySelector('.ngr-lg__mail');
-    var шаг2 = к.querySelector('.ngr-lg__step2');
-    var полеКода = к.querySelector('.ngr-lg__code');
-    var кнопка = к.querySelector('.ngr-lg__go');
-    var сообщение = к.querySelector('.ngr-lg__msg');
-    var ещёРаз = к.querySelector('.ngr-lg__again');
-    var кнЕщё = к.querySelector('.ngr-lg__resend');
-    var этап = 1;
-
-    /**
-     * Возврат к первому шагу.
-     *
-     * Замечание Александра 14.08: он ошибся адресом и оказался в тупике —
-     * поле почты я блокировал, а запросить код заново было нечем. Теперь
-     * почта остаётся доступной, и любая её правка возвращает сюда.
-     */
-    function кПервомуШагу(скажиЧто) {
-      этап = 1;
-      шаг2.style.display = 'none';
-      ещёРаз.style.display = 'none';
-      полеКода.value = '';
-      поле.readOnly = false;
-      кнопка.textContent = 'Прислать код';
-      скажи(скажиЧто || '');
-    }
-
-    function скажи(текст, плохо) {
-      сообщение.textContent = текст || '';
-      сообщение.style.color = плохо ? '#c0392b' : '#1f8a3b';
-    }
-    function занята(да) {
-      кнопка.disabled = !!да;
-      кнопка.style.opacity = да ? '.6' : '';
-      кнопка.style.cursor = да ? 'default' : 'pointer';
-    }
-    function послать(путь, тело) {
-      return fetch(API + путь, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(тело)
-      }).then(function (r) { return r.json().catch(function () { return {}; }); });
-    }
-
-    кнопка.addEventListener('click', function () {
-      var адрес = String(поле.value || '').trim().toLowerCase();
-      if (этап === 1) {
-        if (адрес.indexOf('@') < 1) { скажи('Проверьте адрес почты', true); поле.focus(); return; }
-        занята(true); скажи('Отправляем…');
-        послать('/auth/request', { email: адрес }).then(function (о) {
-          занята(false);
-          if (о && о.error) { скажи(о.error, true); return; }
-          этап = 2;
-          шаг2.style.display = '';
-          ещёРаз.style.display = '';
-          кнопка.textContent = 'Войти';
-          скажи('Код отправлен на ' + адрес + '. Он годен 10 минут.');
-          полеКода.focus();
-        }).catch(function () { занята(false); скажи('Не получилось отправить код', true); });
-        return;
-      }
-      var код = String(полеКода.value || '').replace(/\D/g, '');
-      if (код.length !== 6) { скажи('Код из шести цифр', true); полеКода.focus(); return; }
-      занята(true); скажи('Проверяем…');
-      послать('/auth/confirm', { email: адрес, code: код }).then(function (о) {
-        занята(false);
-        if (!о || !о.pass) { скажи((о && о.error) || 'Код не подошёл', true); return; }
-        запомнитьПропуск(о.pass, о.email || адрес);
-        скажи('Готово, обновляем заказы…');
-        // Что делать дальше, решает вызвавший: в кабинете — перерисовать его,
-        // в окне входа — закрыть окно и обновить страницу.
-        setTimeout(function () {
-          if (typeof послеВхода === 'function') послеВхода();
-          else openCabinet();
-        }, 400);
-      }).catch(function () { занята(false); скажи('Не получилось проверить код', true); });
-    });
-    // preventDefault обязателен: наш блок может стоять внутри чужой формы,
-    // и без него Enter отправил бы её, а не наш код.
-    var поЕнтеру = function (e) {
-      if (e.key !== 'Enter') return;
-      e.preventDefault();
-      e.stopPropagation();
-      кнопка.click();
-    };
-    полеКода.addEventListener('keydown', поЕнтеру);
-    поле.addEventListener('keydown', поЕнтеру);
-    поле.addEventListener('input', function () {
-      if (этап === 2) кПервомуШагу('Адрес изменён — запросите код заново.');
-    });
-    кнЕщё.addEventListener('click', function () {
-      var адрес = String(поле.value || '').trim().toLowerCase();
-      занята(true); скажи('Отправляем…');
-      послать('/auth/request', { email: адрес }).then(function (о) {
-        занята(false);
-        // Воркер не чаще письма в минуту на адрес и честно об этом говорит —
-        // показываем его слова, а не «отправлено», которого не было.
-        скажи((о && о.note) ? о.note : ('Код отправлен на ' + адрес + '. Он годен 10 минут.'));
-        полеКода.focus();
-      }).catch(function () { занята(false); скажи('Не получилось отправить код', true); });
-    });
-    return к;
-  }
-
-  /**
-   * Наш вход по коду прямо в окне входа сайта.
+   * Устройство окна выяснилось 14.08: #authModal — это подложка, внутри
+   * которой лежит iframe со страницей /members/login того же домена. Форма
+   * живёт в отдельном документе, поэтому прежний заслон от меток не
+   * срабатывал вовсе — метки мелькают там, где он их не видел.
    *
-   * Замечание Александра 14.08: «я думал мы делаем вход по коду с почты» —
-   * и он прав. Механизм был готов, но кнопка стояла внутри кабинета, куда
-   * незашедший человек и не попадает. Вход надо предлагать там, где его ищут.
-   *
-   * Окно входа (#authModal) строит чужой скрипт, которого нет ни в нашем коде,
-   * ни в разметке страницы. Искать его не нужно: мы просто дописываем свой
-   * блок внутрь, когда окно появляется. Если чужое окно однажды изменится,
-   * пропадёт только наш блок, а вход сайта продолжит работать.
-   */
-  /**
-   * Наш вход по коду — внутрь окна входа сайта.
-   *
-   * Устройство окна выяснилось только 14.08, и оно объясняет две прежние
-   * неудачи разом: #authModal — это подложка, внутри которой лежит iframe со
-   * страницей /members/login того же домена. Форма живёт в отдельном
-   * документе. Поэтому мой блок уезжал мимо окна (я вставлял его в подложку),
-   * а заслон от меток {{form_login_...}} не срабатывал вовсе — метки мелькают
-   * в чужом документе, которого он не видел.
-   *
-   * Домен тот же, значит документ доступен: и блок вставляем внутрь него, и
-   * метки чиним там же.
+   * Домен тот же, значит документ доступен, и метки чиним прямо в нём.
+   * Свой вход по коду отсюда убран 14.08 («убирай наш костыль»): вход по
+   * одноразовому коду делает сама Tilda, а её письма идут через наш SMTP.
    */
   (function нашВходВОкне() {
     function документОкна() {
       var ф = document.querySelector('#authModal iframe');
       if (!ф) return null;
       try { return ф.contentDocument || null; } catch (e) { return null; }
-    }
-
-    function встроить() {
-      var д = документОкна();
-      if (!д || !д.body || д.querySelector('.ngr-lg-inline')) return;
-      // Ждём саму форму. Раньше блок мог встроиться раньше неё — попадал в
-      // тело страницы, а не в карточку, и оказывался ниже видимой части. А
-      // повторные попытки его уже не трогали: блок-то есть.
-      var форма = д.querySelector('form');
-      if (!форма) return;
-
-      var обёртка = document.createElement('div');
-      обёртка.className = 'ngr-lg-inline';
-      обёртка.style.cssText = 'margin:22px auto 8px;max-width:420px;padding-top:18px;' +
-        'border-top:1px solid #e8ecf1;font-family:-apple-system,BlinkMacSystemFont,' +
-        '"Segoe UI",Roboto,Arial,sans-serif';
-      var подпись = document.createElement('div');
-      подпись.style.cssText = 'text-align:center;font-size:13.5px;color:#6b7280;margin-bottom:14px';
-      подпись.textContent = 'или войдите по коду — пароль не нужен';
-      обёртка.appendChild(подпись);
-
-      var форма2 = формаВхода(function () {
-        // Не перезагружаем вслепую. Наш код не делает человека вошедшим в
-        // Tilda — шапка останется прежней, и после простой перезагрузки
-        // успех выглядел бы как «ничего не произошло» (замечание Александра
-        // 14.08: «логин не сработал»). Поэтому закрываем окно и сразу
-        // показываем то, ради чего вход и нужен, — заказы.
-        var о = document.getElementById('authModal');
-        if (о) о.classList.remove('show');
-        openCabinet();
-      });
-      форма2.style.cssText = 'margin:0;padding:0;border:0;background:transparent;max-width:100%';
-      var заголовок = форма2.firstElementChild;
-      if (заголовок) заголовок.style.display = 'none';
-      обёртка.appendChild(форма2);
-
-      // Узлы созданы в нашем документе, а кладём их в чужой — усыновляем,
-      // иначе часть браузеров отказывается их отрисовывать.
-      try { д.adoptNode(обёртка); } catch (e) {}
-      // Кладём внутрь самой формы, последним элементом.
-      //
-      // Снаружи не годится: и в конце родителя, и сразу за формой блок
-      // оказывался на 800..997 точке при высоте окна 778 — отрисован, но за
-      // краем. Внутри формы он попадает в ту же карточку, что и поля, и
-      // виден вместе с ними. Наши поля без имён, кнопка type=button, а Enter
-      // мы перехватываем — чужую форму это не отправит.
-      форма.appendChild(обёртка);
     }
 
     // Метки чиним там же, где они появляются, — внутри окна.
@@ -2845,19 +2639,18 @@
     }
 
     /**
-     * Блок входа по коду в окне больше не показываем.
+     * От нашего входа по коду здесь осталась только починка меток.
      *
-     * Решение Александра 14.08. Причина простая: наш код не делает человека
-     * вошедшим в Tilda — сессию сайта выдаёт только она, и метода для этого
-     * у её API нет. Рядом с родным входом наш выглядел как второй вход,
-     * который «не сработал», хотя работал: просто открывал не то.
+     * Причина проста: наш код не делал человека вошедшим в Tilda — сессию
+     * сайта выдаёт только она, метода для этого у её API нет. Рядом с родным
+     * входом наш выглядел как второй вход, который «не сработал», хотя
+     * работал: просто открывал не то.
      *
-     * Родной вход Tilda по временному паролю на почту даёт настоящую сессию,
-     * и его довели до ума иначе — переключив её отправку писем на наш SMTP.
-     *
-     * Сам механизм (/auth/request и /auth/confirm) оставлен в коде: через
-     * него мы проверяли доставку писем, и он пригодится, если у Tilda снова
-     * отвалится почта. Просто покупателю его не показываем.
+     * 14.08 в настройках личного кабинета включён штатный «Одноразовый код»,
+     * и письма Tilda идут через наш SMTP. Свой механизм убран целиком — и из
+     * страницы, и из воркера: ручки /auth/request и /auth/confirm отвечают
+     * 410, потому что открытая отправка письма на любой адрес — это чужая
+     * рассылка от нашего имени.
      */
     function присмотреть() { починитьМетки(); }
 
@@ -2900,11 +2693,6 @@
             '<a href="/" style="color:#2f6ba8">Перейти на главную</a></div>'
           : '<div class="ngr-cab__empty">Здесь появятся ваши заказы с сайта.<br>' +
             'Заказы, оформленные до входа в кабинет, сюда не попадают.</div>'));
-      // Свой вход по коду. Нужен там, где Tilda не помогает: её токен воркер
-      // подтвердить не может (журнал NG-2026-08-13-025), поэтому без своего
-      // входа заказы приходится опознавать по косвенным признакам. Показываем
-      // форму, когда заказов не видно, — то есть ровно тогда, когда она нужна.
-      if (!orders.length) host.appendChild(формаВхода());
       orders.forEach(function (o) {
         var c = document.createElement('div');
         c.className = 'ngr-cab__card';
@@ -3288,6 +3076,10 @@
           if (k && k.indexOf('tilda_members_profile') === 0) убрать.push(k);
         }
         убрать.forEach(function (k) { localStorage.removeItem(k); });
+        // И наш пропуск. Его никто не стирал: выйдя из Tilda, человек
+        // оставался «своим» для воркера, и кабинет по старому пропуску
+        // показал бы его заказы следующему, кто сядет за этот браузер.
+        забытьПропуск();
       } catch (e) {}
       location.reload();
     };
