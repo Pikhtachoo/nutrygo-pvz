@@ -1499,22 +1499,36 @@
         var variants = [q], kb = keyboardVariant(q), tr = translitVariant(q);
         if (kb && kb !== q) variants.push(kb);
         if (tr && tr !== q && variants.indexOf(tr) < 0) variants.push(tr);
+        // Совпадение по названию весит больше, чем по описанию: иначе сверху
+        // оказывались товары, где слово встречается только в тексте, и выдача
+        // выглядела случайной.
         var годные = {};
         items.forEach(function (it) {
-          for (var i = 0; i < variants.length; i++) {
-            if (rankSmart(it, variants[i])) {
-              var u = номерТовара(it);
-              if (u) годные[u] = 1;
-              break;
-            }
-          }
+          var лучший = null;
+          variants.forEach(function (v) {
+            var r = rankSmart(it, v);
+            if (r && (!лучший || r.score > лучший.score)) лучший = r;
+          });
+          if (!лучший) return;
+          var u = номерТовара(it);
+          if (u) годные[u] = лучший.score;
         });
+        var список = карточки();
+        запомнитьПорядок(список);
         var видно = 0;
-        карточки().forEach(function (c) {
+        список.forEach(function (c) {
           var u = c.getAttribute('data-product-uid') || c.getAttribute('data-product-gen-uid') || '';
-          var ok = !!годные[u];
+          var вес = годные[u];
+          var ok = вес !== undefined;
           c.classList.toggle('ngr-search-off', !ok);
           if (ok) видно++;
+          // Совпавшие — по убыванию веса, остальные следом в прежнем порядке.
+          c.setAttribute('data-ngr-hit', ok ? String(вес) : '');
+        });
+        разложить(список, function (c) {
+          var s = c.getAttribute('data-ngr-hit');
+          if (!s) return 1e9 + Number(c.getAttribute('data-ngr-pos') || 0);
+          return -Number(s);
         });
         плашка(сырое, видно);
       });
