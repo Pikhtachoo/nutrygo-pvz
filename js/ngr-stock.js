@@ -1408,6 +1408,20 @@
     function run() {
       var raw = inp.value || '', q = smartNorm(raw);
       if (q.length < 2) { hide(); return; }
+      /*
+       * Подсказка не возвращается поверх готовой выдачи.
+       *
+       * Замечание Александра 14.08: «нажимаю найти — находит, но список
+       * остаётся висеть; пропадает, только если щёлкнуть в стороне и снова
+       * нажать найти». Причина в порядке событий: показ подсказки отложен на
+       * 280 мс, и нажатие «Найти» могло прийтись в этот промежуток — сначала
+       * мы прятали список, а следом срабатывал отложенный показ.
+       *
+       * Гасить один этот случай мало: любое повторное открытие поверх уже
+       * показанной выдачи выглядит поломкой. Поэтому правило простое: пока
+       * запрос не изменился, подсказка не возвращается.
+       */
+      if (NGR_ЗАПРОС && smartNorm(NGR_ЗАПРОС) === q) { hide(); return; }
       var mine = ++requestId;
       note('Ищем по названию и описанию…');
       loadSmartIndex().then(function (items) {
@@ -1631,6 +1645,14 @@
       smartTimer = setTimeout(run, 280);
     });
     inp.addEventListener('focus', function () { if (smartNorm(inp.value).length >= 2) run(); });
+    // Ушли из поля — списка нет. Небольшая отсрочка нужна, чтобы успел
+    // сработать щелчок по самой подсказке: он случается уже после blur.
+    inp.addEventListener('blur', function () {
+      setTimeout(function () {
+        var внутри = document.activeElement && box.contains(document.activeElement);
+        if (!внутри) hide();
+      }, 180);
+    });
     inp.addEventListener('keydown', function (e) {
       if (e.key === 'Escape') hide();
       if (e.key === 'ArrowDown' && !box.hidden) {
@@ -4157,6 +4179,34 @@
       '.ngr-smart-search__panel{left:0;right:auto;width:100%;max-width:100%;min-width:0;' +
       'max-height:50dvh;overflow-x:hidden}}' +
       '.t-catalog__filter__item-title{border-radius:12px!important}' +
+      /*
+       * Суммы не сжимаем никогда.
+       *
+       * Замечание Александра 14.08 со снимком: в карточке вместо «1 250 р.»
+       * стояло «1 ... р.». Так и есть: у числа в синей плашке своё правило
+       * Tilda `overflow:hidden; text-overflow:ellipsis; max-width:100%`, а
+       * вся строка цены — флекс, где рядом уживаются плашка, старая цена и
+       * значок скидки. В четырёх колонках на 1280 px строке не хватает
+       * одного-двух пикселей, и флекс сжимает именно число.
+       *
+       * Замер 14.08: из шестидесяти видимых карточек три обрезаны на 1–2 px
+       * (6 360, 4 600, 4 449). На другом экране и другом шрифте обрезка
+       * заметнее — это и попало на снимок.
+       *
+       * Лечим по существу: числу запрещаем и сжиматься, и обрезаться, а
+       * строке цены разрешаем перенос — пусть лучше значок скидки уедет на
+       * следующую строку, чем покупатель увидит вместо цены многоточие.
+       */
+      'html #rec2502703571 .js-catalog-price-wrapper{flex-wrap:wrap!important}' +
+      'html #rec2502703571 .t-catalog__card__price,' +
+      'html #rec2502703571 .t-catalog__card__price-currency{flex:0 0 auto!important;max-width:none!important}' +
+      'html #rec2502703571 .js-product-price,' +
+      'html #rec2502703571 .js-catalog-prod-price-val,' +
+      'html #rec2502703571 .js-catalog-prod-price-old-val{overflow:visible!important;' +
+      'text-overflow:clip!important;max-width:none!important;flex:0 0 auto!important;' +
+      'white-space:nowrap!important}' +
+      'html #rec2502703571 .ngr-oldprice,html #rec2502703571 .ngr-off{flex:0 0 auto!important;' +
+      'white-space:nowrap!important}' +
       /*
        * У оформления строки поиска должен быть один хозяин.
        *
