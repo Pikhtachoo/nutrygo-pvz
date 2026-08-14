@@ -2364,7 +2364,8 @@
     new: 'Новый', inprocess: 'В обработке', processing: 'В обработке',
     paid: 'Оплачен', payed: 'Оплачен', awaiting_payment: 'Ожидает оплаты',
     delivery: 'В доставке', shipped: 'Отправлен', done: 'Выполнен',
-    completed: 'Выполнен', cancelled: 'Отменён', canceled: 'Отменён',
+    completed: 'Выполнен', fulfilled: 'Выполнен', inprogress: 'В обработке',
+    in_progress: 'В обработке', cancelled: 'Отменён', canceled: 'Отменён',
     refunded: 'Возврат', undeliverable: 'Доставка невозможна',
     delivery_created: 'Передан в Ozon Доставку', checkout_ok_dry_run: 'Доставка подтверждена',
     create_failed: 'Нужна помощь с доставкой', cancel_requested: 'Запрошена отмена',
@@ -2384,7 +2385,25 @@
     if (s && typeof s === 'object') s = s.name || s.title || s.text || s.value || '';
     s = String(s || '');
     var key = s.toLowerCase().replace(/[\s-]/g, '_');
-    return STATUS_RU[key] || (s ? s : 'Оформлен');
+    if (STATUS_RU[key]) return STATUS_RU[key];
+    /**
+     * Незнакомый код покупателю не показываем.
+     *
+     * 14.08 в кабинете висело «fulfilled»: словарь его не знал, а запасной
+     * ход отдавал строку как есть. Ровно так же 13.08 вылезло
+     * «posting_in_carriage» от Ozon. Правило одно: латиница с
+     * подчёркиваниями — служебный код, вместо него нейтральное «В
+     * обработке», а сам код пишем в консоль, чтобы дописать словарь.
+     *
+     * Проверяем исходную строку, а не ключ: пробелы мы сами заменили на
+     * подчёркивания, и по ключу живая надпись «Ожидает подтверждения»
+     * выглядела бы кодом.
+     */
+    if (/^[a-z0-9_-]+$/i.test(s.trim())) {
+      if (key) console.log('NGR: неизвестный статус заказа —', key);
+      return 'В обработке';
+    }
+    return s || 'Оформлен';
   }
 
   /**
