@@ -2547,6 +2547,31 @@
   function accountCacheKey(base) {
     return accountSubject ? base + ':' + accountSubject : base;
   }
+  /**
+   * Доказательство «это я» для воркера.
+   *
+   * Токен Tilda воркер подтвердить не может, поэтому прикладываем то же
+   * доказательство, что и кабинет: адрес почты и собственные заказы из
+   * панели Tilda. Их видит только тот, кто вошёл. Воркер сверяет со своими
+   * записями и, если сходится, выдаёт подписанный пропуск — дальше шлём
+   * его, и перебор заказов больше не нужен.
+   */
+  function предъявлениеДляВоркера() {
+    var п = cabData.profile || memberProfile() || {};
+    var почта = String(p_login(п)).trim().toLowerCase();
+    var список = (cabData.dash && cabData.dash.last_orders) || [];
+    if (почта.indexOf('@') < 1 || !список.length) return null;
+    var заказы = список.map(function (o) {
+      return {
+        id: String(orderNo(o) || ''),
+        amount: Number(o.amount_total || o.amount_final || o.amount || 0),
+        created: String(o.created || '')
+      };
+    }).filter(function (o) { return o.id; });
+    return заказы.length ? { email: почта, orders: заказы } : null;
+  }
+  function p_login(п) { return (п && (п.login || п.email)) || ''; }
+
   function accountPost(action, data, requestToken) {
     var token = requestToken || memberToken();
     if (!token) return Promise.reject(new Error('no member token'));
@@ -2554,6 +2579,10 @@
     Object.keys(data || {}).forEach(function (k) { body[k] = data[k]; });
     body.action = action;
     body.token = token;
+    var свой = пропуск();
+    if (свой) body.pass = свой;
+    var предъявление = предъявлениеДляВоркера();
+    if (предъявление) body.claim = предъявление;
     return fetch(API + '/account/state', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -2575,6 +2604,7 @@
     var requestToken = packet && packet.token;
     if (!requestToken || requestToken !== accountToken || requestToken !== memberToken()) return null;
     if (!j || !j.subject) return j;
+    if (j.pass) запомнитьПропуск(j.pass);
     accountVerified = true;
     accountSubject = String(j.subject);
     var p = j.profile && typeof j.profile === 'object' ? j.profile : {};
@@ -2806,6 +2836,15 @@
    * стороне воркера, — секретов в нём нет, подделать нельзя.
    */
   var КЛЮЧ_ПРОПУСКА = 'ngr_pass_v1';
+  /**
+   * Пропуск выдаёт воркер после того, как мы предъявили ему собственные
+   * заказы. Дальше он предъявляется вместо них — воркеру не приходится
+   * перебирать хранилище на каждое чтение профиля.
+   */
+  function запомнитьПропуск(п) {
+    if (!п) return;
+    try { localStorage.setItem(КЛЮЧ_ПРОПУСКА, String(п)); } catch (e) {}
+  }
   function пропуск() {
     try { return localStorage.getItem(КЛЮЧ_ПРОПУСКА) || ''; } catch (e) { return ''; }
   }
