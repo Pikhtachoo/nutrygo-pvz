@@ -2891,10 +2891,21 @@
   };
   function подменитьЗнакомые(корень) {
     var замена = function (текст) {
-      return String(текст).replace(/\{\{([a-z0-9_]+)\}\}/gi, function (всё, ключ) {
-        return Object.prototype.hasOwnProperty.call(НАШИ_НАДПИСИ, ключ)
-          ? НАШИ_НАДПИСИ[ключ] : всё;
-      });
+      return String(текст)
+        /*
+         * Единица измерения на странице заказа.
+         *
+         * Замечание Александра 15.08 со снимком: в заказе №1868559242 вместо
+         * «2 940 р./шт.» стояло «2 940 р./{{units_шт.}}», и рядом «1
+         * {{units_шт.}}». Это заготовка самой Tilda: в ключе уже лежит нужное
+         * слово, она просто не подставила его на этой странице. Подставляем
+         * то, что в ключе и написано, — не выдумывая.
+         */
+        .replace(/\{\{units_([^}]{1,16})\}\}/gi, function (всё, ед) { return ед; })
+        .replace(/\{\{([a-z0-9_]+)\}\}/gi, function (всё, ключ) {
+          return Object.prototype.hasOwnProperty.call(НАШИ_НАДПИСИ, ключ)
+            ? НАШИ_НАДПИСИ[ключ] : всё;
+        });
     };
     // Только текстовые узлы и подсказки полей: разметку не трогаем.
     var ходок = document.createTreeWalker(корень, NodeFilter.SHOW_TEXT, null);
@@ -3762,10 +3773,31 @@
       '.ngr-sc__r{display:flex;align-items:center;gap:6px;font-size:12.5px;color:#8a919b}' +
       '.ngr-sc__r b{color:#14171c}' +
       '.ngr-sc__p{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:auto;padding-top:4px}' +
-      '.ngr-sc__now{background:#4984c4;color:#fff;font-size:18px;font-weight:800;padding:5px 11px;border-radius:10px}' +
-      '.ngr-sc__old{color:#a6adb6;font-size:14px;font-weight:600;text-decoration:line-through}' +
-      '@media(max-width:1024px){.ngr-shelf{grid-template-columns:repeat(3,1fr)}}' +
-      '@media(max-width:760px){.ngr-shelf{grid-template-columns:repeat(2,1fr);gap:12px}' +
+      /*
+       * Цена на полке не переносится по строкам.
+       *
+       * Замечание Александра 15.08 со снимком «Скидки недели»: вместо
+       * «1 373 ₽» в плашке стояло три строки — «1», «373», «₽». Замер на
+       * 375 px: ширина плашки 49 px при высоте 65 — то есть колонка ужалась
+       * до ширины самого длинного слова, а слова здесь по одному знаку.
+       * Запрещаем перенос и не даём колонке сжиматься меньше содержимого.
+       */
+      '.ngr-sc__now{background:#4984c4;color:#fff;font-size:18px;font-weight:800;padding:5px 11px;' +
+      'border-radius:10px;white-space:nowrap;flex:0 0 auto}' +
+      '.ngr-sc__old{color:#a6adb6;font-size:14px;font-weight:600;text-decoration:line-through;' +
+      'white-space:nowrap;flex:0 0 auto}' +
+      /*
+       * Число колонок на полке — с тем же весом, что и у основного правила.
+       *
+       * Замечание Александра 15.08: «Скидки недели — то же самое с вёрсткой».
+       * И правда: у базового правила стоял !important, а у медиазапросов нет,
+       * поэтому четыре колонки побеждали на любой ширине. Замер на 375 px:
+       * `grid-template-columns: 73.25px 73.25px 73.25px 73.25px` — карточка
+       * шириной 73 пикселя, оттого цена и разваливалась на три строки.
+       */
+      '@media(max-width:1024px){.ngr-shelf{grid-template-columns:repeat(3,1fr)!important}}' +
+      '@media(max-width:760px){.ngr-shelf{grid-template-columns:repeat(2,1fr)!important;' +
+      'gap:12px!important}' +
       '.ngr-sc__b{padding:11px;gap:6px}.ngr-sc__t{font-size:13px}' +
       '.ngr-sc__now{font-size:16px;padding:4px 9px}}';
     document.head.appendChild(st);
