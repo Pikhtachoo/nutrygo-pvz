@@ -3114,7 +3114,19 @@
       };
       if (id && byId[id] !== undefined) {
         var current = orders[byId[id]];
-        current.delivery_status = mapped.delivery_status || current.delivery_status || '';
+        /*
+         * Наш статус — это лишь этап обработки заказа. Если Tilda уже
+         * сказала окончательное — «отменён» или «выполнен», — её слово
+         * главнее: у отменённого заказа покупатель не должен видеть
+         * «ожидает оплаты» (замечание Александра 16.08).
+         */
+        var ихСтатус = current.status || current.delivery_status || '';
+        if (ихСтатус && typeof ихСтатус === 'object') ихСтатус = ихСтатус.name || ихСтатус.title || '';
+        ихСтатус = String(ихСтатус).toLowerCase().replace(/[\s-]+/g, '_');
+        var окончательные = ['cancelled', 'canceled', 'refunded', 'done', 'completed', 'fulfilled'];
+        if (окончательные.indexOf(ихСтатус) < 0) {
+          current.delivery_status = mapped.delivery_status || current.delivery_status || '';
+        }
         current.city = current.city || mapped.city;
         current.address = current.address || mapped.address;
         current.ozon_order = current.ozon_order || mapped.ozon_order;
