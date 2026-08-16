@@ -3820,6 +3820,29 @@
     document.head.appendChild(st);
   }
 
+  /**
+   * Метка на корзине показывается только при товаре в ней.
+   *
+   * Tilda рисует красный кружок постоянно, а число в нём оставляет пустым,
+   * когда корзина пуста. Со стороны это выглядит как «вас что-то ждёт»,
+   * хотя ждать нечего (замечание Александра 16.08). Считаем товары сами:
+   * у Tilda корзина живёт в объекте tcart, и он же обновляется при
+   * добавлении.
+   */
+  function меткаКорзины() {
+    var сколько = 0;
+    try {
+      if (window.tcart && Array.isArray(tcart.products)) {
+        tcart.products.forEach(function (p) { сколько += Number(p.quantity) || 1; });
+      }
+    } catch (e) { return; }
+    var пусто = сколько < 1;
+    var корень = document.documentElement;
+    if (корень.classList.contains('ngr-corzina-pusta') !== пусто) {
+      корень.classList.toggle('ngr-corzina-pusta', пусто);
+    }
+  }
+
   function money(n) { return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + ' ₽'; }
 
   /**
@@ -4757,6 +4780,9 @@
       '.ngr-ready .t706__carticon-counter{pointer-events:auto!important;position:absolute!important;' +
       'top:-2px!important;right:-2px!important;left:auto!important;bottom:auto!important;' +
       'min-width:22px!important;height:22px!important;box-sizing:border-box!important}' +
+      // Пустая корзина — пустой кружок. Красная метка без числа висела
+      // и когда покупать нечего (замечание Александра 16.08).
+      '.ngr-corzina-pusta .t706__carticon-counter{display:none!important}' +
       // Ссылка выхода в заголовке формы не должна выходить за viewport.
       '.t706__cartwin .t706__auth{display:flex!important;flex-wrap:wrap!important;gap:6px 10px!important;' +
       'align-items:center!important}' +
@@ -5954,7 +5980,7 @@
 
   function apply() {
     fixPopup(); fixCards(); fixCart(); fixPromocode(); fixDupDelivery(); fixUnits(); fixBrands();
-    initSearchGuard(); fixSearch(); initSmartSearch(); fixAccountButton(); fixAuthGate(); держатьФорму(); faqCss();
+    initSearchGuard(); fixSearch(); initSmartSearch(); fixAccountButton(); fixAuthGate(); держатьФорму(); faqCss(); меткаКорзины();
     fixRatings(); fixPopupReviews(); fixDescription(); fixDeliveryOrder(); fixCardPhotos(); fixPrices(); fixFilterValues(); fixRatingFilter(); applyRatingFilter(false); fixShelves(); fixSgr(); fixFav(); cartCss(); docsSearch(); filterBarCss(); trimFilterBar(); dropCartTip(); prefillCart(); pullProfileOnce(); refreshBrands(); buildSideFilters(); syncSideFilters(); fixUrlSort();
   }
 
