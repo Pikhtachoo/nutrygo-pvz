@@ -3803,6 +3803,23 @@
     document.head.appendChild(st);
   }
 
+  /**
+   * Блок вопросов на главной свёрстан жёсткой сеткой из двух колонок
+   * 300 и 480 точек. На экранах около девятисот точек это не помещается,
+   * и вся страница получает поперечную прокрутку — заметно на планшете
+   * (проверка 16.08). Делаем колонки гибкими и на узких складываем в одну.
+   */
+  function faqCss() {
+    if (document.getElementById('ngr-faq-css')) return;
+    var st = document.createElement('style');
+    st.id = 'ngr-faq-css';
+    st.textContent =
+      '.ngr-faq{grid-template-columns:minmax(0,300px) minmax(0,1fr)!important}' +
+      '.ngr-faq__list{width:auto!important;max-width:100%!important;min-width:0!important}' +
+      '@media(max-width:1000px){.ngr-faq{grid-template-columns:minmax(0,1fr)!important}}';
+    document.head.appendChild(st);
+  }
+
   function money(n) { return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + ' ₽'; }
 
   /**
@@ -5937,7 +5954,7 @@
 
   function apply() {
     fixPopup(); fixCards(); fixCart(); fixPromocode(); fixDupDelivery(); fixUnits(); fixBrands();
-    initSearchGuard(); fixSearch(); initSmartSearch(); fixAccountButton(); fixAuthGate(); держатьФорму();
+    initSearchGuard(); fixSearch(); initSmartSearch(); fixAccountButton(); fixAuthGate(); держатьФорму(); faqCss();
     fixRatings(); fixPopupReviews(); fixDescription(); fixDeliveryOrder(); fixCardPhotos(); fixPrices(); fixFilterValues(); fixRatingFilter(); applyRatingFilter(false); fixShelves(); fixSgr(); fixFav(); cartCss(); docsSearch(); filterBarCss(); trimFilterBar(); dropCartTip(); prefillCart(); pullProfileOnce(); refreshBrands(); buildSideFilters(); syncSideFilters(); fixUrlSort();
   }
 
