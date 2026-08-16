@@ -1730,9 +1730,13 @@
       st.id = 'ngr-account-css';
       st.textContent =
         '.ngr-account-link.ngr-account--in{background:#fff5ec;border-color:#f0c9a3}' +
-        '.ngr-account-link .ngr-ava{display:inline-flex;align-items:center;justify-content:center;' +
-        'width:32px;height:32px;border-radius:50%;background:#ff7a1a;color:#fff;font-size:14px;' +
-        'font-weight:700;margin-right:8px;flex:0 0 32px;background-size:cover;background-position:center}' +
+        '.ngr-account-link .ngr-ava{display:inline-flex!important;align-items:center!important;' +
+        'justify-content:center!important;width:32px;height:32px;border-radius:50%;background:#ff7a1a;' +
+        'color:#fff;font-size:14px;font-weight:700;margin-right:8px;flex:0 0 32px;' +
+        // Буква стояла не по центру: у Tilda своя высота строки и отступы,
+        // и они сдвигали её вниз-вбок (замечание Александра 16.08).
+        'line-height:1!important;padding:0!important;text-align:center;letter-spacing:0;' +
+        'background-size:cover;background-position:center;overflow:hidden;text-indent:0}' +
         '.ngr-account-link .ngr-account-name{max-width:132px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}';
       document.head.appendChild(st);
     }
@@ -2661,7 +2665,12 @@
   function pushProfile() {
     var cur = profileSettings();
     return accountPost('profile', {
-      profile: { nick: cur.nick || '', avatar: cur.avatar || '', photo: cur.photo || '' }
+      // Имя и телефон здесь не правятся, но передаём их обратно: запись
+      // профиля на сервере полная, и молчание стёрло бы данные заказа.
+      profile: {
+        nick: cur.nick || '', avatar: cur.avatar || '', photo: cur.photo || '',
+        name: cur.name || '', phone: cur.phone || ''
+      }
     }).then(function (j) { return applyAccountSnapshot(j); });
   }
 
@@ -3281,6 +3290,14 @@
     // рядом — его реферальная ссылка (запрос Александра 08.08).
     var me = profileSettings();
     var oldLocalPhoto = String((legacyProfileSettings() || {}).photo || '');
+    /*
+     * Имя и телефон: сперва то, что человек указал в настройках Tilda,
+     * иначе — данные последнего заказа, сохранённые в профиле на сервере.
+     * Раньше на этом месте стоял прочерк, хотя заказ уже был оформлен.
+     */
+    var имяДок = p.name || me.name || '';
+    var телДок = p.phone || me.phone || '';
+    var изЗаказа = (!p.name && !!me.name) || (!p.phone && !!me.phone);
     host.innerHTML = '<h2>Профиль</h2>' +
       '<div class="ngr-cab__card">' +
       '<div class="ngr-cab__field"><u>Как вас показывать</u>' +
@@ -3316,9 +3333,14 @@
       '<div class="ngr-cab__hint">Поделитесь ссылкой — мы увидим, что покупатель пришёл от вас.</div>' +
       '</div>' +
       '<div class="ngr-cab__card">' +
-      '<div class="ngr-cab__field"><u>Имя в документах</u><b>' + (p.name || '—') + '</b></div>' +
+      '<div class="ngr-cab__field"><u>Имя в документах</u><b>' + (имяДок || '—') + '</b></div>' +
       '<div class="ngr-cab__field"><u>Электронная почта</u><b>' + (p.login || '—') + '</b></div>' +
-      '<div class="ngr-cab__field"><u>Телефон</u><b>' + (p.phone || '—') + '</b></div>' +
+      '<div class="ngr-cab__field"><u>Телефон</u><b>' +
+      (телДок ? телефонДляГлаз(телДок) : '—') + '</b></div>' +
+      (изЗаказа
+        ? '<div class="ngr-cab__hint">Взято из вашего последнего заказа — ' +
+          'в следующий раз подставим сами.</div>'
+        : '') +
       '<div class="ngr-cab__hint">Эти данные используются для заказов. Изменить их и пароль можно в ' +
       '<a href="/members/profile/" style="color:#2f6ba8">настройках профиля</a>.</div>' +
       '</div>';
@@ -3803,6 +3825,85 @@
     document.head.appendChild(st);
   }
 
+  /**
+   * Блок вопросов на главной свёрстан жёсткой сеткой из двух колонок
+   * 300 и 480 точек. На экранах около девятисот точек это не помещается,
+   * и вся страница получает поперечную прокрутку — заметно на планшете
+   * (проверка 16.08). Делаем колонки гибкими и на узких складываем в одну.
+   */
+  function faqCss() {
+    if (document.getElementById('ngr-faq-css')) return;
+    var st = document.createElement('style');
+    st.id = 'ngr-faq-css';
+    st.textContent =
+      '.ngr-faq{grid-template-columns:minmax(0,300px) minmax(0,1fr)!important}' +
+      '.ngr-faq__list{width:auto!important;max-width:100%!important;min-width:0!important}' +
+      '@media(max-width:1000px){.ngr-faq{grid-template-columns:minmax(0,1fr)!important}}';
+    document.head.appendChild(st);
+  }
+
+  /**
+   * Метка на корзине показывается только при товаре в ней.
+   *
+   * Tilda рисует красный кружок постоянно, а число в нём оставляет пустым,
+   * когда корзина пуста. Со стороны это выглядит как «вас что-то ждёт»,
+   * хотя ждать нечего (замечание Александра 16.08). Считаем товары сами:
+   * у Tilda корзина живёт в объекте tcart, и он же обновляется при
+   * добавлении.
+   */
+  function меткаКорзины() {
+    var сколько = 0;
+    try {
+      if (window.tcart && Array.isArray(tcart.products)) {
+        tcart.products.forEach(function (p) { сколько += Number(p.quantity) || 1; });
+      }
+    } catch (e) { return; }
+    var пусто = сколько < 1;
+    document.documentElement.classList.toggle('ngr-corzina-pusta', пусто);
+    // Правилом стиля это не убрать: Tilda задаёт показ счётчика с большей
+    // силой. Ставим прямо на элемент — тогда решает наш стиль.
+    document.querySelectorAll('.t706__carticon-counter').forEach(function (c) {
+      var надо = пусто ? 'none' : '';
+      if (пусто) {
+        if (c.style.display !== 'none') c.style.setProperty('display', 'none', 'important');
+      } else if (c.style.display === 'none') {
+        c.style.removeProperty('display');
+      }
+    });
+  }
+
+  /**
+   * Значок вкладки.
+   *
+   * В разметке стоял свой значок, но размером 1254 на 1254 точки и весом
+   * 755 килобайт — для вкладки это не иконка, а картинка, и браузеры
+   * подставляли вместо неё собственную заглушку (замечание Александра 16.08).
+   * Подкладываем те же изображения в нормальных размерах, включая значок
+   * для домашнего экрана телефона.
+   */
+  var ЗНАЧКИ = 'https://pikhtachoo.github.io/nutrygo-pvz/img/favicon/';
+
+  function значокВкладки() {
+    if (document.getElementById('ngr-favicon-32')) return;
+    // Старые ссылки убираем: браузер берёт последнюю подходящую, и тяжёлая
+    // картинка продолжила бы выигрывать.
+    document.querySelectorAll('link[rel~="icon"], link[rel="shortcut icon"], link[rel="apple-touch-icon"]')
+      .forEach(function (l) { l.parentNode.removeChild(l); });
+    [
+      { id: 'ngr-favicon-32', rel: 'icon', type: 'image/png', sizes: '32x32', file: 'favicon-32.png' },
+      { id: 'ngr-favicon-48', rel: 'icon', type: 'image/png', sizes: '48x48', file: 'favicon-48.png' },
+      { id: 'ngr-favicon-apple', rel: 'apple-touch-icon', sizes: '180x180', file: 'apple-touch-icon.png' }
+    ].forEach(function (з) {
+      var l = document.createElement('link');
+      l.id = з.id;
+      l.rel = з.rel;
+      if (з.type) l.type = з.type;
+      if (з.sizes) l.sizes = з.sizes;
+      l.href = ЗНАЧКИ + з.file;
+      document.head.appendChild(l);
+    });
+  }
+
   function money(n) { return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + ' ₽'; }
 
   /**
@@ -4146,6 +4247,13 @@
     return d.length === 11 ? d : '';
   }
 
+  /** 79161234567 → +7 (916) 123-45-67. Незнакомое оставляем как есть. */
+  function телефонДляГлаз(v) {
+    var d = String(v || '').replace(/\D/g, '');
+    if (d.length !== 11 || d.charAt(0) !== '7') return String(v || '');
+    return '+7 (' + d.slice(1, 4) + ') ' + d.slice(4, 7) + '-' + d.slice(7, 9) + '-' + d.slice(9);
+  }
+
   function вписать(поле, знач) {
     if (!поле || !знач || поле === document.activeElement) return false;
     if (String(поле.value || '').trim()) return false;
@@ -4214,11 +4322,28 @@
     var скрытое = (f.querySelector('input[name="Phone"]') || {}).value || '';
     var маска = (f.querySelector('input.t-input-phonemask') || {}).value || '';
     var a = String(скрытое).replace(/\D/g, ''), b = String(маска).replace(/\D/g, '');
+    var имяЗаказа = ((f.querySelector('input[name="Name"]') || {}).value || '').trim();
+    var телефонЗаказа = цифрыТелефона(a.length >= b.length ? a : b);
     запомнитьПокупателя({
-      name: ((f.querySelector('input[name="Name"]') || {}).value || '').trim(),
+      name: имяЗаказа,
       email: ((f.querySelector('input[name="Email"]') || {}).value || '').trim(),
-      phone: цифрыТелефона(a.length >= b.length ? a : b)
+      phone: телефонЗаказа
     });
+    /*
+     * То же самое дописываем в профиль на сервере.
+     *
+     * Раньше имя и телефон оставались в памяти браузера, и на другом
+     * устройстве покупатель набирал их заново (замечание Александра 16.08).
+     * Ответа не ждём: заказ уходит своим ходом, а если связь подвела,
+     * ничего не ломается — данные всё равно сохранены на устройстве.
+     */
+    if ((имяЗаказа || телефонЗаказа) && memberToken()) {
+      try {
+        accountPost('merge', { profile: { name: имяЗаказа, phone: телефонЗаказа } })
+          .then(applyAccountSnapshot)
+          .catch(function () {});
+      } catch (err) {}
+    }
   }, true);
 
   /**
@@ -4740,6 +4865,9 @@
       '.ngr-ready .t706__carticon-counter{pointer-events:auto!important;position:absolute!important;' +
       'top:-2px!important;right:-2px!important;left:auto!important;bottom:auto!important;' +
       'min-width:22px!important;height:22px!important;box-sizing:border-box!important}' +
+      // Пустая корзина — пустой кружок. Красная метка без числа висела
+      // и когда покупать нечего (замечание Александра 16.08).
+      '.ngr-corzina-pusta .t706__carticon-counter{display:none!important}' +
       // Ссылка выхода в заголовке формы не должна выходить за viewport.
       '.t706__cartwin .t706__auth{display:flex!important;flex-wrap:wrap!important;gap:6px 10px!important;' +
       'align-items:center!important}' +
@@ -5909,15 +6037,26 @@
       if (!box) {
         box = document.createElement('div');
         box.className = 'ngr-auth-stopper';
-        box.style.cssText = 'margin:12px 0;padding:14px 16px;border:1px solid #f0c9a3;' +
-          'background:#fff7ef;border-radius:12px;color:#7a4a12;font-size:14px;line-height:1.5';
-        box.innerHTML = '<b>Заказ оформляется из личного кабинета.</b><br>' +
-          'Так заказ, документы и история покупок останутся у вас под рукой.<br>' +
-          '<a href="#openmembersbar" style="display:inline-block;margin-top:8px;padding:9px 16px;' +
-          'background:#ff7a1a;color:#fff;border-radius:9px;font-weight:700;text-decoration:none">' +
-          'Войти или зарегистрироваться</a>';
-        if (btn && btn.parentNode) btn.parentNode.insertBefore(box, btn);
-        else f.insertBefore(box, f.firstChild);
+        box.style.cssText = 'margin:0 0 16px;padding:16px 18px;border:1px solid #f0c9a3;' +
+          'background:#fff7ef;border-radius:14px;color:#7a4a12;font-size:14px;line-height:1.5';
+        box.innerHTML = '<b>Сначала войдите — это займёт минуту.</b><br>' +
+          'Достаточно почты: пришлём код, и данные заказа подставятся сами. ' +
+          'Заказ, документы и история покупок останутся у вас под рукой.<br>' +
+          '<a href="#openmembersbar" style="display:inline-block;margin-top:10px;padding:11px 18px;' +
+          'background:#ff7a1a;color:#fff;border-radius:10px;font-weight:700;text-decoration:none">' +
+          'Войти или зарегистрироваться</a>' +
+          '<div style="margin-top:8px;font-size:13px;color:#9a7550">' +
+          'Уже заполненное не пропадёт — вернём после входа.</div>';
+        /*
+         * Плашка стоит ПЕРЕД полями, а не перед кнопкой оплаты.
+         *
+         * Раньше покупатель заполнял имя, телефон, почту, выбирал пункт
+         * выдачи — и только внизу узнавал, что нужен вход. После входа
+         * страница перезагружалась, и всё приходилось набирать заново
+         * (замечание Александра 16.08). Просить вход надо до работы, а не
+         * после неё.
+         */
+        f.insertBefore(box, f.firstChild);
       }
     });
   }
@@ -5937,7 +6076,7 @@
 
   function apply() {
     fixPopup(); fixCards(); fixCart(); fixPromocode(); fixDupDelivery(); fixUnits(); fixBrands();
-    initSearchGuard(); fixSearch(); initSmartSearch(); fixAccountButton(); fixAuthGate(); держатьФорму();
+    initSearchGuard(); fixSearch(); initSmartSearch(); fixAccountButton(); fixAuthGate(); держатьФорму(); faqCss(); меткаКорзины(); значокВкладки();
     fixRatings(); fixPopupReviews(); fixDescription(); fixDeliveryOrder(); fixCardPhotos(); fixPrices(); fixFilterValues(); fixRatingFilter(); applyRatingFilter(false); fixShelves(); fixSgr(); fixFav(); cartCss(); docsSearch(); filterBarCss(); trimFilterBar(); dropCartTip(); prefillCart(); pullProfileOnce(); refreshBrands(); buildSideFilters(); syncSideFilters(); fixUrlSort();
   }
 
