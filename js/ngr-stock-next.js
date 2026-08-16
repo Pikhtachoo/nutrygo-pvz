@@ -4565,6 +4565,70 @@
    * единственная точка, где имя, почта и телефон заведомо заполнены и
    * проверены самой Tilda.
    */
+  /*
+   * Почта в заказе против почты аккаунта.
+   *
+   * Разбор 16.08: в заказе стояло «pikhtonikov.alieksandr@» вместо
+   * «pikhtovnikov.alieksandr@» — пропущена буква. Письма о заказе исправно
+   * уходили в никуда, и покупатель никак не мог об этом узнать: ошибку
+   * видно только по тому, что письма нет.
+   *
+   * Поэтому сверяем введённую почту с той, под которой человек вошёл,
+   * и предупреждаем при расхождении. Не запрещаем: почта может отличаться
+   * намеренно — рабочая, семейная. Но подставить свою даём в одно нажатие.
+   */
+  function почтаАккаунта() {
+    var п = memberProfile();
+    return п ? String(п.login || п.email || '').trim().toLowerCase() : '';
+  }
+
+  function сверитьПочту(поле) {
+    if (!поле) return;
+    var своя = почтаАккаунта();
+    var ввод = String(поле.value || '').trim().toLowerCase();
+    var форма = поле.form;
+    if (!форма) return;
+    var плашка = форма.querySelector('.ngr-mailwarn');
+    if (!своя || !ввод || ввод === своя || ввод.indexOf('@') < 1) {
+      if (плашка) плашка.remove();
+      return;
+    }
+    if (плашка && плашка.getAttribute('data-for') === ввод) return;
+    if (плашка) плашка.remove();
+    плашка = document.createElement('div');
+    плашка.className = 'ngr-mailwarn';
+    плашка.setAttribute('data-for', ввод);
+    плашка.style.cssText = 'margin:8px 0 14px;padding:12px 14px;border:1px solid #f0c9a3;' +
+      'background:#fff7ef;border-radius:11px;color:#7a4a12;font-size:13px;line-height:1.5;' +
+      'visibility:visible!important;transition:none!important';
+    плашка.innerHTML = '<b>Проверьте почту — письма о заказе придут на неё.</b><br>' +
+      'Вы вошли под <b class="ngr-mailwarn__my"></b>, а в заказе указана ' +
+      '<b class="ngr-mailwarn__typed"></b>.<br>' +
+      '<button type="button" class="ngr-mailwarn__fix" style="margin-top:9px;padding:8px 14px;' +
+      'border:0;border-radius:9px;background:#ff7a1a;color:#fff;font-weight:700;cursor:pointer">' +
+      'Подставить почту аккаунта</button>';
+    плашка.querySelector('.ngr-mailwarn__my').textContent = своя;
+    плашка.querySelector('.ngr-mailwarn__typed').textContent = ввод;
+    плашка.querySelector('.ngr-mailwarn__fix').addEventListener('click', function () {
+      var задать = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+      задать.call(поле, своя);
+      поле.dispatchEvent(new Event('input', { bubbles: true }));
+      поле.dispatchEvent(new Event('change', { bubbles: true }));
+      плашка.remove();
+    });
+    var куда = поле.closest('.t-input-group') || поле.parentNode;
+    куда.parentNode.insertBefore(плашка, куда.nextSibling);
+  }
+
+  document.addEventListener('input', function (e) {
+    var п = e.target;
+    if (п && п.name === 'Email') сверитьПочту(п);
+  }, true);
+  document.addEventListener('blur', function (e) {
+    var п = e.target;
+    if (п && п.name === 'Email') сверитьПочту(п);
+  }, true);
+
   document.addEventListener('submit', function (e) {
     var f = e.target;
     if (!f || !f.querySelector) return;
