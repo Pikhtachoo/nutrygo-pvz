@@ -1874,7 +1874,34 @@
       '.ngr-rev{gap:10px;padding:14px 0}' +
       '.ngr-rev__ava{flex:0 0 32px;width:32px;height:32px;font-size:15px}' +
       '.ngr-rev__text{font-size:14px}' +
-      '.ngr-rev__pics a{width:64px;height:64px}}';
+      '.ngr-rev__pics a{width:64px;height:64px}}' +
+      // Своя форма отзыва
+      '.ngr-revown{border:1px solid #ffd9b8;background:#fff8f1;border-radius:14px;' +
+      'padding:16px 18px;margin:18px 0 4px}' +
+      '.ngr-revown b{display:block;font-size:15px;color:#14171c;margin-bottom:4px}' +
+      '.ngr-revown p{margin:0 0 12px;font-size:13px;color:#7a6551;line-height:1.5}' +
+      '.ngr-revstars{display:flex;gap:6px;margin-bottom:12px}' +
+      '.ngr-revstars button{width:38px;height:38px;padding:0;border:1px solid #e8d6c2;' +
+      'background:#fff;border-radius:10px;font-size:19px;line-height:1;color:#d9dde2;cursor:pointer}' +
+      '.ngr-revstars button[aria-checked="true"]{color:#ff9f1a;border-color:#ffbf70;background:#fff5e8}' +
+      '.ngr-revown textarea{width:100%;box-sizing:border-box;min-height:88px;padding:11px 13px;' +
+      'border:1px solid #e3e8ee;border-radius:11px;font:14px/1.5 inherit;color:#14171c;resize:vertical}' +
+      '.ngr-revfiles{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:12px 0}' +
+      '.ngr-revfiles label{padding:9px 14px;border:1px dashed #e0b98f;border-radius:10px;' +
+      'font-size:13px;font-weight:700;color:#b06c1e;cursor:pointer;background:#fff}' +
+      '.ngr-revthumb{position:relative;width:56px;height:56px;border-radius:9px;overflow:hidden;' +
+      'border:1px solid #eceff3}' +
+      '.ngr-revthumb img{width:100%;height:100%;object-fit:cover;display:block}' +
+      '.ngr-revthumb button{position:absolute;top:2px;right:2px;width:19px;height:19px;padding:0;' +
+      'border:0;border-radius:50%;background:rgba(0,0,0,.6);color:#fff;font-size:12px;' +
+      'line-height:19px;cursor:pointer}' +
+      '.ngr-revsend{padding:12px 22px;border:0;border-radius:11px;background:#ff7a1a;color:#fff;' +
+      'font-size:14px;font-weight:700;cursor:pointer}' +
+      '.ngr-revsend[disabled]{background:#e6c7a8;cursor:default}' +
+      '.ngr-revsaid{font-size:13px;color:#2f7d32;margin-left:10px}' +
+      '.ngr-revfail{font-size:13px;color:#c0392b;margin-top:8px}' +
+      '.ngr-rev__own{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;' +
+      'color:#b06c1e;background:#fff2e2;border-radius:5px;padding:2px 6px}';
     document.head.appendChild(st);
   }
 
@@ -2576,7 +2603,7 @@
   }
   function p_login(п) { return (п && (п.login || п.email)) || ''; }
 
-  function accountPost(action, data, requestToken) {
+  function accountPost(action, data, requestToken, путь) {
     var token = requestToken || memberToken();
     if (!token) return Promise.reject(new Error('no member token'));
     var body = {};
@@ -2587,19 +2614,26 @@
     if (свой) body.pass = свой;
     var предъявление = предъявлениеДляВоркера();
     if (предъявление) body.claim = предъявление;
-    return fetch(API + '/account/state', {
+    return fetch(API + (путь || '/account/state'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       cache: 'no-store',
       body: JSON.stringify(body)
     }).then(function (r) {
       if (!r.ok) {
-        var error = new Error('account HTTP ' + r.status);
-        error.status = r.status;
-        throw error;
+        // Отзыв может не приняться по понятной причине — «уже оставлен»,
+        // «заказ ещё не получен». Её и показываем, а не номер ошибки.
+        return r.json().catch(function () { return null; }).then(function (j) {
+          var error = new Error((j && j.error) || ('account HTTP ' + r.status));
+          error.status = r.status;
+          throw error;
+        });
       }
       return r.json().then(function (snapshot) {
-        return { snapshot: snapshot, token: token };
+        // Отзывы отвечают сами за себя, обёртка снимка им ни к чему.
+        return (путь && путь !== '/account/state')
+          ? snapshot
+          : { snapshot: snapshot, token: token };
       });
     });
   }
@@ -5766,15 +5800,211 @@
     wrap.parentNode.insertBefore(del, wrap);
   }
 
+  /*
+   * ОТЗЫВЫ НАШИХ ПОКУПАТЕЛЕЙ
+   *
+   * Решение Александра 16.08, вариант А: писать отзыв вправе только тот,
+   * кто купил товар, и только после того, как заказ получен. Право не
+   * хранится флагом — сервер каждый раз выводит его из заказов покупателя,
+   * подделать нечего.
+   *
+   * Список «что мне можно оценить» спрашиваем один раз на загрузку страницы:
+   * серверу он стоит перебора заказов, и дёргать его на каждую открытую
+   * карточку было бы расточительно.
+   */
+  var своиОтзывы = {};        // артикул → наши отзывы о товаре
+  var правоНаОтзыв = null;    // список товаров, которые покупатель может оценить
+  var правоЖдёт = null;
+
+  function правоНаОтзывы() {
+    if (правоНаОтзыв) return Promise.resolve(правоНаОтзыв);
+    if (правоЖдёт) return правоЖдёт;
+    if (!memberToken()) return Promise.resolve([]);
+    правоЖдёт = accountPost('can', {}, null, '/reviews/can').then(function (j) {
+      if (j && j.pass) запомнитьПропуск(j.pass);
+      правоНаОтзыв = (j && Array.isArray(j.items)) ? j.items : [];
+      return правоНаОтзыв;
+    }).catch(function () { return []; });
+    return правоЖдёт;
+  }
+
+  function нашиОтзывы(sku) {
+    if (своиОтзывы[sku]) return Promise.resolve(своиОтзывы[sku]);
+    return fetch(API + '/reviews/own?sku=' + encodeURIComponent(sku))
+      .then(function (x) { return x.json(); })
+      .then(function (j) {
+        своиОтзывы[sku] = (j && Array.isArray(j.list)) ? j.list : [];
+        return своиОтзывы[sku];
+      })
+      .catch(function () { return []; });
+  }
+
+  /**
+   * Снимок к отзыву уменьшаем прямо в браузере.
+   *
+   * С телефона приходят снимки по пять мегабайт: гнать их на сервер незачем
+   * и долго. Ужимаем до 1280 точек по длинной стороне и, если всё ещё
+   * тяжело, понижаем качество, пока не уложимся.
+   */
+  function сжатьСнимок(файл) {
+    return new Promise(function (готово, беда) {
+      if (!/^image\//.test(файл.type)) { беда(new Error('это не изображение')); return; }
+      if (файл.size > 20 * 1024 * 1024) { беда(new Error('снимок больше 20 МБ')); return; }
+      var rd = new FileReader();
+      rd.onerror = function () { беда(new Error('не удалось прочитать файл')); };
+      rd.onload = function () {
+        var im = new Image();
+        im.onerror = function () { беда(new Error('не удалось открыть снимок')); };
+        im.onload = function () {
+          var предел = 1280;
+          var k = Math.min(1, предел / Math.max(im.width, im.height));
+          var cv = document.createElement('canvas');
+          cv.width = Math.max(1, Math.round(im.width * k));
+          cv.height = Math.max(1, Math.round(im.height * k));
+          cv.getContext('2d').drawImage(im, 0, 0, cv.width, cv.height);
+          var кач = 0.82, данные = cv.toDataURL('image/jpeg', кач);
+          // 300 Кб — предел, который принимает сервер; считаем по base64.
+          while (данные.length - данные.indexOf(',') - 1 > 300000 && кач > 0.4) {
+            кач -= 0.12;
+            данные = cv.toDataURL('image/jpeg', кач);
+          }
+          готово(данные);
+        };
+        im.src = rd.result;
+      };
+      rd.readAsDataURL(файл);
+    });
+  }
+
+  /** Форма отзыва. Показываем только тому, кто вправе его оставить. */
+  function формаОтзыва(box, sku, товар) {
+    var снимки = [];
+    var оценка = 0;
+    var форма = document.createElement('div');
+    форма.className = 'ngr-revown';
+    форма.innerHTML =
+      '<b>Оставьте отзыв о товаре</b>' +
+      '<p>Вы получили этот заказ' + (товар && товар.at
+        ? ' — ' + String(товар.at).slice(0, 10).split('-').reverse().join('.') : '') +
+      '. Расскажите, как вам товар: это поможет другим покупателям выбрать.</p>' +
+      '<div class="ngr-revstars" role="radiogroup" aria-label="Оценка"></div>' +
+      '<textarea maxlength="2000" placeholder="Что понравилось, что нет. Необязательно."></textarea>' +
+      '<div class="ngr-revfiles"><label>Добавить фото' +
+      '<input type="file" accept="image/*" multiple style="display:none"></label></div>' +
+      '<button type="button" class="ngr-revsend">Отправить отзыв</button>' +
+      '<span class="ngr-revsaid"></span>' +
+      '<div class="ngr-revfail" style="display:none"></div>';
+
+    var звёзды = форма.querySelector('.ngr-revstars');
+    for (var i = 1; i <= 5; i++) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.setAttribute('role', 'radio');
+      b.setAttribute('aria-checked', 'false');
+      b.setAttribute('aria-label', i + ' из 5');
+      b.setAttribute('data-v', String(i));
+      b.textContent = '★';
+      звёзды.appendChild(b);
+    }
+    звёзды.addEventListener('click', function (e) {
+      var b = e.target.closest('button[data-v]');
+      if (!b) return;
+      оценка = Number(b.getAttribute('data-v'));
+      [].forEach.call(звёзды.children, function (к) {
+        к.setAttribute('aria-checked', Number(к.getAttribute('data-v')) <= оценка ? 'true' : 'false');
+      });
+    });
+
+    var беда = форма.querySelector('.ngr-revfail');
+    function сказать(текст) {
+      беда.textContent = текст || '';
+      беда.style.display = текст ? '' : 'none';
+    }
+
+    var полка = форма.querySelector('.ngr-revfiles');
+    var поле = форма.querySelector('input[type=file]');
+    поле.addEventListener('change', function () {
+      var файлы = [].slice.call(поле.files || []);
+      поле.value = '';
+      файлы.forEach(function (ф) {
+        if (снимки.length >= 3) { сказать('Больше трёх снимков не поместится.'); return; }
+        сжатьСнимок(ф).then(function (данные) {
+          if (снимки.length >= 3) return;
+          снимки.push(данные);
+          var t = document.createElement('div');
+          t.className = 'ngr-revthumb';
+          t.innerHTML = '<img alt="Снимок к отзыву"><button type="button" aria-label="Убрать">×</button>';
+          t.querySelector('img').src = данные;
+          t.querySelector('button').onclick = function () {
+            var i = снимки.indexOf(данные);
+            if (i > -1) снимки.splice(i, 1);
+            t.remove();
+            сказать('');
+          };
+          полка.insertBefore(t, полка.firstChild);
+          сказать('');
+        }).catch(function (e) { сказать(e.message || 'Со снимком не вышло.'); });
+      });
+    });
+
+    var кнопка = форма.querySelector('.ngr-revsend');
+    var итог = форма.querySelector('.ngr-revsaid');
+    кнопка.addEventListener('click', function () {
+      if (!оценка) { сказать('Поставьте оценку — без неё отзыв не отправить.'); return; }
+      сказать('');
+      кнопка.disabled = true;
+      итог.textContent = 'Отправляем…';
+      accountPost('add', {
+        sku: String(sku),
+        rating: оценка,
+        text: (форма.querySelector('textarea').value || '').trim(),
+        photos: снимки
+      }, null, '/reviews/add').then(function (j) {
+        if (j && j.pass) запомнитьПропуск(j.pass);
+        if (!j || !j.ok) throw new Error((j && j.error) || 'не получилось');
+        итог.textContent = '';
+        // Отзыв уже на сервере — перечитываем список, чтобы человек
+        // сразу увидел свой отзыв, а не поверил на слово.
+        delete своиОтзывы[sku];
+        правоНаОтзыв = (правоНаОтзыв || []).filter(function (т) { return т.sku !== String(sku); });
+        форма.innerHTML = '<b>Спасибо, отзыв опубликован</b>' +
+          '<p>Он виден всем покупателям на этой странице.</p>';
+        fixPopupReviews(true);
+      }).catch(function (e) {
+        кнопка.disabled = false;
+        итог.textContent = '';
+        сказать(e.message === 'Failed to fetch'
+          ? 'Не получилось отправить — проверьте связь.'
+          : (e.message || 'Не получилось отправить отзыв.'));
+      });
+    });
+
+    box.appendChild(форма);
+  }
+
   var FIRST_SHOWN = 3;   // остальные — по кнопке, чтобы карточка не растягивалась
 
-  function renderReviews(box, sku, data) {
-    var n = data.n || 0;
-    if (!n) { box.innerHTML = ''; return; }
-    var list = data.list || [];
+  function renderReviews(box, sku, data, наши, можноОценить) {
+    наши = наши || [];
+    var n = (data.n || 0) + наши.length;
+    // Пустую карточку рисуем, только если и сказать нечего, и написать некому.
+    if (!n && !можноОценить) { box.innerHTML = ''; return; }
+    // Свои отзывы ставим первыми: они о том же товаре, но из нашего магазина,
+    // и покупателю важнее увидеть их, чем перенесённые с Ozon.
+    var list = наши.concat(data.list || []);
     var dist = [0, 0, 0, 0, 0];
     list.forEach(function (r) { if (r.r >= 1 && r.r <= 5) dist[r.r - 1]++; });
     var shown = list.length;
+    /*
+     * Средняя оценка. У Ozon она посчитана по всем оценкам, включая те,
+     * где отзыв не написан, поэтому складываем взвешенно, а не по головам
+     * показанных отзывов.
+     */
+    var суммаНаших = 0;
+    наши.forEach(function (r) { суммаНаших += Number(r.r) || 0; });
+    var средняя = n
+      ? ((Number(data.avg) || 0) * (data.n || 0) + суммаНаших) / n
+      : 0;
 
     var bars = '';
     for (var s = 5; s >= 1; s--) {
@@ -5791,7 +6021,8 @@
       return '<div class="ngr-rev"' + (i >= FIRST_SHOWN ? ' data-extra="1" style="display:none"' : '') + '>' +
         '<div class="ngr-rev__ava">👤</div>' +
         '<div class="ngr-rev__body">' +
-        '<div class="ngr-rev__top"><span class="ngr-rev__who">Покупатель Ozon</span>' +
+        '<div class="ngr-rev__top"><span class="ngr-rev__who"></span>' +
+        (r.own ? '<span class="ngr-rev__own">Покупал у нас</span>' : '') +
         (r.v ? '<span class="ngr-rev__ok">✓ Проверенная покупка</span>' : '') +
         '<span class="ngr-rev__date">' + (r.d || '').split('-').reverse().join('.') + '</span></div>' +
         '<div>' + stars(r.r) + '</div>' +
@@ -5804,19 +6035,27 @@
     box.innerHTML =
       '<h4>Отзывы покупателей</h4>' +
       '<div class="ngr-revhead">' +
-      '<div class="ngr-revscore"><div class="ngr-revbig">' + (data.avg || 0).toFixed(1) + '</div>' +
-      '<div><div>' + stars(data.avg || 0) + '</div>' +
+      '<div class="ngr-revscore"><div class="ngr-revbig">' + средняя.toFixed(1) + '</div>' +
+      '<div><div>' + stars(средняя) + '</div>' +
       '<div class="ngr-revcount">' + n + ' ' + plural(n, 'отзыв', 'отзыва', 'отзывов') + '</div></div></div>' +
       (shown ? '<div class="ngr-revbars">' + bars + '</div>' : '') + '</div>' + items +
       (hidden ? '<button type="button" class="ngr-revmore">Показать ещё ' + hidden + ' ' +
         plural(hidden, 'отзыв', 'отзыва', 'отзывов') + '</button>' : '') +
       (shown ? '' : '<div class="ngr-revnote">Покупатели поставили оценки, но не написали отзыв.</div>') +
-      '<div class="ngr-revnote">Оценки и отзывы оставили покупатели Ozon после получения заказа. ' +
+      '<div class="ngr-revnote">' +
+      (наши.length
+        ? 'Отзывы с пометкой «Покупал у нас» оставили покупатели nutry-go.ru после получения заказа. '
+        : '') +
+      'Остальные оценки и отзывы оставили покупатели Ozon после получения заказа. ' +
       'Мы показываем их как есть и ничего не удаляем.</div>';
 
-    // Текст отзыва вставляем как текст, а не разметку: его пишут покупатели.
+    // Текст отзыва и имя вставляем как текст, а не разметку: их пишут люди.
     var nodes = box.querySelectorAll('.ngr-rev__text');
-    list.forEach(function (r, i) { if (nodes[i]) nodes[i].textContent = r.x || ''; });
+    var имена = box.querySelectorAll('.ngr-rev__who');
+    list.forEach(function (r, i) {
+      if (nodes[i]) nodes[i].textContent = r.x || '';
+      if (имена[i]) имена[i].textContent = r.own ? (r.who || 'Покупатель') : 'Покупатель Ozon';
+    });
 
     var more = box.querySelector('.ngr-revmore');
     if (more) more.addEventListener('click', function () {
@@ -5830,10 +6069,12 @@
         : 'Свернуть отзывы';
       if (open) box.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     });
+
+    if (можноОценить) формаОтзыва(box, sku, можноОценить);
   }
 
   /** Развёрнутая карточка товара: сводка, распределение оценок и тексты. */
-  function fixPopupReviews() {
+  function fixPopupReviews(заново) {
     if (!rating || !skuOf) return;
     var pop = document.querySelector('.t-popup_show .t-catalog__prod-popup__container, ' +
       '.t-catalog__prod-popup__container, .t-store__prod-popup__container');
@@ -5842,7 +6083,7 @@
     if (!a) return;
     var sku = skuOf[a];
     var box = pop.querySelector('.ngr-revbox');
-    if (box && box.getAttribute('data-sku') === String(sku)) return;
+    if (box && !заново && box.getAttribute('data-sku') === String(sku)) return;
     reviewCss();
     if (!box) {
       box = document.createElement('div');
@@ -5856,14 +6097,29 @@
       else host.appendChild(box);
     }
     box.setAttribute('data-sku', String(sku));
-    var r = rating[sku];
-    if (!r || !r[0]) { box.innerHTML = ''; return; }
     box.innerHTML = '<h4>Отзывы покупателей</h4><div class="ngr-revnote">Загружаем…</div>';
-    if (texts[sku]) { renderReviews(box, sku, texts[sku]); return; }
-    fetch(API + '/catalog/reviews?sku=' + encodeURIComponent(sku))
-      .then(function (x) { return x.json(); })
-      .then(function (j) { texts[sku] = j; if (box.getAttribute('data-sku') === String(sku)) renderReviews(box, sku, j); })
-      .catch(function () { box.innerHTML = ''; });
+
+    /*
+     * Три источника сразу: оценки Ozon, наши собственные отзывы и право
+     * этого покупателя оставить свой. Раньше блок вовсе не рисовался,
+     * если у Ozon отзывов не было, — тогда на такой товар нельзя было бы
+     * написать первый отзыв.
+     */
+    var r = rating[sku];
+    var озон = (!r || !r[0])
+      ? Promise.resolve({ n: 0, avg: 0, list: [] })
+      : (texts[sku]
+        ? Promise.resolve(texts[sku])
+        : fetch(API + '/catalog/reviews?sku=' + encodeURIComponent(sku))
+          .then(function (x) { return x.json(); })
+          .then(function (j) { texts[sku] = j; return j; })
+          .catch(function () { return { n: 0, avg: 0, list: [] }; }));
+
+    Promise.all([озон, нашиОтзывы(sku), правоНаОтзывы()]).then(function (всё) {
+      if (box.getAttribute('data-sku') !== String(sku)) return;
+      var можно = (всё[2] || []).filter(function (т) { return String(т.sku) === String(sku); })[0];
+      renderReviews(box, sku, всё[0] || { n: 0, avg: 0, list: [] }, всё[1] || [], можно || null);
+    }).catch(function () { box.innerHTML = ''; });
   }
 
   /**
