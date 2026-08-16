@@ -4327,6 +4327,82 @@
     });
   }
 
+  /*
+   * Добор каталога из нашего указателя.
+   *
+   * Выдача Tilda регулярно оказывается неполной, и починка каждый раз своя.
+   * Замер 16.08: по запросу «в наличии» Tilda пишет в поле total 1185, а
+   * товаров отдаёт 277 и на этом заканчивает; перечисление брендов поднимает
+   * выдачу до 730, но и там доезжает не всё. Спорить с её указателем бесполезно
+   * — надёжнее знать самим.
+   *
+   * Сервер знает, что реально можно купить: артикул, цена, картинка, отзывы,
+   * живой остаток Ozon. Берём этот список и дополняем каталог тем, чего Tilda
+   * не прислала, — теми же карточками, которыми уже нарисованы полки.
+   * Первый шаг к решению Александра 16.08: источником каталога должен быть
+   * указатель воркера, а не выдача Tilda.
+   */
+  var всеКарточки = null;
+
+  fetch(API + '/catalog/cards')
+    .then(function (r) { return r.json(); })
+    .then(function (j) {
+      if (j && j.items && j.items.length) { всеКарточки = j.items; дополнитьКаталог(); }
+    })
+    .catch(function () {});
+
+  var доборСчёт = -1, доборКогда = 0, доборТаймер = null;
+
+  function убратьДобор(сетка) {
+    [].slice.call(сетка.querySelectorAll('[data-ngr-добор]')).forEach(function (e) { e.remove(); });
+  }
+
+  function дополнитьКаталог() {
+    if (!всеКарточки || !onCatalogPage()) return;
+    var сетка = document.querySelector('.t-catalog__card-list');
+    if (!сетка) return;
+
+    // При поиске и отборе не вмешиваемся: покупатель должен видеть ровно то,
+    // что нашлось, — то же правило, что и на главной.
+    if (идётОтбор()) { убратьДобор(сетка); доборСчёт = -1; return; }
+
+    /*
+     * Ждём, пока Tilda дорисует каталог.
+     *
+     * Она приносит его частями по 36 карточек. Если добрать сразу, мы вывалим
+     * почти весь каталог поверх первой страницы, а потом будем вычищать его
+     * по мере подгрузки — покупатель увидит мельтешение. Поэтому дополняем
+     * только когда число чужих карточек перестало меняться.
+     */
+    var чужие = [].slice.call(сетка.querySelectorAll('.js-product'));
+    if (чужие.length !== доборСчёт) {
+      доборСчёт = чужие.length;
+      доборКогда = Date.now();
+      убратьДобор(сетка);
+      // Мутаций больше может и не быть — придём сами.
+      clearTimeout(доборТаймер);
+      доборТаймер = setTimeout(дополнитьКаталог, 2200);
+      return;
+    }
+    if (Date.now() - доборКогда < 2000) return;
+
+    var занято = {};
+    чужие.forEach(function (k) { var a = article(k); if (a) занято[a] = 1; });
+    var нет = всеКарточки.filter(function (c) { return c.art && !занято[String(c.art)]; });
+
+    var наши = [].slice.call(сетка.querySelectorAll('[data-ngr-добор]'));
+    if (наши.length === нет.length) return;     // уже добрано ровно так же
+    убратьДобор(сетка);
+    if (!нет.length) return;
+
+    shelfCss();
+    нет.forEach(function (c) {
+      var карта = shelfCard(c);
+      карта.setAttribute('data-ngr-добор', '1');
+      сетка.appendChild(карта);
+    });
+  }
+
   function fixShelves() {
     if (!shelves) return;
     reviewCss(); shelfCss();
@@ -6895,7 +6971,7 @@
     самопроверка();
     fixPopup(); fixCards(); fixCart(); fixPromocode(); fixDupDelivery(); fixUnits(); fixBrands();
     initSearchGuard(); fixSearch(); initSmartSearch(); fixAccountButton(); fixAuthGate(); держатьФорму(); faqCss(); меткаКорзины(); значокВкладки();
-    fixRatings(); fixPopupReviews(); fixDescription(); fixDeliveryOrder(); fixCardPhotos(); fixPrices(); fixFilterValues(); fixRatingFilter(); applyRatingFilter(false); fixShelves(); fixSgr(); fixFav(); cartCss(); docsSearch(); filterBarCss(); trimFilterBar(); dropCartTip(); prefillCart(); pullProfileOnce(); buildSideFilters(); syncSideFilters(); fixUrlSort();
+    fixRatings(); fixPopupReviews(); fixDescription(); fixDeliveryOrder(); fixCardPhotos(); fixPrices(); fixFilterValues(); fixRatingFilter(); applyRatingFilter(false); fixShelves(); дополнитьКаталог(); fixSgr(); fixFav(); cartCss(); docsSearch(); filterBarCss(); trimFilterBar(); dropCartTip(); prefillCart(); pullProfileOnce(); buildSideFilters(); syncSideFilters(); fixUrlSort();
   }
 
   apply();
