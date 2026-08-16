@@ -5995,15 +5995,26 @@
       if (!box) {
         box = document.createElement('div');
         box.className = 'ngr-auth-stopper';
-        box.style.cssText = 'margin:12px 0;padding:14px 16px;border:1px solid #f0c9a3;' +
-          'background:#fff7ef;border-radius:12px;color:#7a4a12;font-size:14px;line-height:1.5';
-        box.innerHTML = '<b>Заказ оформляется из личного кабинета.</b><br>' +
-          'Так заказ, документы и история покупок останутся у вас под рукой.<br>' +
-          '<a href="#openmembersbar" style="display:inline-block;margin-top:8px;padding:9px 16px;' +
-          'background:#ff7a1a;color:#fff;border-radius:9px;font-weight:700;text-decoration:none">' +
-          'Войти или зарегистрироваться</a>';
-        if (btn && btn.parentNode) btn.parentNode.insertBefore(box, btn);
-        else f.insertBefore(box, f.firstChild);
+        box.style.cssText = 'margin:0 0 16px;padding:16px 18px;border:1px solid #f0c9a3;' +
+          'background:#fff7ef;border-radius:14px;color:#7a4a12;font-size:14px;line-height:1.5';
+        box.innerHTML = '<b>Сначала войдите — это займёт минуту.</b><br>' +
+          'Достаточно почты: пришлём код, и данные заказа подставятся сами. ' +
+          'Заказ, документы и история покупок останутся у вас под рукой.<br>' +
+          '<a href="#openmembersbar" style="display:inline-block;margin-top:10px;padding:11px 18px;' +
+          'background:#ff7a1a;color:#fff;border-radius:10px;font-weight:700;text-decoration:none">' +
+          'Войти или зарегистрироваться</a>' +
+          '<div style="margin-top:8px;font-size:13px;color:#9a7550">' +
+          'Уже заполненное не пропадёт — вернём после входа.</div>';
+        /*
+         * Плашка стоит ПЕРЕД полями, а не перед кнопкой оплаты.
+         *
+         * Раньше покупатель заполнял имя, телефон, почту, выбирал пункт
+         * выдачи — и только внизу узнавал, что нужен вход. После входа
+         * страница перезагружалась, и всё приходилось набирать заново
+         * (замечание Александра 16.08). Просить вход надо до работы, а не
+         * после неё.
+         */
+        f.insertBefore(box, f.firstChild);
       }
     });
   }
