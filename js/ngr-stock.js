@@ -4095,7 +4095,7 @@
    */
   function идётОтбор() {
     if (/tfc_/.test(location.search)) return true;
-    var поиск = document.querySelector('.t-catalog__filter-search input, .t-store__filter__search-input');
+    var поиск = document.querySelector('.js-catalog-filter-search, input[name="query"]');
     if (поиск && String(поиск.value || '').trim()) return true;
     return !!document.querySelector('.t-catalog__chosen-bar__item, .t-store__filter__chosen-item');
   }
@@ -4113,7 +4113,20 @@
 
     var чужие = [].slice.call(сетка.querySelectorAll('.js-product'));
     var видно = чужие.filter(function (k) { return k.getBoundingClientRect().width > 0; });
-    var надо = колонокПолки() * 2;
+    var колонок = колонокПолки();
+    var надо = колонок * 2;
+    /*
+     * Дополняем только обычную выдачу.
+     *
+     * Если своих карточек меньше ряда, значит показана не витрина, а
+     * что-то узкое — например, найденный товар. Добивать такой список
+     * посторонними товарами нельзя: покупатель решит, что это тоже
+     * находки. Проверка по числу надёжнее любых признаков поиска.
+     */
+    if (видно.length < колонок) {
+      добавленные.forEach(function (e) { e.remove(); });
+      return;
+    }
     var нехватка = надо - видно.length;
     if (нехватка === добавленные.length) return;    // уже дополнено ровно так же
     добавленные.forEach(function (e) { e.remove(); });
