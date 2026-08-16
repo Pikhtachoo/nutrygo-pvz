@@ -4081,6 +4081,64 @@
     }, 250);
   });
 
+  /*
+   * Ряд товаров на главной.
+   *
+   * Tilda рисует в нём восемь карточек, но часть товаров к этому моменту уже
+   * разобрали, и мы их прячем — покупателю доставалось шесть, ряд выходил
+   * рваным (замечание Александра 16.08: «в итоге всё равно 6»). Дополняем
+   * ряд своими карточками из той же подборки, что и полки ниже, и меняем
+   * их каждый час — статичная витрина приедается.
+   *
+   * Когда покупатель ищет или отбирает товар, не вмешиваемся вовсе: он
+   * должен видеть ровно то, что нашлось, без наших добавок.
+   */
+  function идётОтбор() {
+    if (/tfc_/.test(location.search)) return true;
+    var поиск = document.querySelector('.t-catalog__filter-search input, .t-store__filter__search-input');
+    if (поиск && String(поиск.value || '').trim()) return true;
+    return !!document.querySelector('.t-catalog__chosen-bar__item, .t-store__filter__chosen-item');
+  }
+
+  function дополнитьГлавную() {
+    if (!shelves || onCatalogPage()) return;
+    var сетка = document.querySelector('.t-catalog__card-list');
+    if (!сетка) return;
+
+    var добавленные = [].slice.call(сетка.querySelectorAll('[data-ngr-fill]'));
+    if (идётОтбор()) {
+      добавленные.forEach(function (e) { e.remove(); });
+      return;
+    }
+
+    var чужие = [].slice.call(сетка.querySelectorAll('.js-product'));
+    var видно = чужие.filter(function (k) { return k.getBoundingClientRect().width > 0; });
+    var надо = колонокПолки() * 2;
+    var нехватка = надо - видно.length;
+    if (нехватка === добавленные.length) return;    // уже дополнено ровно так же
+    добавленные.forEach(function (e) { e.remove(); });
+    if (нехватка <= 0) return;
+
+    // Что уже показано — второй раз не показываем.
+    var занято = {};
+    видно.forEach(function (k) { var a = article(k); if (a) занято[a] = 1; });
+
+    var запас = (shelves.byReviews || []).concat(shelves.byDiscount || [])
+      .filter(function (c) {
+        var a = String(c.art || '');
+        if (!a || занято[a]) return false;
+        занято[a] = 1;
+        return true;
+      });
+    if (!запас.length) return;
+
+    окноПодборки(запас, нехватка, 2).forEach(function (c) {
+      var карта = shelfCard(c);
+      карта.setAttribute('data-ngr-fill', '1');
+      сетка.appendChild(карта);
+    });
+  }
+
   function fixShelves() {
     if (!shelves) return;
     reviewCss(); shelfCss();
@@ -4107,6 +4165,8 @@
      * и на главной оставался обрубок в четыре товара вместо восьми
      * (замечание Александра 16.08). Теперь смотрим на содержимое.
      */
+    дополнитьГлавную();
+
     var верх = document.querySelector('.ngr-shelf-top .ngr-shelf');
     if (верх && !верх.querySelector('.ngr-sc') && shelves.byReviews.length) {
       buildShelf(верх, shelves.byReviews, 0);
