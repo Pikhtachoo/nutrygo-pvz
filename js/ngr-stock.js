@@ -4280,7 +4280,7 @@
       return;
     }
 
-    var чужие = [].slice.call(сетка.querySelectorAll('.js-product:not([data-ngr-fill])'));
+    var чужие = [].slice.call(сетка.querySelectorAll('.js-product'));
     var видно = чужие.filter(function (k) { return k.getBoundingClientRect().width > 0; });
     var колонок = колонокПолки();
     /*
@@ -4321,7 +4321,7 @@
     if (!запас.length) return;
 
     окноПодборки(запас, нехватка, 2).forEach(function (c) {
-      var карта = копияКарточки(c);
+      var карта = shelfCard(c);
       карта.setAttribute('data-ngr-fill', '1');
       сетка.appendChild(карта);
     });
@@ -4342,93 +4342,9 @@
    * Первый шаг к решению Александра 16.08: источником каталога должен быть
    * указатель воркера, а не выдача Tilda.
    */
-  /*
-   * Наша карточка — копия настоящей.
-   *
-   * Требование Александра 16.08: «все карточки должны быть идентичны друг
-   * другу». Своей вёрсткой этого не добиться — у карточки Tilda есть плашка
-   * цены, отметка «Проверен: СГР есть», звёзды с числом отзывов, «В корзину»
-   * со счётчиком количества и кнопка «Подробнее», и всё это дорисовывается
-   * разными проходами. Поэтому берём соседнюю карточку как образец, копируем
-   * её и подставляем свой товар.
-   *
-   * Наши пометки с копии снимаем: по ним проходы узнают, что карточка уже
-   * оформлена. Без этого копия осталась бы с чужими звёздами и чужой ценой.
-   */
-  function образецКарточки() {
-    return document.querySelector('.js-product:not([data-ngr-fill]):not([data-ngr-добор])');
-  }
-
-  function копияКарточки(c) {
-    var образец = образецКарточки();
-    // Копировать нечего — рисуем как раньше: неказистая карточка лучше, чем
-    // пропавший товар.
-    if (!образец) return shelfCard(c);
-
-    var к = образец.cloneNode(true);
-    ['data-ngr-prepared', 'data-ngr-rate', 'data-ngr-sgr', 'data-ngr-fav',
-     'data-ngr-gal', 'data-ngr-rate-hidden'].forEach(function (a) { к.removeAttribute(a); });
-    [].slice.call(к.querySelectorAll('.ngr-rate,.ngr-sgr,.ngr-oldprice,.ngr-off,.ngr-gal,.ngr-galimg,.ngr-fav'))
-      .forEach(function (e) { e.remove(); });
-    var стиль = к.querySelector('[data-ngr-styled]');
-    if (стиль) стиль.removeAttribute('data-ngr-styled');
-
-    var uid = String(c.uid || '');
-    var адрес = uid ? ('/tproduct/' + uid) : String(c.url || '#');
-    к.setAttribute('data-product-uid', uid);
-    к.setAttribute('data-product-gen-uid', uid);
-    к.setAttribute('data-product-url', адрес);
-    к.setAttribute('data-product-img', String(c.img || ''));
-    // Остаток нужен корзине: по нему она не даёт заказать больше, чем есть.
-    к.setAttribute('data-product-inv', String(c.left == null ? 10 : c.left));
-    [].slice.call(к.querySelectorAll('a')).forEach(function (a) {
-      if (a.getAttribute('href')) a.setAttribute('href', адрес);
-    });
-
-    var фон = к.querySelector('.js-product-img');
-    if (фон) фон.style.backgroundImage = "url('" + String(c.img || '') + "')";
-    // Второй снимок у образца чужой, а своего у нас пока нет: галерею
-    // дорисует общий проход, он же сходит за фотографиями в Ozon.
-    var второй = к.querySelector('.t-catalog__card__bgimg_second');
-    if (второй) второй.style.backgroundImage = 'none';
-
-    var имя = к.querySelector('.js-product-name');
-    if (имя) имя.textContent = String(c.title || '');
-    var арт = к.querySelector('.js-product-sku');
-    if (арт) арт.textContent = String(c.art);
-
-    var цена = к.querySelector('.js-product-price');
-    if (цена) {
-      цена.textContent = String(c.price);
-      цена.setAttribute('data-product-price-def', String(c.price));
-      цена.setAttribute('data-product-price-def-str', String(c.price));
-    }
-    var старая = к.querySelector('.js-catalog-prod-price-old-val');
-    if (старая) старая.textContent = c.old ? String(c.old) : '';
-    var гнездоСтарой = к.querySelector('.t-catalog__card__price_old');
-    if (гнездоСтарой) гнездоСтарой.style.display = c.old ? '' : 'none';
-
-    // Образец мог быть уже в корзине — копия начинается с чистого «В корзину».
-    var счётчик = к.querySelector('.ng2-brand-qty');
-    if (счётчик) счётчик.hidden = true;
-    var купить = к.querySelector('.ng2-brand-buy');
-    if (купить) купить.hidden = false;
-
-    return к;
-  }
-
   var всеКарточки = null;
 
-  /*
-   * `f=2` — не украшение, а метка состава ответа.
-   *
-   * Ответ лежит в кэше браузера и на границе Cloudflare четверть часа.
-   * Когда в карточку добавили внутренний номер товара, витрина ещё какое-то
-   * время получала прежний список — без номера, и копия карточки не попадала
-   * в корзину. Меняем адрес — меняется и ключ кэша. Менять при каждом
-   * изменении состава полей.
-   */
-  fetch(API + '/catalog/cards?f=2')
+  fetch(API + '/catalog/cards')
     .then(function (r) { return r.json(); })
     .then(function (j) {
       if (j && j.items && j.items.length) { всеКарточки = j.items; дополнитьКаталог(); }
@@ -4458,9 +4374,7 @@
      * по мере подгрузки — покупатель увидит мельтешение. Поэтому дополняем
      * только когда число чужих карточек перестало меняться.
      */
-    // Свои карточки в счёт не идут: они тоже .js-product, иначе витрина
-    // решила бы, что Tilda прислала больше, чем на самом деле.
-    var чужие = [].slice.call(сетка.querySelectorAll('.js-product:not([data-ngr-добор])'));
+    var чужие = [].slice.call(сетка.querySelectorAll('.js-product'));
     if (чужие.length !== доборСчёт) {
       доборСчёт = чужие.length;
       доборКогда = Date.now();
@@ -4483,7 +4397,7 @@
 
     shelfCss();
     нет.forEach(function (c) {
-      var карта = копияКарточки(c);
+      var карта = shelfCard(c);
       карта.setAttribute('data-ngr-добор', '1');
       сетка.appendChild(карта);
     });
