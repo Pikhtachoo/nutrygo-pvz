@@ -2178,9 +2178,28 @@
       if (lines.length) {
         var a1 = accordion('Описание', false);
         var b1 = a1.querySelector('.ngr-acc__body');
-        lines.join('\n\n').split('\n\n').forEach(function (p) {
-          var el = document.createElement('p'); el.textContent = p; b1.appendChild(el);
-        });
+        // Разметку, приехавшую текстом, превращаем в списки и абзацы:
+        // покупатель читал «84% белка</li><li>9403 мг» (замечание
+        // Александра 16.08). На страницу всё равно кладём только текст.
+        var блоки = разобратьОписание(lines.join('\n\n'));
+        if (блоки && блоки.length) {
+          блоки.forEach(function (б) {
+            if (б.вид === 'список') {
+              var ul = document.createElement('ul');
+              ul.className = 'ngr-desclist';
+              б.пункты.forEach(function (п) {
+                var li = document.createElement('li'); li.textContent = п; ul.appendChild(li);
+              });
+              b1.appendChild(ul);
+              return;
+            }
+            var pб = document.createElement('p'); pб.textContent = б.текст; b1.appendChild(pб);
+          });
+        } else {
+          lines.join('\n\n').split('\n\n').forEach(function (p) {
+            var el = document.createElement('p'); el.textContent = p; b1.appendChild(el);
+          });
+        }
         descHost.appendChild(a1);
       }
       if (specs.length) {
