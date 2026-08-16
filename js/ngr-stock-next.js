@@ -5857,17 +5857,31 @@
         im.onerror = function () { беда(new Error('не удалось открыть снимок')); };
         im.onload = function () {
           var предел = 1280;
-          var k = Math.min(1, предел / Math.max(im.width, im.height));
-          var cv = document.createElement('canvas');
-          cv.width = Math.max(1, Math.round(im.width * k));
-          cv.height = Math.max(1, Math.round(im.height * k));
-          cv.getContext('2d').drawImage(im, 0, 0, cv.width, cv.height);
-          var кач = 0.82, данные = cv.toDataURL('image/jpeg', кач);
-          // 300 Кб — предел, который принимает сервер; считаем по base64.
-          while (данные.length - данные.indexOf(',') - 1 > 300000 && кач > 0.4) {
-            кач -= 0.12;
+          var данные = '';
+          function вес(d) { return d.length - d.indexOf(',') - 1; }
+          /*
+           * 300 Кб — предел, который принимает сервер.
+           *
+           * Сначала жертвуем качеством, а если и на низком не уложились
+           * (так бывает с пёстрыми снимками), уменьшаем сам размер. Иначе
+           * человек получил бы отказ уже после того, как всё написал.
+           */
+          for (var шаг = 0; шаг < 4; шаг++) {
+            var k = Math.min(1, предел / Math.max(im.width, im.height));
+            var cv = document.createElement('canvas');
+            cv.width = Math.max(1, Math.round(im.width * k));
+            cv.height = Math.max(1, Math.round(im.height * k));
+            cv.getContext('2d').drawImage(im, 0, 0, cv.width, cv.height);
+            var кач = 0.82;
             данные = cv.toDataURL('image/jpeg', кач);
+            while (вес(данные) > 300000 && кач > 0.4) {
+              кач -= 0.12;
+              данные = cv.toDataURL('image/jpeg', кач);
+            }
+            if (вес(данные) <= 300000) break;
+            предел = Math.round(предел * 0.75);
           }
+          if (вес(данные) > 300000) { беда(new Error('снимок не удалось ужать, попробуйте другой')); return; }
           готово(данные);
         };
         im.src = rd.result;
