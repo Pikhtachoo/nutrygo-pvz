@@ -2615,9 +2615,16 @@
     var заказы = список.map(function (o) {
       return {
         id: String(orderNo(o) || ''),
-        // Сумма заказа, а не итог со скидкой: сервер сверяет её со своей
-        // записью, а туда попадает то, что ушло в оплату.
-        amount: Number(o.amount || o.amount_final || o.amount_total || 0),
+        /*
+         * Суммы заказа. Tilda хранит их несколько, и они расходятся:
+         * у заказа 1870945661 показано 738, а в оплату ушло 369. Сервер
+         * сверяет с тем, что записано у нас, поэтому шлём все известные —
+         * совпадения любой из них достаточно, чтобы узнать свой заказ.
+         */
+        amount: Number(o.amount_total || o.amount_final || o.amount || 0),
+        amounts: [o.amount_total, o.amount_final, o.amount]
+          .map(function (v) { return Math.round(Number(v) || 0); })
+          .filter(function (v) { return v > 0; }),
         created: String(o.created || ''),
         // Состояние заказа у Tilda. Нашему серверу она его не отдаёт
         // (проверено 16.08: на живой токен возвращает ноль заказов),
