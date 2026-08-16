@@ -6102,7 +6102,11 @@
       'max-width:560px;margin:0 auto;padding:16px 18px;border-radius:14px;' +
       'background:#fff;border:1px solid #dfe3e8;box-shadow:0 12px 40px rgba(0,0,0,.18);' +
       'font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;' +
-      'color:#222;max-height:80vh;overflow:auto';
+      'color:#222;max-height:80vh;overflow:auto;' +
+      // Панель рождается, пока загрузочный стиль ещё прячет страницу,
+      // а от Tilda ей достаётся transition: all. Переход тогда застревает
+      // на скрытом состоянии, и панель не показывается. Задаём прямо.
+      'visibility:visible!important;transition:none!important';
     окно.innerHTML = '<b>Самопроверка аккаунта</b><div class="ngr-chk__body">' +
       'Спрашиваем сервер…</div>' +
       '<button type="button" style="margin-top:12px;padding:9px 16px;border:0;border-radius:9px;' +
