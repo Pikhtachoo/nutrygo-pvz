@@ -246,224 +246,6 @@
       .catch(function () {});
   }
 
-  /* ---------- Наши товары внутри ответа Tilda ---------- */
-
-  /*
-   * Почему так, а не дорисовкой карточек.
-   *
-   * Выдача Tilda регулярно оказывается неполной, и до 16.08 это лечили тем,
-   * что дорисовывали недостающие карточки своей вёрсткой поверх готовой
-   * страницы. Так карточки не совпадали с соседними, а когда их сделали
-   * копией настоящей — ряд на главной начал мерцать: Tilda перерисовывает его
-   * целиком, наши карточки сносило, витрина возвращала их обратно, и так по
-   * кругу (замечание Александра 16.08 со снимком).
-   *
-   * Правильное место — не после отрисовки, а до неё. Tilda ходит за каталогом
-   * одним способом, XHR (проверено замером: 4 запроса XHR, ни одного fetch),
-   * и читает ответ как текст. Значит наши товары можно положить прямо в её
-   * ответ: дальше она рисует их сама, теми же карточками, с ценой, отметкой
-   * СГР, отзывами, «В корзину» и «Подробнее». Спорить с её вёрсткой больше
-   * не нужно — карточки одинаковы по построению.
-   *
-   * Заодно из ответа убирается то, чего нет в наличии: раньше такие карточки
-   * прятались уже на странице, и ряд оставался с дырами.
-   */
-  var КАРТОЧКИ_КЛЮЧ = 'ngr:cards';
-  var ОСТАТКИ_КЛЮЧ = 'ngr:stockmap';
-  var ЗАПАС_СВЕЖЕСТЬ = 30 * 60 * 1000;
-
-  function изПамяти(ключ) {
-    try {
-      var s = JSON.parse(localStorage.getItem(ключ) || 'null');
-      if (s && s.when && s.data) return s;
-    } catch (e) {}
-    return null;
-  }
-  function вПамять(ключ, data) {
-    try { localStorage.setItem(ключ, JSON.stringify({ when: Date.now(), data: data })); } catch (e) {}
-  }
-
-  /*
-   * Запасы держим в памяти браузера.
-   *
-   * Ответ Tilda правится на месте, синхронно, — ждать загрузки списка там
-   * негде. Поэтому прошлый список лежит наготове, а свежий подтягивается
-   * в фоне и работает со следующего запроса.
-   */
-  var НАШИ_ТОВАРЫ = (изПамяти(КАРТОЧКИ_КЛЮЧ) || {}).data || null;
-  var ОСТАТКИ_КАРТА = (изПамяти(ОСТАТКИ_КЛЮЧ) || {}).data || null;
-
-  (function обновитьЗапасы() {
-    var к = изПамяти(КАРТОЧКИ_КЛЮЧ);
-    if (!к || Date.now() - к.when > ЗАПАС_СВЕЖЕСТЬ) {
-      fetch(API + '/catalog/cards?f=2')
-        .then(function (r) { return r.json(); })
-        .then(function (j) {
-          if (j && j.items && j.items.length) { НАШИ_ТОВАРЫ = j.items; вПамять(КАРТОЧКИ_КЛЮЧ, j.items); }
-        })
-        .catch(function () {});
-    }
-    var о = изПамяти(ОСТАТКИ_КЛЮЧ);
-    if (!о || Date.now() - о.when > ЗАПАС_СВЕЖЕСТЬ) {
-      fetch(API + '/catalog/stock')
-        .then(function (r) { return r.json(); })
-        .then(function (j) {
-          if (j && j.stock) { ОСТАТКИ_КАРТА = j.stock; вПамять(ОСТАТКИ_КЛЮЧ, j.stock); }
-        })
-        .catch(function () {});
-    }
-  })();
-
-  // Что Tilda прислала и что мы добавили за текущий обход каталога.
-  var виденныеТовары = {};
-  var подмешанныеТовары = {};
-
-  function числоИзАдреса(u, имя) {
-    var m = String(u).match(new RegExp('[?&]' + имя + '=(\\d+)'));
-    return m ? Number(m[1]) : 0;
-  }
-
-  /*
-   * Своё добавляем только в полную витрину.
-   *
-   * Признаков два, и оба нужны: наша метка (значит перечень брендов ставили
-   * мы, а не покупатель) и отсутствие любых других отборов — формы выпуска,
-   * страны, цены, поиска. Иначе в список найденного попадут посторонние
-   * товары, и покупатель сочтёт их находками.
-   */
-  function чистаяВыдача(url) {
-    var u = String(url);
-    if (u.indexOf('ngrall=1') < 0) return false;
-    if (/[?&](q|query|search)=/.test(u)) return false;
-    var прочие = u.replace(/filters%5B(quantity|brand)%5D[^&]*/g, '')
-                  .replace(/filters\[(quantity|brand)\][^&]*/g, '');
-    if (прочие.indexOf('filters%5B') > -1 || прочие.indexOf('filters[') > -1) return false;
-    return true;
-  }
-
-  /*
-   * Наш товар в том виде, в каком его понимает Tilda.
-   *
-   * Форму берём у её же товара из этого ответа: полей два десятка, и
-   * выдумывать их значения — верный способ получить пустую карточку.
-   * Заменяем только то, что относится к товару, а чужое описание и
-   * характеристики образца обнуляем.
-   */
-  function товарДляTilda(образец, c) {
-    var n = JSON.parse(JSON.stringify(образец));
-    n.uid = String(c.uid || '');
-    n.sku = String(c.art);
-    n.title = String(c.title || '');
-    n.price = String(c.price);
-    n.priceold = c.old ? String(c.old) : '';
-    n.gallery = JSON.stringify([{ img: String(c.img || '') }]);
-    n.url = String(c.url || '');
-    n.quantity = String(c.left == null ? 10 : c.left);
-    n.externalid = String(c.art);
-    n.text = '';
-    n.descr = '';
-    n.characteristics = [];
-    n.mark = '';
-    return n;
-  }
-
-  function подмешатьСвои(текст, url) {
-    if (!НАШИ_ТОВАРЫ || !ОСТАТКИ_КАРТА) return текст;
-    var j = JSON.parse(текст);
-    var список = j.products;
-    if (!список || !список.length) return текст;
-
-    var слой = числоИзАдреса(url, 'slice') || 1;
-    var размер = числоИзАдреса(url, 'size') || список.length;
-    // Новый обход — забываем прошлый.
-    if (слой <= 1) { виденныеТовары = {}; подмешанныеТовары = {}; }
-
-    var было = список.length;
-    /*
-     * Артикула нет в снимке — значит остатка нет.
-     *
-     * Это правило витрины с самого начала: снимок перечисляет всё, что есть
-     * у Ozon. Пока оно не было применено здесь, снятые с продажи товары
-     * доезжали до страницы и прятались уже на ней — ряд оставался с дырами
-     * (замечание Александра 16.08). Проверка на осмысленный размер снимка
-     * нужна, чтобы обрезанный ответ не вычистил витрину целиком.
-     */
-    var снимокПолон = Object.keys(ОСТАТКИ_КАРТА).length > 50;
-    var живые = список.filter(function (p) {
-      var о = ОСТАТКИ_КАРТА[String(p.sku)];
-      if (о == null) return !снимокПолон;
-      return Number(о) >= 4;
-    });
-    живые.forEach(function (p) { виденныеТовары[String(p.sku)] = 1; });
-    var убрано = было - живые.length;
-
-    /*
-     * Когда добавлять своё.
-     *
-     * Каталог Tilda отдаёт частями. Добавить на середине обхода нельзя: тот
-     * же товар она пришлёт сама на следующей странице, и он задвоится —
-     * проверено 16.08, 14 дублей. Поэтому в каталоге добавляем только на
-     * последней странице, когда известно всё, что она прислала.
-     *
-     * Ряд на главной — не обход, а один запрос. Там добавляем сразу и ровно
-     * взамен снятых с продажи, иначе ряд остаётся с дырами.
-     */
-    var всего = Number(j.total || 0);
-    var последняя = было < размер || (всего > 0 && слой * размер >= всего);
-    var сколько = 0;
-    if (чистаяВыдача(url)) {
-      if (onCatalogPage()) сколько = последняя ? -1 : 0;
-      else сколько = убрано;
-    }
-
-    var добавлено = 0;
-    if (сколько !== 0) {
-      var нет = НАШИ_ТОВАРЫ.filter(function (c) {
-        return c.art && !виденныеТовары[String(c.art)] && !подмешанныеТовары[String(c.art)];
-      });
-      if (сколько > 0) нет = нет.slice(0, сколько);
-      var образец = список[0];
-      нет.forEach(function (c) {
-        живые.push(товарДляTilda(образец, c));
-        подмешанныеТовары[String(c.art)] = 1;
-        добавлено++;
-      });
-    }
-
-    j.products = живые;
-    j.total = Math.max(живые.length, (всего || было) - убрано + добавлено);
-    return JSON.stringify(j);
-  }
-
-  /*
-   * Ответ правим на месте: подменяем чтение responseText и response у
-   * конкретного запроса. Так не важно, каким обработчиком Tilda читает ответ
-   * и в каком порядке он навешан.
-   */
-  function перехватитьОтвет(xhr, url) {
-    if (typeof url !== 'string' || url.indexOf('getproductslist') < 0) return;
-    var готовое = null;
-    var читать = function (описание) {
-      var сырое = описание.get.call(xhr);
-      if (xhr.readyState !== 4 || typeof сырое !== 'string') return сырое;
-      if (готовое === null) {
-        // Что бы ни случилось — покупатель должен увидеть каталог.
-        try { готовое = подмешатьСвои(сырое, url); } catch (e) { готовое = сырое; }
-      }
-      return готовое;
-    };
-    ['responseText', 'response'].forEach(function (имя) {
-      var описание = Object.getOwnPropertyDescriptor(XMLHttpRequest.prototype, имя);
-      if (!описание || !описание.get) return;
-      try {
-        Object.defineProperty(xhr, имя, {
-          configurable: true,
-          get: function () { return читать(описание); }
-        });
-      } catch (e) {}
-    });
-  }
-
   function askOnlyInStock() {
     // Выключатель для проверки: с ?ngr=off страница работает так, будто
     // поправки нет. Нужен, чтобы отличать наши поломки от чужих.
@@ -507,10 +289,6 @@
       if (ЗАПРОС_БРЕНДОВ &&
           u.indexOf('filters%5Bbrand%5D') < 0 && u.indexOf('filters[brand]') < 0) {
         u += (u.indexOf('?') < 0 ? '?' : '&') + ЗАПРОС_БРЕНДОВ;
-        // Метка «это вся витрина, а не выбор покупателя». По ней ответ узнаёт,
-        // можно ли добавлять свои товары: в отобранный список добавлять
-        // нельзя — покупатель решит, что это тоже находки.
-        u += '&ngrall=1';
       }
       // Размер страницы увеличиваем только при смене сортировки на самой
       // странице. На первой загрузке (getallparts) Tilda из большого ответа
@@ -533,7 +311,6 @@
     XMLHttpRequest.prototype.open = function (m, u) {
       var rest = [].slice.call(arguments, 2);
       try { u = fix(u); } catch (e) {}
-      try { перехватитьОтвет(this, u); } catch (e) {}
       return ox.apply(this, [m, u].concat(rest));
     };
   }
@@ -4550,6 +4327,81 @@
     });
   }
 
+  /*
+   * Добор каталога из нашего указателя.
+   *
+   * Выдача Tilda регулярно оказывается неполной, и починка каждый раз своя.
+   * Замер 16.08: по запросу «в наличии» Tilda пишет в поле total 1185, а
+   * товаров отдаёт 277 и на этом заканчивает; перечисление брендов поднимает
+   * выдачу до 730, но и там доезжает не всё. Спорить с её указателем бесполезно
+   * — надёжнее знать самим.
+   *
+   * Сервер знает, что реально можно купить: артикул, цена, картинка, отзывы,
+   * живой остаток Ozon. Берём этот список и дополняем каталог тем, чего Tilda
+   * не прислала, — теми же карточками, которыми уже нарисованы полки.
+   * Первый шаг к решению Александра 16.08: источником каталога должен быть
+   * указатель воркера, а не выдача Tilda.
+   */
+  var всеКарточки = null;
+
+  fetch(API + '/catalog/cards')
+    .then(function (r) { return r.json(); })
+    .then(function (j) {
+      if (j && j.items && j.items.length) { всеКарточки = j.items; дополнитьКаталог(); }
+    })
+    .catch(function () {});
+
+  var доборСчёт = -1, доборКогда = 0, доборТаймер = null;
+
+  function убратьДобор(сетка) {
+    [].slice.call(сетка.querySelectorAll('[data-ngr-добор]')).forEach(function (e) { e.remove(); });
+  }
+
+  function дополнитьКаталог() {
+    if (!всеКарточки || !onCatalogPage()) return;
+    var сетка = document.querySelector('.t-catalog__card-list');
+    if (!сетка) return;
+
+    // При поиске и отборе не вмешиваемся: покупатель должен видеть ровно то,
+    // что нашлось, — то же правило, что и на главной.
+    if (идётОтбор()) { убратьДобор(сетка); доборСчёт = -1; return; }
+
+    /*
+     * Ждём, пока Tilda дорисует каталог.
+     *
+     * Она приносит его частями по 36 карточек. Если добрать сразу, мы вывалим
+     * почти весь каталог поверх первой страницы, а потом будем вычищать его
+     * по мере подгрузки — покупатель увидит мельтешение. Поэтому дополняем
+     * только когда число чужих карточек перестало меняться.
+     */
+    var чужие = [].slice.call(сетка.querySelectorAll('.js-product'));
+    if (чужие.length !== доборСчёт) {
+      доборСчёт = чужие.length;
+      доборКогда = Date.now();
+      убратьДобор(сетка);
+      // Мутаций больше может и не быть — придём сами.
+      clearTimeout(доборТаймер);
+      доборТаймер = setTimeout(дополнитьКаталог, 2200);
+      return;
+    }
+    if (Date.now() - доборКогда < 2000) return;
+
+    var занято = {};
+    чужие.forEach(function (k) { var a = article(k); if (a) занято[a] = 1; });
+    var нет = всеКарточки.filter(function (c) { return c.art && !занято[String(c.art)]; });
+
+    var наши = [].slice.call(сетка.querySelectorAll('[data-ngr-добор]'));
+    if (наши.length === нет.length) return;     // уже добрано ровно так же
+    убратьДобор(сетка);
+    if (!нет.length) return;
+
+    shelfCss();
+    нет.forEach(function (c) {
+      var карта = shelfCard(c);
+      карта.setAttribute('data-ngr-добор', '1');
+      сетка.appendChild(карта);
+    });
+  }
 
   function fixShelves() {
     if (!shelves) return;
@@ -7119,7 +6971,7 @@
     самопроверка();
     fixPopup(); fixCards(); fixCart(); fixPromocode(); fixDupDelivery(); fixUnits(); fixBrands();
     initSearchGuard(); fixSearch(); initSmartSearch(); fixAccountButton(); fixAuthGate(); держатьФорму(); faqCss(); меткаКорзины(); значокВкладки();
-    fixRatings(); fixPopupReviews(); fixDescription(); fixDeliveryOrder(); fixCardPhotos(); fixPrices(); fixFilterValues(); fixRatingFilter(); applyRatingFilter(false); fixShelves(); fixSgr(); fixFav(); cartCss(); docsSearch(); filterBarCss(); trimFilterBar(); dropCartTip(); prefillCart(); pullProfileOnce(); buildSideFilters(); syncSideFilters(); fixUrlSort();
+    fixRatings(); fixPopupReviews(); fixDescription(); fixDeliveryOrder(); fixCardPhotos(); fixPrices(); fixFilterValues(); fixRatingFilter(); applyRatingFilter(false); fixShelves(); дополнитьКаталог(); fixSgr(); fixFav(); cartCss(); docsSearch(); filterBarCss(); trimFilterBar(); dropCartTip(); prefillCart(); pullProfileOnce(); buildSideFilters(); syncSideFilters(); fixUrlSort();
   }
 
   apply();
