@@ -3837,10 +3837,17 @@
       }
     } catch (e) { return; }
     var пусто = сколько < 1;
-    var корень = document.documentElement;
-    if (корень.classList.contains('ngr-corzina-pusta') !== пусто) {
-      корень.classList.toggle('ngr-corzina-pusta', пусто);
-    }
+    document.documentElement.classList.toggle('ngr-corzina-pusta', пусто);
+    // Правилом стиля это не убрать: Tilda задаёт показ счётчика с большей
+    // силой. Ставим прямо на элемент — тогда решает наш стиль.
+    document.querySelectorAll('.t706__carticon-counter').forEach(function (c) {
+      var надо = пусто ? 'none' : '';
+      if (пусто) {
+        if (c.style.display !== 'none') c.style.setProperty('display', 'none', 'important');
+      } else if (c.style.display === 'none') {
+        c.style.removeProperty('display');
+      }
+    });
   }
 
   function money(n) { return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + ' ₽'; }
