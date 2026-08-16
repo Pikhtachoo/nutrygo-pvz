@@ -2603,8 +2603,16 @@
     var заказы = список.map(function (o) {
       return {
         id: String(orderNo(o) || ''),
-        amount: Number(o.amount_total || o.amount_final || o.amount || 0),
-        created: String(o.created || '')
+        // Сумма заказа, а не итог со скидкой: сервер сверяет её со своей
+        // записью, а туда попадает то, что ушло в оплату.
+        amount: Number(o.amount || o.amount_final || o.amount_total || 0),
+        created: String(o.created || ''),
+        // Состояние заказа у Tilda. Нашему серверу она его не отдаёт
+        // (проверено 16.08: на живой токен возвращает ноль заказов),
+        // поэтому передаём вместе с доказательством владения заказом.
+        status: (o.status && typeof o.status === 'object')
+          ? String(o.status.name || o.status.title || '')
+          : String(o.status || o.delivery_status || o.state || '')
       };
     }).filter(function (o) { return o.id; });
     return заказы.length ? { email: почта, orders: заказы } : null;
