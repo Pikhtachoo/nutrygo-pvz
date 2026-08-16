@@ -2665,7 +2665,12 @@
   function pushProfile() {
     var cur = profileSettings();
     return accountPost('profile', {
-      profile: { nick: cur.nick || '', avatar: cur.avatar || '', photo: cur.photo || '' }
+      // Имя и телефон здесь не правятся, но передаём их обратно: запись
+      // профиля на сервере полная, и молчание стёрло бы данные заказа.
+      profile: {
+        nick: cur.nick || '', avatar: cur.avatar || '', photo: cur.photo || '',
+        name: cur.name || '', phone: cur.phone || ''
+      }
     }).then(function (j) { return applyAccountSnapshot(j); });
   }
 
@@ -3285,6 +3290,14 @@
     // рядом — его реферальная ссылка (запрос Александра 08.08).
     var me = profileSettings();
     var oldLocalPhoto = String((legacyProfileSettings() || {}).photo || '');
+    /*
+     * Имя и телефон: сперва то, что человек указал в настройках Tilda,
+     * иначе — данные последнего заказа, сохранённые в профиле на сервере.
+     * Раньше на этом месте стоял прочерк, хотя заказ уже был оформлен.
+     */
+    var имяДок = p.name || me.name || '';
+    var телДок = p.phone || me.phone || '';
+    var изЗаказа = (!p.name && !!me.name) || (!p.phone && !!me.phone);
     host.innerHTML = '<h2>Профиль</h2>' +
       '<div class="ngr-cab__card">' +
       '<div class="ngr-cab__field"><u>Как вас показывать</u>' +
@@ -3320,9 +3333,14 @@
       '<div class="ngr-cab__hint">Поделитесь ссылкой — мы увидим, что покупатель пришёл от вас.</div>' +
       '</div>' +
       '<div class="ngr-cab__card">' +
-      '<div class="ngr-cab__field"><u>Имя в документах</u><b>' + (p.name || '—') + '</b></div>' +
+      '<div class="ngr-cab__field"><u>Имя в документах</u><b>' + (имяДок || '—') + '</b></div>' +
       '<div class="ngr-cab__field"><u>Электронная почта</u><b>' + (p.login || '—') + '</b></div>' +
-      '<div class="ngr-cab__field"><u>Телефон</u><b>' + (p.phone || '—') + '</b></div>' +
+      '<div class="ngr-cab__field"><u>Телефон</u><b>' +
+      (телДок ? телефонДляГлаз(телДок) : '—') + '</b></div>' +
+      (изЗаказа
+        ? '<div class="ngr-cab__hint">Взято из вашего последнего заказа — ' +
+          'в следующий раз подставим сами.</div>'
+        : '') +
       '<div class="ngr-cab__hint">Эти данные используются для заказов. Изменить их и пароль можно в ' +
       '<a href="/members/profile/" style="color:#2f6ba8">настройках профиля</a>.</div>' +
       '</div>';
@@ -4229,6 +4247,13 @@
     return d.length === 11 ? d : '';
   }
 
+  /** 79161234567 → +7 (916) 123-45-67. Незнакомое оставляем как есть. */
+  function телефонДляГлаз(v) {
+    var d = String(v || '').replace(/\D/g, '');
+    if (d.length !== 11 || d.charAt(0) !== '7') return String(v || '');
+    return '+7 (' + d.slice(1, 4) + ') ' + d.slice(4, 7) + '-' + d.slice(7, 9) + '-' + d.slice(9);
+  }
+
   function вписать(поле, знач) {
     if (!поле || !знач || поле === document.activeElement) return false;
     if (String(поле.value || '').trim()) return false;
@@ -4297,11 +4322,28 @@
     var скрытое = (f.querySelector('input[name="Phone"]') || {}).value || '';
     var маска = (f.querySelector('input.t-input-phonemask') || {}).value || '';
     var a = String(скрытое).replace(/\D/g, ''), b = String(маска).replace(/\D/g, '');
+    var имяЗаказа = ((f.querySelector('input[name="Name"]') || {}).value || '').trim();
+    var телефонЗаказа = цифрыТелефона(a.length >= b.length ? a : b);
     запомнитьПокупателя({
-      name: ((f.querySelector('input[name="Name"]') || {}).value || '').trim(),
+      name: имяЗаказа,
       email: ((f.querySelector('input[name="Email"]') || {}).value || '').trim(),
-      phone: цифрыТелефона(a.length >= b.length ? a : b)
+      phone: телефонЗаказа
     });
+    /*
+     * То же самое дописываем в профиль на сервере.
+     *
+     * Раньше имя и телефон оставались в памяти браузера, и на другом
+     * устройстве покупатель набирал их заново (замечание Александра 16.08).
+     * Ответа не ждём: заказ уходит своим ходом, а если связь подвела,
+     * ничего не ломается — данные всё равно сохранены на устройстве.
+     */
+    if ((имяЗаказа || телефонЗаказа) && memberToken()) {
+      try {
+        accountPost('merge', { profile: { name: имяЗаказа, phone: телефонЗаказа } })
+          .then(applyAccountSnapshot)
+          .catch(function () {});
+      } catch (err) {}
+    }
   }, true);
 
   /**
