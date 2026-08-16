@@ -185,23 +185,6 @@
    */
   // Все бренды магазина. Список подхватывается из фильтров Tilda, как только
   // страница их отдаст, — если появится новый бренд, его товары не пропадут.
-  var ALL_BRANDS = ['NOW', 'OstroVit', 'Olimp', 'Ultimate Nutrition', 'VPLAB',
-    'California Gold Nutrition', 'NaturesPlus', 'Swanson', 'Doctors Best', 'SAN',
-    'Life Extension', 'Thorne', 'SFD Nutrition', 'UltraVit', 'Solaray', 'Smartlife',
-    'Nutrex', 'AllNutrition', 'Sambucol', '21st Century', 'Promensil'];
-
-  function refreshBrands() {
-    var items = document.querySelectorAll('.t-catalog__filter__item');
-    for (var i = 0; i < items.length; i++) {
-      var title = ((items[i].querySelector('.t-catalog__filter__item-title') || {}).textContent || '').trim();
-      if (!/бренд/i.test(title)) continue;
-      var labs = items[i].querySelectorAll('label.t-checkbox__control');
-      for (var k = 0; k < labs.length; k++) {
-        var v = (labs[k].textContent || '').trim();
-        if (v && ALL_BRANDS.indexOf(v) < 0) ALL_BRANDS.push(v);
-      }
-    }
-  }
 
   function askOnlyInStock() {
     // Выключатель для проверки: с ?ngr=off страница работает так, будто
@@ -212,18 +195,20 @@
     function fix(u) {
       if (typeof u !== 'string' || u.indexOf('getproductslist') < 0) return u;
       /*
-       * Список раздела у Tilda застрял: он отдаёт 601 карточку из 1343,
-       * которые лежат в магазине, и не обновляется даже публикацией сайта.
-       * Поиск по брендам при этом ходит по свежим данным. Поэтому в каждый
-       * запрос без выбранного бренда кладём все бренды магазина разом —
-       * Tilda уходит в свежий указатель и отдаёт каталог целиком.
-       * Измерено 09.08: было 277 товаров в наличии, стало 729.
+       * Просим только то, что есть в наличии.
+       *
+       * Раньше сюда же подставлялся список всех известных нам брендов:
+       * список раздела у Tilda застревал на 601 карточке, а поиск по брендам
+       * ходил по свежим данным, и перечисление брендов уводило запрос туда же.
+       *
+       * Замер 16.08 показал, что своей цели трюк уже не служит, а вред от
+       * него настоящий: в наличии 1185 товаров, а с нашим перечнем брендов
+       * доезжает 729. Бренд, которого нет в списке — или записан иначе,
+       * например «Doctor's Best» с апострофом, — пропадал из каталога
+       * целиком. На главной из восьми карточек оставалось шесть
+       * (замечание Александра 16.08). Одного «в наличии» достаточно:
+       * запрос и так идёт по свежим данным.
        */
-      if (u.indexOf('filters%5Bbrand%5D') < 0 && u.indexOf('filters[brand]') < 0) {
-        for (var b = 0; b < ALL_BRANDS.length; b++) {
-          u += '&filters%5Bbrand%5D%5B' + b + '%5D=' + encodeURIComponent(ALL_BRANDS[b]);
-        }
-      }
       if (u.indexOf('filters%5Bquantity%5D') < 0 && u.indexOf('filters[quantity]') < 0) {
         u += (u.indexOf('?') < 0 ? '?' : '&') + 'filters%5Bquantity%5D=y';
       }
@@ -1899,6 +1884,10 @@
       'font-size:14px;font-weight:700;cursor:pointer}' +
       '.ngr-revsend[disabled]{background:#e6c7a8;cursor:default}' +
       '.ngr-revsaid{font-size:13px;color:#2f7d32;margin-left:10px}' +
+      '.ngr-desclist{margin:0 0 14px;padding:0 0 0 20px;list-style:disc}' +
+      '.ngr-desclist li{margin:0 0 6px;font-size:15px;line-height:1.6;color:#3d4550}' +
+      '.ngr-cab__rev{margin-left:auto;flex:0 0 auto;padding:7px 13px;border-radius:9px;' +
+      'background:#fff3e8;color:#c2560a;font-size:12px;font-weight:700;white-space:nowrap}' +
       '.ngr-revfail{font-size:13px;color:#c0392b;margin-top:8px}' +
       '.ngr-rev__own{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;' +
       'color:#b06c1e;background:#fff2e2;border-radius:5px;padding:2px 6px}';
@@ -3254,7 +3243,8 @@
         buys.forEach(function (b) {
           var el = document.createElement('div');
           el.className = 'ngr-cab__it';
-          el.innerHTML = '<i style="background-image:url(\'' + (b.img || '') + '\')"></i><span></span>';
+          el.innerHTML = '<i style="background-image:url(\'' + (b.img || '') + '\')"></i>' +
+            '<span></span><b class="ngr-cab__rev" style="display:none"></b>';
           el.querySelector('span').textContent = b.name || '';
           el.style.cursor = 'pointer';
           el.addEventListener('click', function () {
@@ -3264,6 +3254,26 @@
           box.appendChild(el);
         });
         host.appendChild(box);
+        /*
+         * Отзыв покупатель искал именно здесь — «нажимаю в профиле, а отзыв
+         * написать не могу» (замечание Александра 16.08). Показываем метку
+         * у тех товаров, на которые он вправе написать, и по ней открываем
+         * карточку: форма живёт там, рядом с остальными отзывами.
+         */
+        правоНаОтзывы().then(function (можно) {
+          if (!можно.length) return;
+          buys.forEach(function (b, i) {
+            var арт = String(b.sku || '');
+            var подходит = можно.filter(function (м) {
+              return String(м.article || '') === арт || String(м.sku || '') === арт;
+            })[0];
+            if (!подходит) return;
+            var метка = box.children[i] && box.children[i].querySelector('.ngr-cab__rev');
+            if (!метка) return;
+            метка.textContent = 'Оставить отзыв';
+            метка.style.display = '';
+          });
+        });
       }
       return;
     }
@@ -4020,12 +4030,34 @@
     return ровно || можно;
   }
 
-  function buildShelf(host, list) {
+  /*
+   * Какой кусок подборки показать сейчас.
+   *
+   * «Хочется, чтобы они менялись периодически, а не были статичны»
+   * (Александр, 16.08). Сервер присылает запас, а витрина берёт из него
+   * окно, которое сдвигается каждый час. Час — не случайность: в пределах
+   * одного посещения подборка не скачет, а за день успевает смениться
+   * несколько раз. Сдвиг у каждой полки свой, иначе они менялись бы
+   * одинаково и это бросалось бы в глаза.
+   */
+  function окноПодборки(list, сколько, соль) {
+    if (!list.length || list.length <= сколько) return list.slice(0, сколько);
+    var час = Math.floor(Date.now() / 3600000);
+    var шагов = Math.ceil(list.length / сколько);
+    var шаг = ((час + (соль || 0)) % шагов + шагов) % шагов;
+    var с = шаг * сколько;
+    var кусок = list.slice(с, с + сколько);
+    // Хвост короче окна дополняем с начала, чтобы ряд остался полным.
+    if (кусок.length < сколько) кусок = кусок.concat(list.slice(0, сколько - кусок.length));
+    return кусок;
+  }
+
+  function buildShelf(host, list, соль) {
     host.innerHTML = '';
     host.classList.add('ngr-shelf');
     var сколько = сколькоНаПолке(list.length);
     host.setAttribute('data-ngr-колонок', колонокПолки());
-    list.slice(0, сколько).forEach(function (c) { host.appendChild(shelfCard(c)); });
+    окноПодборки(list, сколько, соль).forEach(function (c) { host.appendChild(shelfCard(c)); });
   }
 
   /*
@@ -4064,10 +4096,21 @@
     // а наличие нашей сетки внутри — и перестраиваем, когда её снесли.
     if (sale && shelves.byDiscount.length && !sale.querySelector('.ngr-sc')) {
       sale.setAttribute('data-ngr-shelf', 'sale');
-      buildShelf(sale, shelves.byDiscount);
+      buildShelf(sale, shelves.byDiscount, 1);
     }
 
-    // «Чаще всего берут» — новая полка перед полкой скидок.
+    /*
+     * «Чаще всего берут» — полка перед скидками.
+     *
+     * Раньше проверялось только, есть ли сама полка. Когда обработчик
+     * размера окна вычищал её содержимое, вернуть карточки было уже некому,
+     * и на главной оставался обрубок в четыре товара вместо восьми
+     * (замечание Александра 16.08). Теперь смотрим на содержимое.
+     */
+    var верх = document.querySelector('.ngr-shelf-top .ngr-shelf');
+    if (верх && !верх.querySelector('.ngr-sc') && shelves.byReviews.length) {
+      buildShelf(верх, shelves.byReviews, 0);
+    }
     if (!document.querySelector('.ngr-shelf-top') && shelves.byReviews.length && sale) {
       var sec = sale.closest('section') || sale.parentNode;
       var wrap = document.createElement('section');
@@ -4084,7 +4127,7 @@
       inner.appendChild(grid);
       wrap.appendChild(inner);
       if (sec && sec.parentNode) sec.parentNode.insertBefore(wrap, sec);
-      buildShelf(grid, shelves.byReviews);
+      buildShelf(grid, shelves.byReviews, 0);
     }
   }
 
@@ -5728,6 +5771,74 @@
     return a;
   }
 
+  /*
+   * Описание приходит с разметкой внутри текста.
+   *
+   * В карточках Ozon состав и эффекты оформлены списками, но до нас они
+   * доезжают не разметкой, а буквами: покупатель читал «84% гидролизованного
+   * куриного белка</li><li>9403 мг…» (замечание Александра 16.08).
+   *
+   * Разбираем сами и строим настоящие абзацы и списки. Разметку из текста
+   * не вставляем ни при каких условиях: описание пишет поставщик, и всё,
+   * что мы из него берём, попадает на страницу только как текст.
+   */
+  function разобратьОписание(сырое) {
+    var s = String(сырое || '');
+    // Мнемоники: их тоже показывали как есть.
+    s = s.replace(/&nbsp;/gi, ' ').replace(/&quot;/gi, '"').replace(/&#39;|&apos;/gi, "'")
+      .replace(/&laquo;/gi, '«').replace(/&raquo;/gi, '»').replace(/&mdash;/gi, '—')
+      .replace(/&ndash;/gi, '–').replace(/&lt;/gi, '<').replace(/&gt;/gi, '>')
+      .replace(/&amp;/gi, '&');
+    if (!/<\/?(ul|ol|li|p|br|div|b|strong|i|em|h[1-6])\b[^>]*>/i.test(s)) return null;
+
+    var блоки = [];
+    var список = null;
+    // Режем по значимым тегам, остальные просто выкидываем.
+    var куски = s.split(/(<\/?(?:ul|ol|li|p|br|div|h[1-6])[^>]*>)/i);
+    var текущий = '';
+
+    function слить() {
+      var v = текущий.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+      текущий = '';
+      return v;
+    }
+    function закрытьАбзац() {
+      var v = слить();
+      if (v) блоки.push({ вид: 'абзац', текст: v });
+    }
+    function закрытьПункт() {
+      var v = слить();
+      if (!v) return;
+      if (!список) { список = { вид: 'список', пункты: [] }; блоки.push(список); }
+      список.пункты.push(v);
+    }
+
+    куски.forEach(function (к) {
+      var тег = /^<\/?([a-z0-9]+)/i.exec(к);
+      if (!тег) { текущий += к; return; }
+      var имя = тег[1].toLowerCase();
+      var закрывающий = к.charAt(1) === '/';
+      if (имя === 'li') {
+        if (закрывающий) закрытьПункт();
+        else { закрытьАбзац(); }
+        return;
+      }
+      if (имя === 'ul' || имя === 'ol') {
+        if (закрывающий) { закрытьПункт(); список = null; }
+        else закрытьАбзац();
+        return;
+      }
+      // p, br, div, заголовки — конец абзаца
+      if (список) { закрытьПункт(); }
+      else закрытьАбзац();
+    });
+    if (список) закрытьПункт(); else закрытьАбзац();
+
+    return блоки.filter(function (б) {
+      return б.вид === 'абзац' ? б.текст.length > 0 : б.пункты.length > 0;
+    });
+  }
+
   function fixDescription() {
     var pop = document.querySelector('.t-popup_show .t-catalog__prod-popup__container, ' +
       '.t-catalog__prod-popup__container');
@@ -5758,11 +5869,31 @@
     if (body) {
       var a1 = accordion('Описание', false);
       var b1 = a1.querySelector('.ngr-acc__body');
-      body.split('\n\n').forEach(function (p) {
-        var el2 = document.createElement('p');
-        el2.textContent = p;          // текст, а не разметка
-        b1.appendChild(el2);
-      });
+      var блоки = разобратьОписание(body);
+      if (блоки && блоки.length) {
+        блоки.forEach(function (б) {
+          if (б.вид === 'список') {
+            var ul = document.createElement('ul');
+            ul.className = 'ngr-desclist';
+            б.пункты.forEach(function (п) {
+              var li = document.createElement('li');
+              li.textContent = п;     // текст, а не разметка
+              ul.appendChild(li);
+            });
+            b1.appendChild(ul);
+            return;
+          }
+          var el3 = document.createElement('p');
+          el3.textContent = б.текст;
+          b1.appendChild(el3);
+        });
+      } else {
+        body.split('\n\n').forEach(function (p) {
+          var el2 = document.createElement('p');
+          el2.textContent = p;          // текст, а не разметка
+          b1.appendChild(el2);
+        });
+      }
       wrap.appendChild(a1);
     }
     if (specs.length) {
@@ -6417,8 +6548,27 @@
         строка('Обновлено', s.updated) +
         строка('В браузере — аватар', м.avatar) +
         строка('В браузере — имя', м.name) +
+        '<div class="ngr-chk__rev" style="padding:5px 0;color:#6b7280">Спрашиваем про отзывы…</div>' +
         '<div style="margin-top:10px;color:#6b7280">Строки «на сервере» должны совпасть ' +
         'на компьютере и на телефоне.</div>';
+
+      // Отдельно — что сервер знает про заказы: без этого причину «отзыв
+      // написать не могу» пришлось бы угадывать.
+      accountPost('can', {}, null, '/reviews/can').then(function (о) {
+        var м2 = тело.querySelector('.ngr-chk__rev');
+        if (!м2) return;
+        var с = (о && о.debug) || {};
+        м2.outerHTML =
+          строка('Заказов в наших записях', String(с.наших || 0)) +
+          строка('Из них получено', String(с.полученныхНаших || 0)) +
+          строка('Заказов видит у Tilda', String(с.уTilda || 0)) +
+          строка('Из них получено', String(с.полученныхУTilda || 0)) +
+          строка('Товаров можно оценить', String(((о && о.items) || []).length)) +
+          строка('Уже оценено', String(((о && о.done) || []).length));
+      }).catch(function (e2) {
+        var м3 = тело.querySelector('.ngr-chk__rev');
+        if (м3) м3.outerHTML = строка('Отзывы', 'ошибка: ' + ((e2 && e2.message) || e2));
+      });
     }).catch(function (e) {
       тело.innerHTML = строка('Устройство', устройство) +
         строка('Ошибка', String((e && e.message) || e));
@@ -6429,7 +6579,7 @@
     самопроверка();
     fixPopup(); fixCards(); fixCart(); fixPromocode(); fixDupDelivery(); fixUnits(); fixBrands();
     initSearchGuard(); fixSearch(); initSmartSearch(); fixAccountButton(); fixAuthGate(); держатьФорму(); faqCss(); меткаКорзины(); значокВкладки();
-    fixRatings(); fixPopupReviews(); fixDescription(); fixDeliveryOrder(); fixCardPhotos(); fixPrices(); fixFilterValues(); fixRatingFilter(); applyRatingFilter(false); fixShelves(); fixSgr(); fixFav(); cartCss(); docsSearch(); filterBarCss(); trimFilterBar(); dropCartTip(); prefillCart(); pullProfileOnce(); refreshBrands(); buildSideFilters(); syncSideFilters(); fixUrlSort();
+    fixRatings(); fixPopupReviews(); fixDescription(); fixDeliveryOrder(); fixCardPhotos(); fixPrices(); fixFilterValues(); fixRatingFilter(); applyRatingFilter(false); fixShelves(); fixSgr(); fixFav(); cartCss(); docsSearch(); filterBarCss(); trimFilterBar(); dropCartTip(); prefillCart(); pullProfileOnce(); buildSideFilters(); syncSideFilters(); fixUrlSort();
   }
 
   apply();
