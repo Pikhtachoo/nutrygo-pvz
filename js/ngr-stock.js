@@ -2216,14 +2216,26 @@
       }
     }
 
-    // Отзывы — тем же блоком, что в каталоге
-    if (d.reviews && d.reviews.n) {
-      reviewCss();
-      var rb = document.createElement('div');
-      rb.className = 'ngr-revbox';
-      body.querySelector('.ngr-pd__rev').appendChild(rb);
-      renderReviews(rb, d.art, d.reviews);
-    }
+    /*
+     * Отзывы — тем же блоком, что в каталоге.
+     *
+     * Раньше блок строился только при отзывах Ozon и знал лишь их: свои
+     * отзывы искались по артикулу вместо номера товара у Ozon и потому
+     * не находились, а формы «оставить отзыв» здесь не было вовсе —
+     * покупатель открывал купленный товар и написать не мог (замечание
+     * Александра 16.08).
+     */
+    reviewCss();
+    var rb = document.createElement('div');
+    rb.className = 'ngr-revbox';
+    body.querySelector('.ngr-pd__rev').appendChild(rb);
+    var скуТовара = String(d.sku || d.art || '');
+    Promise.all([нашиОтзывы(скуТовара), правоНаОтзывы()]).then(function (пара) {
+      var можно = (пара[1] || []).filter(function (т) {
+        return String(т.sku) === скуТовара || String(т.article || '') === String(d.art || '');
+      })[0];
+      renderReviews(rb, скуТовара, d.reviews || { n: 0, avg: 0, list: [] }, пара[0] || [], можно || null);
+    });
   }
 
   /**
