@@ -16,6 +16,157 @@
   if (window.NGR_STOCK_GUARD) return;
   window.NGR_STOCK_GUARD = 1;
 
+  /**
+   * Гасим холостые записи в DOM.
+   *
+   * Присвоение узлу того значения, которое у него уже стоит, не меняет
+   * ничего видимого, но обходится дорого: браузер помечает узел грязным и
+   * пересчитывает стиль, а MutationObserver получает запись — и если этот
+   * наблюдатель сам же запускает проход, который снова пишет то же самое,
+   * получается круг.
+   *
+   * Замер на живом каталоге 13.08.2026, первые секунды после загрузки, пока
+   * догружаются карточки: 5612 мутаций за три секунды, из них
+   *   1620  class у .js-product
+   *   1332  hidden у .ng2-brand-qty
+   *    288  href у ссылок карточек
+   * Источник — инлайновые блоки Tilda в записи rec2514481201 (NG2LoadAll2 и
+   * BrandCardFix): три записи hidden, две className и пять setAttribute,
+   * и ни одной сверки перед записью, всё под двумя MutationObserver.
+   * Тех блоков нет в этом репозитории, поэтому чиним со своей стороны.
+   *
+   * Приём безопасен по смыслу: мы отменяем только записи, которые и так
+   * ничего не меняют. Сравнение стоит одну операцию и выполняется до записи,
+   * поэтому настоящие изменения проходят как прежде.
+   */
+  (function () {
+    if (window.NGR_NOOP_GUARD) return;
+    window.NGR_NOOP_GUARD = 1;
+    // Сравнивать class как строку мало. Замер 13.08 показал: из 160
+    // прослеженных переходов класса карточки все 160 — тот же самый набор
+    // классов, записанный другой строкой (иной порядок или лишние пробелы).
+    // Для отбора правил важен только набор, поэтому сверяем набор.
+    var норма = function (s) {
+      return String(s == null ? '' : s).split(/\s+/).filter(Boolean).sort().join(' ');
+    };
+    var тотЖеКласс = function (a, b) {
+      return a === b || норма(a) === норма(b);
+    };
+    try {
+      var cn = Object.getOwnPropertyDescriptor(Element.prototype, 'className');
+      if (cn && cn.get && cn.set) {
+        Object.defineProperty(Element.prototype, 'className', {
+          configurable: true, enumerable: cn.enumerable,
+          get: function () { return cn.get.call(this); },
+          set: function (v) {
+            var было = cn.get.call(this);
+            // У SVG className — объект, а не строка: такие записи пропускаем
+            // дальше без разбора, как было до заслона.
+            if (typeof было === 'string' && тотЖеКласс(v, было)) return;
+            cn.set.call(this, v);
+          }
+        });
+      }
+      var hd = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'hidden');
+      if (hd && hd.get && hd.set) {
+        Object.defineProperty(HTMLElement.prototype, 'hidden', {
+          configurable: true, enumerable: hd.enumerable,
+          get: function () { return hd.get.call(this); },
+          // Только чистые true/false: у hidden бывает ещё значение
+          // 'until-found', и сводить его к булеву нельзя.
+          set: function (v) {
+            if ((v === true || v === false) && v === hd.get.call(this)) return;
+            hd.set.call(this, v);
+          }
+        });
+      }
+      // Только class, href и style: остальные атрибуты трогать незачем, а
+      // лишняя сверка на каждом setAttribute — это расход на всём, что
+      // рисует Tilda. class сверяем по набору, остальные по строке.
+      var sa = Element.prototype.setAttribute;
+      Element.prototype.setAttribute = function (name, value) {
+        if (name === 'class') {
+          if (тотЖеКласс(value, this.getAttribute('class'))) return;
+        } else if (name === 'href' || name === 'style') {
+          if (this.getAttribute(name) === String(value)) return;
+        }
+        return sa.apply(this, arguments);
+      };
+    } catch (e) {}
+  })();
+
+  /**
+   * Пауза автозагрузчика, пока человек работает с поиском или сортировкой.
+   *
+   * Замечание Александра 13.08: «навожусь на сортировку, выбрать к примеру по
+   * цене, и он начинает моргать, то видно список сортировки, то нет; так же с
+   * поиском — написал что-то и вижу, как текст то видно, то нет».
+   *
+   * Замер это подтвердил дословно. За шесть секунд поле поиска пересоздалось
+   * семь раз и селект сортировки семь раз: узлы, взятые в начале замера,
+   * оказались выброшены из документа (isConnected === false), а набранный
+   * текст пропадал вместе с ними — в 22 пробах из 24 поле было пустым.
+   * В событиях DOM видно, как Tilda заново строит всю панель фильтров:
+   * в js-catalog-filter-tree-container добавляется новый
+   * .t-catalog__filter-tree-wrapper, в .t-catalog__filter__options — новый
+   * .t-catalog__filter__item_sort-mobile (таких блоков к концу загрузки
+   * накапливается девять).
+   *
+   * Тактирует это автозагрузчик каталога — инлайновый блок NG2LoadAll2 в
+   * записи rec2514481201: он раз в 500–600 мс жмёт кнопку «Загрузить ещё»
+   * (до 500 раз), Tilda на каждую догрузку перестраивает панель фильтров, а
+   * перестроенная панель — это новые input и select. Отсюда и «раз в
+   * полсекунды»: открытый список сортировки закрывается, потому что элемента,
+   * которому он принадлежал, больше нет.
+   *
+   * Останавливать загрузку насовсем нельзя — без неё каталог отдаёт горстку
+   * товаров. Поэтому загрузку откладываем ровно на то время, пока человек
+   * печатает в поиске или выбирает сортировку, а потом продолжаем с того же
+   * места. Настоящий щелчок человека по кнопке не трогаем.
+   */
+  (function () {
+    if (window.NGR_LOADER_PAUSE) return;
+    window.NGR_LOADER_PAUSE = 1;
+    var КНОПКА = '.js-catalog-load-more-btn';
+    var отложено = false;
+
+    function человекЗанят() {
+      var ae = document.activeElement;
+      if (ae && ae.classList &&
+          (ae.classList.contains('js-catalog-filter-search') ||
+           ae.classList.contains('t-catalog__sort-select'))) return true;
+      // Непустое поле поиска — тоже работа: человек читает выдачу по своему
+      // запросу, и перестройка панели сотрёт ему текст.
+      var inp = document.querySelector('#rec2502703571 .js-catalog-filter-search');
+      return !!(inp && inp.value);
+    }
+
+    document.addEventListener('click', function (e) {
+      // Живой щелчок человека пропускаем всегда: он сам решил догрузить.
+      if (e.isTrusted) return;
+      var t = e.target;
+      if (!t || !t.closest || !t.closest(КНОПКА)) return;
+      if (!человекЗанят()) return;
+      e.stopImmediatePropagation();
+      e.preventDefault();
+      отложено = true;
+    }, true);
+
+    function продолжить() {
+      if (!отложено || человекЗанят()) return;
+      var btn = document.querySelector('#rec2502703571 ' + КНОПКА) ||
+                document.querySelector(КНОПКА);
+      if (!btn) return;
+      отложено = false;
+      btn.click();
+    }
+    // Проверяем и по событиям, и раз в секунду: поле могло исчезнуть вместе
+    // с панелью, и событие blur тогда не придёт.
+    document.addEventListener('blur', продолжить, true);
+    document.addEventListener('change', продолжить, true);
+    setInterval(продолжить, 1000);
+  })();
+
   var API = 'https://nutrygo-integrator.pikhtovnikov-alieksandr.workers.dev';
 
   /**
@@ -267,6 +418,496 @@
       '</b>.<br>Удалите товар из корзины, чтобы оформить остальное.';
   }
 
+  /* NGR_PROMO_RECOVERY_BEGIN */
+  // ОТКЛЮЧЕНО 12.08.2026 (решение после инцидента с «полуприменённым» промокодом).
+  // Компонент пересоздавал родное поле Tilda со своей инициализацией; после
+  // этого «Применить» срабатывал наполовину: Tilda рисовала строки скидки
+  // в итогах, но в корзину (tcart.promocode/amount) код не записывала —
+  // покупатель видел цену со скидкой, а к оплате уходила полная. Замер
+  // Александра 12.08: итоги «Промокод: 50%, Итоговая 1 168», при этом
+  // tcart = {amount: 2336, prodamount: 2336, promocode: undefined}.
+  // До переработки под живым браузером промокодами управляет только сама
+  // Tilda — её штатный поток пишет скидку в корзину целиком.
+  var PROMO_RECOVERY_ENABLED = false;
+  var PROMO_GROUP_SELECTOR =
+    '.t706__orderform .t-input-group_pc[data-field-type="pc"],' +
+    'form[data-formcart="y"] .t-input-group_pc[data-field-type="pc"],' +
+    '.t-store__cart-form .t-input-group_pc[data-field-type="pc"]';
+  var promoStates = new WeakMap();
+  var promoNativeInputs = new WeakSet();
+  var promoMessageSeq = 0;
+
+  function promoNumber(value) {
+    // parseFloat вместо Number: Tilda хранит скидку и как число, и как строку
+    // вида «50%» или «1 168,5» — Number на них даёт NaN, и применённый промокод
+    // выглядел как «без скидки» (инцидент 12.08: скидка в итогах есть, поле
+    // красное, оформление заблокировано).
+    var s = String(value === undefined || value === null ? '' : value)
+      .replace(/\s+/g, '').replace(',', '.');
+    var n = parseFloat(s);
+    return Number.isFinite(n) ? n : 0;
+  }
+
+  var PROMO_DISCOUNT_FIELDS = ['discountsum', 'discountpercent', 'discount', 'discountprice'];
+
+  function positivePromoObject(promo) {
+    if (!promo || typeof promo !== 'object') return false;
+    var present = [];
+    for (var i = 0; i < PROMO_DISCOUNT_FIELDS.length; i++) {
+      var v = promo[PROMO_DISCOUNT_FIELDS[i]];
+      if (v === undefined || v === null || String(v) === '') continue;
+      if (promoNumber(v) > 0) return true;
+      present.push(PROMO_DISCOUNT_FIELDS[i]);
+    }
+    // Поля скидки есть, и все нули — честный случай «код принят, но для этой
+    // корзины скидки не даёт»: остаёмся в редакторе с пояснением.
+    if (present.length) return false;
+    // Полей скидки нет вовсе — не гадаем за Tilda: раз код лежит в корзине,
+    // считаем его применённым (сумму всё равно считает Tilda, не мы).
+    return !!String(promo.promocode || '').trim();
+  }
+
+  /** Read-only: the recovery component never installs, removes or recalculates a promo. */
+  function activePositivePromo() {
+    var cart = window.tcart;
+    var cartPromo = cart && cart.promocode;
+    // Инцидент 12.08 (повторно): скидка видна в итогах Tilda, а детектор
+    // не признавал код применённым, потому что смотрел только внутрь объекта
+    // tcart.promocode. Tilda хранит применённый код по-разному: строкой,
+    // объектом с полями скидки, объектом без них — а сумму скидки может
+    // держать на верхнем уровне корзины (prodamount_discountsum) или уже
+    // вычтенной из amount против prodamount. Признаём код применённым, если
+    // Tilda сама его записала в корзину, каким бы способом ни хранила.
+    if (typeof cartPromo === 'string' && cartPromo.trim()) {
+      return { promocode: cartPromo.trim() };
+    }
+    if (positivePromoObject(cartPromo)) return cartPromo;
+    if (cartPromo && typeof cartPromo === 'object' &&
+        String(cartPromo.promocode || '').trim() && cart &&
+        (promoNumber(cart.prodamount_discountsum) > 0 ||
+         (promoNumber(cart.prodamount) > 0 && promoNumber(cart.amount) > 0 &&
+          promoNumber(cart.amount) < promoNumber(cart.prodamount)))) {
+      // Поля скидки в объекте нулевые/устаревшие, но корзина реально ужата —
+      // верим корзине, а не полям.
+      return cartPromo;
+    }
+    var heldPromo = window.cartCalculator && window.cartCalculator.appliedPromocode;
+    if (typeof heldPromo === 'string' && heldPromo.trim()) {
+      return { promocode: heldPromo.trim() };
+    }
+    if (positivePromoObject(heldPromo)) return heldPromo;
+    // No t_cart__promocode global exists in the Tilda 1.1 runtime currently loaded by NutryGo.
+    return null;
+  }
+
+  function promoStateFor(group) {
+    var state = promoStates.get(group);
+    if (!state) {
+      state = {
+        bound: false,
+        seq: 0,
+        pending: false,
+        lastValue: '',
+        observer: null,
+        wrapper: null
+      };
+      promoStates.set(group, state);
+    }
+    return state;
+  }
+
+  function promoInput(group) {
+    return group && group.querySelector('.t-inputpromocode');
+  }
+
+  function promoWrapper(group) {
+    return group && group.querySelector('.t-inputpromocode__wrapper');
+  }
+
+  function promoBusy(group) {
+    return window.t_promocode_load === 'y' ||
+      !!(group && group.querySelector('.t-inputpromocode__btn.t-btn_sending'));
+  }
+
+  function promoError(group, input) {
+    var error = group.querySelector('.ngr-promo-error');
+    if (!error) {
+      var host = group.querySelector('.t-input-block') || group;
+      error = document.createElement('div');
+      error.className = 'ngr-promo-error';
+      error.id = 'ngr-promo-error-' + (++promoMessageSeq);
+      error.hidden = true;
+      error.setAttribute('role', 'alert');
+      error.setAttribute('aria-live', 'polite');
+      host.appendChild(error);
+    }
+    if (input) {
+      var described = (input.getAttribute('aria-describedby') || '').split(/\s+/).filter(Boolean);
+      if (described.indexOf(error.id) < 0) {
+        described.push(error.id);
+        input.setAttribute('aria-describedby', described.join(' '));
+      }
+    }
+    return error;
+  }
+
+  function hidePromoError(group) {
+    var input = promoInput(group);
+    var error = group.querySelector('.ngr-promo-error');
+    if (input) input.removeAttribute('aria-invalid');
+    if (error) {
+      error.hidden = true;
+      error.textContent = '';
+    }
+  }
+
+  function showPromoError(group, message) {
+    var input = promoInput(group);
+    var error = promoError(group, input);
+    if (input) input.setAttribute('aria-invalid', 'true');
+    error.textContent = message;
+    error.hidden = false;
+  }
+
+  function promoTarget(target, selector, group) {
+    var node = target;
+    while (node && node !== group) {
+      if (node.matches && node.matches(selector)) return node;
+      node = node.parentNode;
+    }
+    return null;
+  }
+
+  function promoDispatch(input, type) {
+    if (!input || typeof input.dispatchEvent !== 'function' || typeof Event !== 'function') return;
+    try { input.dispatchEvent(new Event(type, { bubbles: true })); } catch (e) {}
+  }
+
+  function updatePromoClear(group) {
+    var state = promoStateFor(group);
+    var input = promoInput(group);
+    var clear = group.querySelector('.ngr-promo-clear');
+    if (!clear) return;
+    clear.disabled = !input || !String(input.value || '').length || state.pending || promoBusy(group);
+    clear.setAttribute('aria-disabled', clear.disabled ? 'true' : 'false');
+  }
+
+  function ensurePromoControls(group) {
+    var input = promoInput(group);
+    var wrapper = promoWrapper(group);
+    if (!input || !wrapper) return;
+    group.classList.add('ngr-promo-editable');
+    promoError(group, input);
+
+    var applyButton = wrapper.querySelector('.t-inputpromocode__btn');
+    if (applyButton) {
+      applyButton.setAttribute('role', 'button');
+      if (!applyButton.hasAttribute('tabindex')) applyButton.setAttribute('tabindex', '0');
+    }
+
+    var clear = wrapper.querySelector('.ngr-promo-clear');
+    if (!clear) {
+      clear = document.createElement('button');
+      clear.type = 'button';
+      clear.className = 'ngr-promo-clear';
+      clear.textContent = 'Очистить';
+      clear.setAttribute('aria-label', 'Очистить поле промокода');
+      wrapper.appendChild(clear);
+    }
+    updatePromoClear(group);
+  }
+
+  function promoRecordId(group) {
+    var node = group;
+    while (node) {
+      if (node.id && /^rec\d+$/.test(node.id)) return node.id.slice(3);
+      node = node.parentNode;
+    }
+    return '';
+  }
+
+  function initRestoredPromo(group, input) {
+    if (!input || input.getAttribute('data-ngr-promo-restored') !== '1') return true;
+    if (promoNativeInputs.has(input)) return true;
+    if (typeof window.t_input_promocode_init !== 'function') return false;
+    var recordId = promoRecordId(group);
+    var inputLid = group.getAttribute('data-input-lid') || '';
+    if (!recordId || !inputLid) return false;
+    try {
+      window.t_input_promocode_init(recordId, inputLid);
+      promoNativeInputs.add(input);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function markPromoPending(group, pending) {
+    var state = promoStateFor(group);
+    state.pending = pending;
+    if (pending) group.setAttribute('aria-busy', 'true');
+    else group.removeAttribute('aria-busy');
+    updatePromoClear(group);
+  }
+
+  function renderAppliedPromo(group, promo) {
+    var state = promoStateFor(group);
+    state.pending = false;
+    group.removeAttribute('aria-busy');
+    group.classList.remove('ngr-promo-editable');
+    hidePromoError(group);
+    var wrapper = promoWrapper(group);
+    if (wrapper && promoInput(group)) {
+      wrapper.textContent = '';
+      var text = document.createElement('div');
+      text.className = 't-text ngr-promo-applied';
+      text.textContent = promo && promo.promocode
+        ? 'Промокод ' + String(promo.promocode) + ' активирован.'
+        : 'Промокод активирован.';
+      wrapper.appendChild(text);
+    }
+    var title = group.querySelector('.t-input-title.t-descr.t-descr_md');
+    if (title) title.style.visibility = 'hidden';
+  }
+
+  function createRestoredPromoInput(group) {
+    var state = promoStateFor(group);
+    var wrapper = promoWrapper(group);
+    if (!wrapper || activePositivePromo()) return null;
+    var inputLid = group.getAttribute('data-input-lid') || '';
+    wrapper.textContent = '';
+
+    var input = document.createElement('input');
+    input.type = 'text';
+    input.name = 'Промокод';
+    input.className = 't-input t-inputpromocode js-tilda-rule';
+    input.value = state.lastValue || '';
+    input.placeholder = 'Введите промокод';
+    input.autocomplete = 'off';
+    input.setAttribute('data-tilda-rule', 'promocode');
+    input.setAttribute('data-ngr-promo-restored', '1');
+    if (inputLid) input.setAttribute('aria-labelledby', 'field-title_' + inputLid);
+
+    var applyButton = document.createElement('div');
+    applyButton.className = 't-inputpromocode__btn t-btn t-btn_md';
+    applyButton.textContent = 'Применить';
+    applyButton.setAttribute('role', 'button');
+    applyButton.setAttribute('tabindex', '0');
+
+    var clear = document.createElement('button');
+    clear.type = 'button';
+    clear.className = 'ngr-promo-clear';
+    clear.textContent = 'Очистить';
+    clear.setAttribute('aria-label', 'Очистить поле промокода');
+
+    wrapper.appendChild(input);
+    wrapper.appendChild(applyButton);
+    wrapper.appendChild(clear);
+    group.classList.add('ngr-promo-editable');
+    var title = group.querySelector('.t-input-title.t-descr.t-descr_md');
+    if (title && title.style && typeof title.style.removeProperty === 'function') {
+      title.style.removeProperty('visibility');
+    }
+    promoError(group, input);
+    updatePromoClear(group);
+    return input;
+  }
+
+  function restorePromoEditor(group, message) {
+    if (activePositivePromo()) {
+      renderAppliedPromo(group, activePositivePromo());
+      return;
+    }
+    markPromoPending(group, false);
+    var input = promoInput(group) || createRestoredPromoInput(group);
+    if (!input) return;
+    ensurePromoControls(group);
+    if (!initRestoredPromo(group, input)) {
+      showPromoError(group, 'Не удалось подготовить поле промокода. Закройте и снова откройте корзину.');
+      return;
+    }
+    showPromoError(group, message);
+    updatePromoClear(group);
+    var panel = group.querySelector('.ngr-promo-panel');
+    if (!panel || !panel.hidden) {
+      setTimeout(function () {
+        if (!input.isConnected || activePositivePromo()) return;
+        try { input.focus({ preventScroll: true }); } catch (e) { try { input.focus(); } catch (x) {} }
+        try { input.select(); } catch (e) {}
+      }, 0);
+    }
+  }
+
+  function settlePromo(group, seq) {
+    if (!group || !group.isConnected) return;
+    var state = promoStateFor(group);
+    if (seq !== undefined && seq !== state.seq) return;
+    if (promoBusy(group)) return;
+    var positive = activePositivePromo();
+    if (positive) {
+      renderAppliedPromo(group, positive);
+      return;
+    }
+    var input = promoInput(group);
+    if (input) {
+      if (state.pending) {
+        markPromoPending(group, false);
+        ensurePromoControls(group);
+        showPromoError(group, 'Промокод не применён. Проверьте код или срок действия и попробуйте ещё раз.');
+      }
+      return;
+    }
+    var wrapper = promoWrapper(group);
+    if (state.pending || (wrapper && wrapper.querySelector('.t-text'))) {
+      restorePromoEditor(group,
+        'Этот промокод не даёт скидку для товаров в корзине. Очистите поле или введите другой код.');
+    }
+  }
+
+  function waitPromoSettlement(group, seq, tick) {
+    setTimeout(function () {
+      if (!group || !group.isConnected) return;
+      var state = promoStateFor(group);
+      if (state.seq !== seq || !state.pending) return;
+      if (promoBusy(group)) {
+        if (tick === 375) {
+          showPromoError(group, 'Проверка промокода занимает больше обычного. Дождитесь ответа.');
+        }
+        // After 30 seconds keep one slow waiter alive. Native XHR has no public cancel/reset API;
+        // stopping here would leave Clear disabled forever when a late error keeps the input in DOM.
+        waitPromoSettlement(group, seq, tick + 1);
+        return;
+      }
+      settlePromo(group, seq);
+    }, tick ? (tick > 375 ? 1000 : 80) : 0);
+  }
+
+  function observePromoWrapper(group) {
+    var state = promoStateFor(group);
+    var wrapper = promoWrapper(group);
+    if (!wrapper || state.wrapper === wrapper) return;
+    if (state.observer) state.observer.disconnect();
+    state.wrapper = wrapper;
+    state.observer = new MutationObserver(function () {
+      if (!promoBusy(group)) settlePromo(group, state.seq);
+    });
+    state.observer.observe(wrapper, { childList: true });
+  }
+
+  function bindPromoGroup(group) {
+    var state = promoStateFor(group);
+    if (state.bound) return;
+    state.bound = true;
+
+    group.addEventListener('input', function (event) {
+      if (!event.target || !event.target.matches || !event.target.matches('.t-inputpromocode')) return;
+      state.lastValue = event.target.value || '';
+      hidePromoError(group);
+      updatePromoClear(group);
+    });
+
+    group.addEventListener('keydown', function (event) {
+      var applyButton = promoTarget(event.target, '.t-inputpromocode__btn', group);
+      if (!applyButton || (event.key !== 'Enter' && event.key !== ' ')) return;
+      event.preventDefault();
+      applyButton.click();
+    });
+
+    group.addEventListener('click', function (event) {
+      var clear = promoTarget(event.target, '.ngr-promo-clear', group);
+      if (clear) {
+        event.preventDefault();
+        var positive = activePositivePromo();
+        if (positive) {
+          renderAppliedPromo(group, positive);
+          return;
+        }
+        if (state.pending || promoBusy(group)) return;
+        var input = promoInput(group);
+        if (!input) return;
+        input.value = '';
+        state.lastValue = '';
+        hidePromoError(group);
+        promoDispatch(input, 'input');
+        promoDispatch(input, 'change');
+        updatePromoClear(group);
+        try { input.focus({ preventScroll: true }); } catch (e) { try { input.focus(); } catch (x) {} }
+        return;
+      }
+
+      var applyButton = promoTarget(event.target, '.t-inputpromocode__btn', group);
+      if (!applyButton || state.pending) return;
+      var input = promoInput(group);
+      if (!input) return;
+      state.lastValue = input.value || '';
+      state.seq += 1;
+      hidePromoError(group);
+      if (!String(state.lastValue).trim()) {
+        showPromoError(group, 'Введите промокод.');
+        updatePromoClear(group);
+        return;
+      }
+      markPromoPending(group, true);
+      waitPromoSettlement(group, state.seq, 0);
+    });
+  }
+
+  function promoCss() {
+    if (document.getElementById('ngr-promo-recovery-css')) return;
+    var style = document.createElement('style');
+    style.id = 'ngr-promo-recovery-css';
+    style.textContent =
+      '.ngr-promo-editable .t-inputpromocode__wrapper{display:grid!important;' +
+      'grid-template-columns:minmax(0,1fr) auto auto!important;gap:8px!important;' +
+      'align-items:stretch!important;width:100%!important;min-width:0!important;box-sizing:border-box!important}' +
+      '.ngr-promo-editable .t-inputpromocode{width:100%!important;min-width:0!important;' +
+      'max-width:100%!important;box-sizing:border-box!important}' +
+      '.ngr-promo-editable .t-inputpromocode__btn,.ngr-promo-editable .ngr-promo-clear{' +
+      'min-height:44px!important;box-sizing:border-box!important;align-items:center;justify-content:center}' +
+      '.ngr-promo-clear{border:1px solid #cfd7e2;border-radius:10px;background:#fff;color:#35506f;' +
+      'padding:0 14px;font-family:inherit;font-size:14px;font-weight:600;line-height:1.2;cursor:pointer}' +
+      '.ngr-promo-clear:hover:not(:disabled){background:#f4f7fa}' +
+      '.ngr-promo-clear:disabled{opacity:.5;cursor:not-allowed}' +
+      '.ngr-promo-clear:focus-visible,.ngr-promo-editable .t-inputpromocode__btn:focus-visible{' +
+      'outline:2px solid #2878c8!important;outline-offset:2px!important}' +
+      '.ngr-promo-error{margin-top:8px;color:#a11b1b;font-size:13px;line-height:1.4}' +
+      '.ngr-promo-error[hidden]{display:none!important}' +
+      '.ngr-promo-applied{font-weight:600}' +
+      '@media(max-width:640px){.ngr-promo-editable .t-inputpromocode{font-size:16px!important}}' +
+      '@media(max-width:420px){.ngr-promo-editable .t-inputpromocode__wrapper{' +
+      'grid-template-columns:minmax(0,1fr) minmax(0,1fr)!important}' +
+      '.ngr-promo-editable .t-inputpromocode{grid-column:1/-1!important}' +
+      '.ngr-promo-editable .t-inputpromocode__btn{grid-column:1!important;width:100%!important;min-width:0!important}' +
+      '.ngr-promo-editable .ngr-promo-clear{grid-column:2!important;width:100%!important;min-width:0!important}}';
+    document.head.appendChild(style);
+  }
+
+  function fixPromocode() {
+    if (!PROMO_RECOVERY_ENABLED) return;
+    promoCss();
+    document.querySelectorAll(PROMO_GROUP_SELECTOR).forEach(function (group) {
+      bindPromoGroup(group);
+      observePromoWrapper(group);
+      var positive = activePositivePromo();
+      if (positive) {
+        renderAppliedPromo(group, positive);
+        return;
+      }
+      var input = promoInput(group);
+      if (input) {
+        ensurePromoControls(group);
+        if (input.getAttribute('data-ngr-promo-restored') === '1') initRestoredPromo(group, input);
+        return;
+      }
+      var state = promoStateFor(group);
+      var wrapper = promoWrapper(group);
+      if (!promoBusy(group) && (state.pending || (wrapper && wrapper.querySelector('.t-text')))) {
+        settlePromo(group, state.seq);
+      }
+    });
+  }
+  /* NGR_PROMO_RECOVERY_END */
+
   /**
    * Дубль виджета доставки. Новый виджет («⌖ Ozon Доставка…») рисует основной
    * скрипт сайта; старый («📍 Доставка в…») остался старой копией в блоке
@@ -374,20 +1015,84 @@
    * набрано, и после пересборки возвращаем панель, текст и курсор. Если
    * покупатель закрыл поиск сам (крестик или пустой запрос) — не мешаем.
    */
-  var SEARCH_INPUT = '.t-catalog__filter__search input, .t-store__filter__search input, ' +
-    '.t-catalog__search-wrapper input, .js-catalog-filter-search input';
-  var searchState = null;   // {value, width} пока покупатель работает с поиском
+  var SEARCH_INPUT = '#rec2502703571 .t-catalog__filter__search input, ' +
+    '#rec2502703571 .t-store__filter__search input, ' +
+    '#rec2502703571 .t-catalog__search-wrapper input, ' +
+    '#rec2502703571 input.js-catalog-filter-search';
+  var searchState = null;
+  var searchBlurTimer = null;
+  var searchRestoreQueued = false;
+  var searchRestoreTimers = [];
 
   function searchInput() { return document.querySelector(SEARCH_INPUT); }
+
+  function clearSearchRestoreState() {
+    searchState = null;
+    clearTimeout(searchBlurTimer);
+    searchBlurTimer = null;
+    searchRestoreTimers.forEach(clearTimeout);
+    searchRestoreTimers = [];
+    // Уже поставленный requestAnimationFrame сам завершится без фокуса:
+    // restore() повторно проверяет searchState перед любым действием.
+    searchRestoreQueued = false;
+  }
 
   function initSearchGuard() {
     if (window.__ngrSearchGuard) return;
     window.__ngrSearchGuard = 1;
 
+    document.addEventListener('focusin', function (e) {
+      var el = e.target;
+      if (!el || !el.matches || !el.matches(SEARCH_INPUT)) return;
+      clearTimeout(searchBlurTimer);
+      searchState = {
+        value: el.value || '',
+        start: typeof el.selectionStart === 'number' ? el.selectionStart : null,
+        end: typeof el.selectionEnd === 'number' ? el.selectionEnd : null,
+        width: window.innerWidth,
+        active: true,
+        composing: false
+      };
+    }, true);
+
     document.addEventListener('input', function (e) {
       var el = e.target;
       if (!el || !el.matches || !el.matches(SEARCH_INPUT)) return;
-      searchState = el.value ? { value: el.value, width: window.innerWidth } : null;
+      if (!searchState) searchState = { width: window.innerWidth };
+      searchState.value = el.value || '';
+      searchState.start = typeof el.selectionStart === 'number' ? el.selectionStart : null;
+      searchState.end = typeof el.selectionEnd === 'number' ? el.selectionEnd : null;
+      searchState.active = true;
+      searchState.composing = !!e.isComposing;
+    }, true);
+
+    document.addEventListener('compositionstart', function (e) {
+      if (e.target && e.target.matches && e.target.matches(SEARCH_INPUT) && searchState) {
+        searchState.composing = true;
+      }
+    }, true);
+    document.addEventListener('compositionend', function (e) {
+      if (e.target && e.target.matches && e.target.matches(SEARCH_INPUT) && searchState) {
+        searchState.composing = false;
+        searchState.value = e.target.value || '';
+      }
+    }, true);
+
+    document.addEventListener('focusout', function (e) {
+      if (!e.target || !e.target.matches || !e.target.matches(SEARCH_INPUT)) return;
+      clearTimeout(searchBlurTimer);
+      searchBlurTimer = setTimeout(function () {
+        var a = document.activeElement;
+        if (a && a !== document.body && a !== document.documentElement &&
+            (!a.matches || !a.matches(SEARCH_INPUT)) &&
+            (!a.closest || !a.closest('.ngr-smart-search'))) searchState = null;
+      }, 650);
+    }, true);
+
+    // Явный тап вне поиска — это решение покупателя, фокус не возвращаем.
+    document.addEventListener('pointerdown', function (e) {
+      if (!searchState || !e.target || !e.target.closest) return;
+      if (!e.target.closest('.t-catalog__filter__search, .ngr-smart-search')) searchState = null;
     }, true);
 
     // Закрыл сам — забываем состояние и больше не возвращаем панель.
@@ -397,27 +1102,570 @@
         searchState = null;
       }
     }, true);
+
+    document.addEventListener('keydown', function (e) {
+      if ((e.key === 'Escape' || e.key === 'Tab') && e.target && e.target.matches && e.target.matches(SEARCH_INPUT)) {
+        searchState = null;
+      }
+    }, true);
+
+    function keepSearchDuringViewportResize() {
+      if (!searchState || !searchState.active) return;
+      searchRestoreTimers.forEach(clearTimeout);
+      searchRestoreTimers = [0, 60, 140, 280, 520, 900, 1500].map(function (ms) {
+        return setTimeout(fixSearch, ms);
+      });
+    }
+    window.addEventListener('resize', keepSearchDuringViewportResize, { passive: true });
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', keepSearchDuringViewportResize, { passive: true });
+    }
   }
 
   function fixSearch() {
-    if (!searchState) return;
-    // Ширина не менялась — значит панель схлопнулась не из-за поворота экрана,
-    // а из-за клавиатуры: возвращаем всё как было.
+    if (!searchState || !searchState.active || searchState.composing) return;
+    // clientWidth не меняется при появлении экранной клавиатуры и iOS zoom.
+    // При настоящем повороте экрана старое состояние возвращать не нужно.
     if (window.innerWidth !== searchState.width) { searchState = null; return; }
     var inp = searchInput();
-    if (inp && document.activeElement === inp) return;      // всё на месте
+    if (inp && document.activeElement === inp && inp.value === searchState.value) return; // всё на месте
+    if (!inp || !inp.getBoundingClientRect().width || searchRestoreQueued) return;
+    searchRestoreQueued = true;
+    var restore = function () {
+      searchRestoreQueued = false;
+      if (!searchState || !searchState.active) return;
+      var current = searchInput();
+      if (!current || !current.getBoundingClientRect().width) return;
+      if (current.value !== searchState.value) current.value = searchState.value;
+      try { current.focus({ preventScroll: true }); } catch (e) { current.focus(); }
+      if (searchState.start !== null && current.setSelectionRange) {
+        try { current.setSelectionRange(searchState.start, searchState.end); } catch (e) {}
+      }
+    };
+    if (window.requestAnimationFrame) window.requestAnimationFrame(restore);
+    else window.setTimeout(restore, 0);
+  }
 
-    if (!inp || !inp.getBoundingClientRect().width) {
-      var open = document.querySelector('.js-catalog-search-mob-btn');
-      if (open && open.getBoundingClientRect().width) open.click();
-      inp = searchInput();
+  /* ---------- Умный поиск по каталогу ---------- */
+
+  var SMART_SEARCH_INDEX = window.NGR_SEARCH_INDEX ||
+    'https://pikhtachoo.github.io/nutrygo-pvz/data/search-index.json';
+  var smartIndexPromise = null;
+
+  function smartNorm(s) {
+    s = String(s || '').toLocaleLowerCase('ru').replace(/ё/g, 'е');
+    try { s = s.normalize('NFKD').replace(/[\u0300-\u036f]/g, ''); } catch (e) {}
+    return s.replace(/[^a-zа-я0-9]+/gi, ' ').replace(/\s+/g, ' ').trim();
+  }
+
+  function keyboardVariant(s) {
+    var en = "qwertyuiop[]asdfghjkl;'zxcvbnm,.";
+    var ru = 'йцукенгшщзхъфывапролджэячсмитьбю';
+    var out = '', changed = false;
+    for (var i = 0; i < s.length; i++) {
+      var c = s.charAt(i), p = en.indexOf(c), r = ru.indexOf(c);
+      if (p > -1) { out += ru.charAt(p); changed = true; }
+      else if (r > -1) { out += en.charAt(r); changed = true; }
+      else out += c;
     }
+    return changed ? smartNorm(out) : '';
+  }
+
+  // «beta karotin» → «бета каротин». Это не словарь медицинских обещаний,
+  // а только механическая транслитерация запроса; исходный вариант ищем тоже.
+  function translitVariant(s) {
+    if (!/[a-z]/i.test(s)) return '';
+    var pairs = [
+      ['shch', 'щ'], ['sch', 'щ'], ['yo', 'ё'], ['zh', 'ж'], ['kh', 'х'],
+      ['ts', 'ц'], ['ch', 'ч'], ['sh', 'ш'], ['yu', 'ю'], ['ya', 'я'],
+      ['ye', 'е'], ['a', 'а'], ['b', 'б'], ['v', 'в'], ['g', 'г'],
+      ['d', 'д'], ['e', 'е'], ['z', 'з'], ['i', 'и'], ['j', 'й'],
+      ['k', 'к'], ['l', 'л'], ['m', 'м'], ['n', 'н'], ['o', 'о'],
+      ['p', 'п'], ['r', 'р'], ['s', 'с'], ['t', 'т'], ['u', 'у'],
+      ['f', 'ф'], ['h', 'х'], ['c', 'к'], ['y', 'ы'], ['q', 'к'], ['w', 'в'], ['x', 'кс']
+    ];
+    var out = smartNorm(s);
+    pairs.forEach(function (p) { out = out.replace(new RegExp(p[0], 'g'), p[1]); });
+    return smartNorm(out);
+  }
+
+  function smartStem(w) {
+    if (w.length < 5) return w;
+    return w.replace(/(иями|ями|ами|ого|ему|ому|ыми|ими|ая|яя|ое|ее|ые|ие|ий|ый|ой|ам|ям|ах|ях|ом|ем|ов|ев|ы|и|а|я|у|ю|е|о)$/i, '');
+  }
+
+  function smartTokens(s) {
+    var stop = { 'для': 1, 'или': 1, 'при': 1, 'под': 1, 'над': 1, 'без': 1, 'это': 1 };
+    return smartNorm(s).split(' ').filter(function (w) { return w.length > 1 && !stop[w]; });
+  }
+
+  function oneEdit(a, b) {
+    if (a === b) return true;
+    if (Math.abs(a.length - b.length) > 1) return false;
+    var i = 0, j = 0, edits = 0;
+    while (i < a.length && j < b.length) {
+      if (a.charAt(i) === b.charAt(j)) { i++; j++; continue; }
+      if (++edits > 1) return false;
+      if (a.length > b.length) i++;
+      else if (b.length > a.length) j++;
+      else { i++; j++; }
+    }
+    return edits + (i < a.length || j < b.length ? 1 : 0) <= 1;
+  }
+
+  function tokenScore(token, words) {
+    var stem = smartStem(token), best = 0;
+    for (var i = 0; i < words.length; i++) {
+      var w = words[i];
+      if (w === token) return 120;
+      if (Math.min(w.length, token.length) >= 4 && (w.indexOf(token) === 0 || token.indexOf(w) === 0)) best = Math.max(best, 85);
+      if (stem.length >= 4 && smartStem(w) === stem) best = Math.max(best, 65);
+      if (token.length >= 4 && Math.abs(w.length - token.length) <= 1 && oneEdit(token, w)) best = Math.max(best, 45);
+    }
+    return best;
+  }
+
+  function rankSmart(item, query) {
+    var title = item._t || (item._t = smartNorm(item.t));
+    var brand = item._b || (item._b = smartNorm(item.b));
+    var text = item.s || '';
+    var q = smartNorm(query), art = smartNorm(item.a);
+    if (!q) return null;
+    if (art === q) return { score: 12000, match: 'Артикул' };
+    var score = 0, match = 'Описание';
+    if (title === q) { score += 9000; match = 'Название'; }
+    else if (title.indexOf(q) === 0) { score += 6500; match = 'Название'; }
+    else if (title.indexOf(q) > -1) { score += 4800; match = 'Название'; }
+    if (brand === q) { score += 4200; match = 'Бренд'; }
+    else if (brand.indexOf(q) === 0) { score += 3200; match = 'Бренд'; }
+    if (text.indexOf(q) > -1) score += 2100;
+
+    var tokens = smartTokens(q);
+    if (!tokens.length) return score ? { score: score, match: match } : null;
+    var tw = title.split(' '), bw = brand.split(' '), sw = text.split(' ');
+    var matched = 0;
+    tokens.forEach(function (tok) {
+      var ts = tokenScore(tok, tw), bs = tokenScore(tok, bw), ds = tokenScore(tok, sw);
+      var best = Math.max(ts, bs, ds);
+      if (best) matched++;
+      if (best === ts && ts) { score += ts * 8; if (match === 'Описание') match = 'Название'; }
+      else if (best === bs && bs) { score += bs * 6; if (match === 'Описание') match = 'Бренд'; }
+      else score += ds * 2;
+    });
+    var need = tokens.length < 3 ? tokens.length : Math.ceil(tokens.length * 0.67);
+    return matched >= need && score > 0 ? { score: score, match: match } : null;
+  }
+
+  /**
+   * Характеристики и описания из кабинета Ozon.
+   *
+   * В каталоге Tilda описания нет: в указателе оно есть у 277 товаров из
+   * 729, у остальных 452 поле пустое. Поэтому поиск и находил только по
+   * названию (замечание Александра 14.08). Настоящий текст живёт у Ozon —
+   * воркер забирает его оттуда и отдаёт одной строкой на артикул, а мы
+   * подмешиваем её в тот же указатель, по которому уже ищем.
+   *
+   * Если прибавка не пришла, поиск работает как раньше: она не обязательна.
+   */
+  function loadSmartIndex() {
+    if (!smartIndexPromise) {
+      var основа = fetch(SMART_SEARCH_INDEX, { credentials: 'omit', cache: 'no-cache' })
+        .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+        .then(function (j) { return (j && j.items) || []; });
+      var прибавка = fetch(API + '/catalog/searchtext', { credentials: 'omit' })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (j) { return (j && j.items) || null; })
+        .catch(function () { return null; });
+      smartIndexPromise = Promise.all([основа, прибавка]).then(function (пара) {
+        var items = пара[0], доп = пара[1];
+        if (доп) {
+          items.forEach(function (it) {
+            var t = доп[String(it.a)];
+            if (!t) return;
+            // Кладём в тот же нормализованный текст, по которому идёт поиск,
+            // и в подпись — чтобы человек видел, почему товар нашёлся.
+            it.s = (it.s || '') + ' ' + smartNorm(t);
+            if (!it.d) it.d = t.slice(0, 180);
+          });
+        }
+        return items;
+      }).catch(function () { smartIndexPromise = null; return []; });
+    }
+    return smartIndexPromise;
+  }
+
+  /**
+   * Наши узлы в строке поиска обязаны переживать её пересборку.
+   *
+   * Замечание Александра 14.08 со снимками: «кнопка то появляется, то
+   * пропадает». Так и было. Кнопку «Найти» и панель подсказок мы вешаем на
+   * поле Tilda, а Tilda пересобирает панель на каждую догрузку каталога —
+   * тринадцать раз за загрузку. Новое поле приходит без наших узлов, и до
+   * следующего прохода apply (он отложен) кнопки нет: кадр с кнопкой, кадр
+   * без.
+   *
+   * Стилями это не лечится — узел настоящий. Поэтому следим за самой
+   * строкой отдельным наблюдателем: его обработчик вызывается до отрисовки,
+   * в той же задаче, что и вставка. Значит первый же нарисованный кадр
+   * будет с кнопкой.
+   */
+  var смотрительПоиска = null;
+  var кореньПоиска = null;
+  /** Действующий запрос: нужен, чтобы вернуть выдачу после пересборки. */
+  var NGR_ЗАПРОС = '';
+  var повторитьПоиск = null;
+  function следитьЗаПоиском() {
+    // Панель могли пересобрать вместе с корнем — тогда наблюдатель повис в
+    // пустоте и его надо поставить заново.
+    if (смотрительПоиска && кореньПоиска && кореньПоиска.isConnected) return;
+    if (смотрительПоиска) { смотрительПоиска.disconnect(); смотрительПоиска = null; }
+    /*
+     * Корень выбран замером 14.08. Tilda пересобирает не строку поиска, а
+     * всю панель: на каждой из двенадцати догрузок каталога и
+     * .t-catalog__filter, и .t-catalog__filter__controls-wrapper — уже
+     * новые узлы. Наблюдатель на них умирал вместе с ними, и первая версия
+     * этой правки не сработала: кнопки не было ни в одном из двенадцати
+     * замеренных кадров.
+     *
+     * Переживает пересборку контейнер .js-catalog-parts-select-container —
+     * именно он был целью всех двенадцати вставок. На нём и стоим, а
+     * запасной вариант — сама запись каталога.
+     */
+    var корень = document.querySelector('#rec2502703571 .js-catalog-parts-select-container') ||
+                 document.querySelector('#rec2502703571');
+    if (!корень) return;   // записи ещё нет — попробуем на следующем проходе
+    кореньПоиска = корень;
+    смотрительПоиска = new MutationObserver(function () {
+      // Проверка одна и дешёвая: обработчик зовут и на вставку карточек.
+      if (!document.querySelector('.ngr-smart-search__go')) initSmartSearch();
+      // Панель пересобрали — вернём человеку то, что он искал.
+      if (!NGR_ЗАПРОС) return;
+      var поле = document.querySelector('#rec2502703571 .js-catalog-filter-search');
+      if (поле && !(поле.value || '').trim() && document.activeElement !== поле) {
+        поле.value = NGR_ЗАПРОС;
+        if (typeof повторитьПоиск === 'function') повторитьПоиск();
+      }
+    });
+    смотрительПоиска.observe(корень, { childList: true, subtree: true });
+  }
+
+  function initSmartSearch() {
+    следитьЗаПоиском();
+    var inp = searchInput();
     if (!inp) return;
-    if (inp.value !== searchState.value) {
-      inp.value = searchState.value;
-      inp.dispatchEvent(new Event('input', { bubbles: true }));
+    var existing = document.getElementById('ngr-smart-search-results');
+    if (inp.getAttribute('data-ngr-smart') === '1' && existing && existing.isConnected) return;
+    document.querySelectorAll('.ngr-smart-search__panel').forEach(function (p) { p.remove(); });
+    inp.setAttribute('data-ngr-smart', '1');
+    inp.setAttribute('autocomplete', 'off');
+    inp.setAttribute('role', 'combobox');
+    inp.setAttribute('aria-autocomplete', 'list');
+    var host = inp.closest('.t-catalog__search-wrapper') || inp.parentNode;
+    if (!host) return;
+    host.classList.add('ngr-smart-search');
+    var box = document.createElement('div');
+    box.className = 'ngr-smart-search__panel';
+    box.id = 'ngr-smart-search-results';
+    box.hidden = true;
+    box.setAttribute('role', 'listbox');
+    host.appendChild(box);
+    inp.setAttribute('aria-controls', box.id);
+    inp.setAttribute('aria-expanded', 'false');
+    var requestId = 0;
+    var smartTimer = null;
+
+    function hide() { box.hidden = true; inp.setAttribute('aria-expanded', 'false'); }
+    function note(text) {
+      box.innerHTML = '';
+      var n = document.createElement('div');
+      n.className = 'ngr-smart-search__note'; n.textContent = text;
+      box.appendChild(n); box.hidden = false; inp.setAttribute('aria-expanded', 'true');
     }
-    try { inp.focus({ preventScroll: true }); } catch (e) { inp.focus(); }
+    function draw(list) {
+      box.innerHTML = '';
+      if (!list.length) { note('Ничего не нашли. Попробуйте другое написание.'); return; }
+      list.slice(0, 10).forEach(function (row) {
+        var it = row.item;
+        var b = document.createElement('button');
+        b.type = 'button'; b.className = 'ngr-smart-search__item'; b.setAttribute('role', 'option');
+        var t = document.createElement('strong'); t.textContent = it.t;
+        var m = document.createElement('span'); m.textContent = row.match + ' · Артикул ' + it.a;
+        b.appendChild(t); b.appendChild(m);
+        if (row.match === 'Описание' && it.d) {
+          var d = document.createElement('small'); d.textContent = it.d; b.appendChild(d);
+        }
+        b.addEventListener('click', function () {
+          clearSearchRestoreState();
+          clearTimeout(smartTimer);
+          requestId++;
+          hide();
+          openProduct(it.a);
+        });
+        box.appendChild(b);
+      });
+      box.hidden = false; inp.setAttribute('aria-expanded', 'true');
+    }
+    function run() {
+      var raw = inp.value || '', q = smartNorm(raw);
+      if (q.length < 2) { hide(); return; }
+      /*
+       * Подсказка не возвращается поверх готовой выдачи.
+       *
+       * Замечание Александра 14.08: «нажимаю найти — находит, но список
+       * остаётся висеть; пропадает, только если щёлкнуть в стороне и снова
+       * нажать найти». Причина в порядке событий: показ подсказки отложен на
+       * 280 мс, и нажатие «Найти» могло прийтись в этот промежуток — сначала
+       * мы прятали список, а следом срабатывал отложенный показ.
+       *
+       * Гасить один этот случай мало: любое повторное открытие поверх уже
+       * показанной выдачи выглядит поломкой. Поэтому правило простое: пока
+       * запрос не изменился, подсказка не возвращается.
+       */
+      if (NGR_ЗАПРОС && smartNorm(NGR_ЗАПРОС) === q) { hide(); return; }
+      var mine = ++requestId;
+      note('Ищем по названию и описанию…');
+      loadSmartIndex().then(function (items) {
+        if (mine !== requestId || !inp.isConnected || smartNorm(inp.value) !== q) return;
+        if (!items.length) { hide(); return; } // native-поиск остаётся fallback
+        var variants = [q], kb = keyboardVariant(q), tr = translitVariant(q);
+        if (kb && kb !== q) variants.push(kb);
+        if (tr && tr !== q && variants.indexOf(tr) < 0) variants.push(tr);
+        var out = [];
+        items.forEach(function (it) {
+          var best = null;
+          variants.forEach(function (v) { var r = rankSmart(it, v); if (r && (!best || r.score > best.score)) best = r; });
+          if (best) out.push({ item: it, score: best.score, match: best.match });
+        });
+        out.sort(function (a, b) { return b.score - a.score || String(a.item.t).localeCompare(String(b.item.t), 'ru'); });
+        draw(out);
+      });
+    }
+    /**
+     * Кнопка «Найти» и настоящая фильтрация выдачи.
+     *
+     * Замечание Александра 14.08: «не могу нажать кнопку, чтобы он не только
+     * списком показывал, но и отфильтровал по поиску: в вебе могу, в мобилке
+     * нет». Причин две, и обе наши.
+     *
+     * Первая: своей кнопки у поиска не было вовсе, а мобильные кнопки Tilda
+     * («Поиск», «Фильтры») мы прячем — они дублировали наши. На компьютере
+     * оставался Enter, на телефоне не оставалось ничего.
+     *
+     * Вторая: собственный поиск Tilda выдачу почти не сужает. Замер 14.08 на
+     * 375 px по запросу «магний»: из 730 карточек скрылось 130, а 600
+     * остались на месте. То есть даже нажатый Enter не давал того, чего ждёт
+     * покупатель.
+     *
+     * Поэтому фильтруем сами, тем же указателем, по которому строится
+     * подсказка: он ищет по названию, бренду, артикулу и описанию, знает
+     * раскладку и латиницу. Карточку с указателем связываем по номеру
+     * товара из ссылки — он же стоит на карточке в data-product-uid.
+     */
+    var кнопка = document.createElement('button');
+    кнопка.type = 'button';
+    кнопка.className = 'ngr-smart-search__go';
+    кнопка.textContent = 'Найти';
+    кнопка.setAttribute('aria-label', 'Показать найденные товары');
+    host.appendChild(кнопка);
+    // Чтобы на телефоне в углу клавиатуры была «Поиск», а не «Готово».
+    inp.setAttribute('enterkeyhint', 'search');
+
+    function номерТовара(it) {
+      var m = /tproduct\/(\d+)/.exec(String(it && it.u || ''));
+      return m ? m[1] : '';
+    }
+    function карточки() {
+      return [].slice.call(document.querySelectorAll('#rec2502703571 .js-product'));
+    }
+    /**
+     * Порядок карточек в сетке.
+     *
+     * Запоминаем исходный номер один раз: после поиска сетку надо вернуть
+     * ровно как было, иначе каталог навсегда останется перетасованным.
+     */
+    function запомнитьПорядок(список) {
+      список.forEach(function (c, i) {
+        if (!c.hasAttribute('data-ngr-pos')) c.setAttribute('data-ngr-pos', String(i));
+      });
+    }
+    function разложить(список, ключ) {
+      var сетка = список[0] && список[0].parentNode;
+      if (!сетка) return;
+      var нужный = список.slice().sort(function (a, b) { return ключ(a) - ключ(b); });
+      // Переставляем, только если порядок и правда другой: лишние appendChild
+      // — это лишние перерисовки сетки и лишняя работа наблюдателям.
+      var сейчас = [].slice.call(сетка.children).filter(function (c) {
+        return c.classList && c.classList.contains('js-product');
+      });
+      var надо = нужный.some(function (c, i) { return сейчас[i] !== c; });
+      if (!надо) return;
+      нужный.forEach(function (c) { сетка.appendChild(c); });
+    }
+
+    function снятьВыдачу() {
+      NGR_ЗАПРОС = '';
+      var список = карточки();
+      список.forEach(function (c) { c.classList.remove('ngr-search-off'); });
+      разложить(список, function (c) { return Number(c.getAttribute('data-ngr-pos') || 0); });
+      var p = document.getElementById('ngr-search-note');
+      if (p) p.remove();
+    }
+    function плашка(запрос, сколько, совпало) {
+      /*
+       * Место плашки — прямо над сеткой товаров.
+       *
+       * Сперва я вставлял её сразу за строкой поиска, но строка лежит внутри
+       * гибкой обёртки Tilda, и на телефоне плашка становилась её соседом и
+       * уезжала ВЫШЕ самого поиска (видно на снимке 375 px 14.08). У сетки
+       * такой беды нет: перед ней плашка читается в правильном порядке —
+       * поиск, фильтры, «нашли столько-то», товары.
+       */
+      var первая = document.querySelector('#rec2502703571 .js-product');
+      var сетка = первая && первая.parentNode;
+      if (!сетка) return;
+      var p = document.getElementById('ngr-search-note');
+      if (!p || p.parentNode !== сетка) {
+        if (p) p.remove();
+        p = document.createElement('div');
+        p.id = 'ngr-search-note';
+        p.className = 'ngr-search-note';
+      }
+      // Кладём первым ребёнком самой сетки товаров.
+      //
+      // Соседом строки поиска плашку ставить нельзя: строка лежит в гибкой
+      // обёртке Tilda, и на телефоне плашка уезжала выше поиска. Соседом
+      // сетки — тоже: у сетки своя колонка в раскладке, и плашка всплывала
+      // над фильтрами (замеры 14.08, 375 px). Внутри сетки место
+      // однозначное: прямо над первой карточкой.
+      if (сетка.firstChild !== p) сетка.insertBefore(p, сетка.firstChild);
+      p.innerHTML = '';
+      var t = document.createElement('span');
+      // Совпадения могут быть, а на экране пусто: карточки с остатком меньше
+      // четырёх мы не показываем. Врать «нашли 2», когда видно ноль, нельзя —
+      // замечание Александра 14.08 по запросу «NOW L-Arginine».
+      t.textContent = сколько
+        ? ('Нашли ' + сколько + ' ' + словоТоваров(сколько) + ' по запросу «' + запрос + '»')
+        : (совпало
+            ? ('По запросу «' + запрос + '» есть ' + совпало + ' ' + словоТоваров(совпало) +
+               ', но сейчас их нет в наличии')
+            : ('По запросу «' + запрос + '» ничего не нашли'));
+      var c = document.createElement('button');
+      c.type = 'button'; c.className = 'ngr-search-note__off'; c.textContent = 'Показать все';
+      c.addEventListener('click', function () {
+        inp.value = '';
+        inp.dispatchEvent(new Event('input', { bubbles: true }));
+        снятьВыдачу();
+        hide();
+      });
+      p.appendChild(t); p.appendChild(c);
+    }
+    function словоТоваров(n) {
+      var d = n % 10, dd = n % 100;
+      if (d === 1 && dd !== 11) return 'товар';
+      if (d >= 2 && d <= 4 && (dd < 10 || dd >= 20)) return 'товара';
+      return 'товаров';
+    }
+
+    function отфильтровать() {
+      var сырое = (inp.value || '').trim(), q = smartNorm(сырое);
+      // Запоминаем действующий запрос: панель и сетку Tilda пересобирает на
+      // каждую догрузку, и без этого выдача молча пропадала бы вместе с
+      // текстом в поле (замер 14.08 на 375 px: плашка и фильтрация исчезали
+      // через несколько секунд после нажатия «Найти»).
+      NGR_ЗАПРОС = сырое;
+      // Гасим отложенную подсказку: иначе она всплывала поверх уже
+      // показанной выдачи через 280 мс после нажатия «Найти».
+      clearTimeout(smartTimer);
+      requestId++;
+      hide();
+      if (q.length < 2) { снятьВыдачу(); return; }
+      loadSmartIndex().then(function (items) {
+        if (!items.length) return;   // без указателя выдачу не трогаем
+        var variants = [q], kb = keyboardVariant(q), tr = translitVariant(q);
+        if (kb && kb !== q) variants.push(kb);
+        if (tr && tr !== q && variants.indexOf(tr) < 0) variants.push(tr);
+        // Совпадение по названию весит больше, чем по описанию: иначе сверху
+        // оказывались товары, где слово встречается только в тексте, и выдача
+        // выглядела случайной.
+        var годные = {};
+        items.forEach(function (it) {
+          var лучший = null;
+          variants.forEach(function (v) {
+            var r = rankSmart(it, v);
+            if (r && (!лучший || r.score > лучший.score)) лучший = r;
+          });
+          if (!лучший) return;
+          var u = номерТовара(it);
+          if (u) годные[u] = лучший.score;
+        });
+        var список = карточки();
+        запомнитьПорядок(список);
+        var видно = 0;
+        список.forEach(function (c) {
+          var u = c.getAttribute('data-product-uid') || c.getAttribute('data-product-gen-uid') || '';
+          var вес = годные[u];
+          var ok = вес !== undefined;
+          c.classList.toggle('ngr-search-off', !ok);
+          if (ok) видно++;
+          // Совпавшие — по убыванию веса, остальные следом в прежнем порядке.
+          c.setAttribute('data-ngr-hit', ok ? String(вес) : '');
+        });
+        разложить(список, function (c) {
+          var s = c.getAttribute('data-ngr-hit');
+          if (!s) return 1e9 + Number(c.getAttribute('data-ngr-pos') || 0);
+          return -Number(s);
+        });
+        // Считаем не совпавшие, а видимые. Часть карточек прячет сама Tilda
+        // (замер 14.08: 130 из 730), и обещать «нашли 120», когда на экране
+        // 102, нельзя — человек пересчитает.
+        var наЭкране = 0;
+        список.forEach(function (c) {
+          if (c.classList.contains('ngr-search-off')) return;
+          if (c.offsetParent !== null) наЭкране++;
+        });
+        плашка(сырое, наЭкране, видно);
+      });
+    }
+
+    // Даём наблюдателю за панелью способ повторить поиск после пересборки.
+    повторитьПоиск = отфильтровать;
+    кнопка.addEventListener('click', отфильтровать);
+    // Enter на компьютере и «Поиск» на клавиатуре телефона — один и тот же путь.
+    inp.addEventListener('keydown', function (e) {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      отфильтровать();
+    });
+    inp.addEventListener('search', отфильтровать);
+
+    inp.addEventListener('input', function () {
+      clearTimeout(smartTimer);
+      // Стёрли запрос — сразу возвращаем весь каталог, без нажатий.
+      if (!(inp.value || '').trim()) снятьВыдачу();
+      smartTimer = setTimeout(run, 280);
+    });
+    inp.addEventListener('focus', function () { if (smartNorm(inp.value).length >= 2) run(); });
+    // Ушли из поля — списка нет. Небольшая отсрочка нужна, чтобы успел
+    // сработать щелчок по самой подсказке: он случается уже после blur.
+    inp.addEventListener('blur', function () {
+      setTimeout(function () {
+        var внутри = document.activeElement && box.contains(document.activeElement);
+        if (!внутри) hide();
+      }, 180);
+    });
+    inp.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') hide();
+      if (e.key === 'ArrowDown' && !box.hidden) {
+        var first = box.querySelector('button'); if (first) { e.preventDefault(); first.focus(); }
+      }
+    });
+    box.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') { hide(); inp.focus(); return; }
+      var buttons = [].slice.call(box.querySelectorAll('button'));
+      var i = buttons.indexOf(document.activeElement);
+      if (e.key === 'ArrowDown' && buttons[i + 1]) { e.preventDefault(); buttons[i + 1].focus(); }
+      if (e.key === 'ArrowUp') { e.preventDefault(); (buttons[i - 1] || inp).focus(); }
+    });
   }
 
   /* ---------- Вход в кабинет ---------- */
@@ -432,15 +1680,7 @@
    */
   var PROJECT = '27635446';
 
-  /**
-   * Признак входа.
-   *
-   * Раньше опирались только на функцию корзины Tilda. Но на страницах без
-   * корзины — «Документы», «Доставка», «Оплата» — её нет, и покупатель видел
-   * в шапке «Войти», хотя был внутри (замечание Александра 08.08). Поэтому
-   * запасной признак — профиль, который Tilda кладёт в хранилище браузера
-   * при входе; он есть на любой странице сайта.
-   */
+  /** Кэш профиля нужен только для подписи; вход подтверждает живой токен. */
   function memberProfile() {
     try {
       var raw = localStorage.getItem('tilda_members_profile' + PROJECT);
@@ -454,9 +1694,14 @@
   }
 
   function member() {
-    var tok = '';
-    try { tok = window.t_cart__getMembersToken ? (t_cart__getMembersToken() || '') : ''; } catch (e) {}
+    var tok = memberToken();
     var p = memberProfile();
+    // ГОРЯЧИЙ ФИКС 10.08 (вечер). Серверное подтверждение /account/state не
+    // проходит для настоящих токенов: Tilda отвечает отказом на проверку вне
+    // браузера покупателя (журнал NG-2026-08-08-006), и требование серверного
+    // подтверждения закрывало оформление заказа ВСЕМ вошедшим. Гейт снова
+    // верит локальному профилю Tilda, как до 10.08. Серверная сверка остаётся
+    // для профиля, избранного и истории — им строгость нужна, заказу нет.
     if (!tok && !p) return null;
     return {
       name: p ? String(p.name || p.login || '').trim() : '',
@@ -1100,7 +2345,21 @@
   var TP = '27635446';
 
   function memberToken() {
-    try { return (window.t_cart__getMembersToken && t_cart__getMembersToken()) || ''; } catch (e) { return ''; }
+    var token = '';
+    try { token = (window.t_cart__getMembersToken && t_cart__getMembersToken()) || ''; } catch (e) {}
+    if (token) return token;
+    // Это тот же официальный источник, который читает t_cart__getMauser()
+    // внутри tilda-cart-1.1. На страницах, где helper ещё не объявлен,
+    // профиль уже есть; токен всё равно обязательно проверяет Worker у Tilda.
+    try {
+      var mauser = JSON.parse(localStorage.getItem('tilda_members_profile' + TP) || 'null');
+      token = mauser && mauser.token ? String(mauser.token) : '';
+    } catch (e) {}
+    if (token) return token;
+    // Tilda может убрать helper после инициализации, но наш checkout уже
+    // сохранил подтверждаемый токен в скрытом поле формы.
+    var input = document.querySelector('input[name="ngmember"]');
+    return input ? String(input.value || '') : '';
   }
 
   function tildaPost(path, extra) {
@@ -1126,11 +2385,23 @@
       'font-weight:500;color:#14171c;cursor:pointer}' +
       '.ngr-cab__nav b:hover{background:#f5f7fa}' +
       '.ngr-cab__nav b.on{background:#eef4fb;color:#2f6ba8;font-weight:700}' +
+      // Выход отделён чертой и приглушён: это не раздел кабинета, а действие,
+      // и попасть в него случайно вместо «Профиля» не должно быть легко.
+      '.ngr-cab__nav b.ngr-cab__out{margin-top:14px;padding-top:14px;' +
+      'border-top:1px solid #eceff3;border-radius:0;color:#8a919b}' +
+      '.ngr-cab__nav b.ngr-cab__out:hover{background:transparent;color:#c0392b}' +
       '.ngr-cab h2{margin:0 0 16px;font-size:26px;font-weight:800;letter-spacing:-.6px;color:#14171c}' +
       '.ngr-cab__card{border:1px solid #e8ecf1;border-radius:16px;padding:18px;margin-bottom:14px}' +
       '.ngr-cab__row{display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:10px}' +
       '.ngr-cab__st{font-size:13px;font-weight:700;color:#1a8f4c}' +
       '.ngr-cab__sum{font-size:18px;font-weight:800;color:#14171c}' +
+      // Состояние доставки — самое нужное в карточке заказа, поэтому у него
+      // своя плашка, а не строчка мелким шрифтом среди прочего.
+      '.ngr-cab__ship{margin-top:10px;padding:9px 12px;border-radius:10px;' +
+      'background:#f1f6f2;color:#2f6b3f;font-size:13.5px;line-height:1.4}' +
+      '.ngr-cab__ship_wait{background:#f5f7fa;color:#4a5464}' +
+      '.ngr-cab__ship_off{background:#fdf3f2;color:#a8433c}' +
+      '.ngr-cab__ship b{font-weight:700}' +
       '.ngr-cab__items{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}' +
       '.ngr-cab__it{width:74px;text-align:center;cursor:pointer}' +
       '.ngr-cab__it i{display:block;width:74px;height:74px;border-radius:10px;border:1px solid #eef1f5;' +
@@ -1160,9 +2431,25 @@
       '.ngr-cab__copy:hover{background:#f5f7fa}' +
       '.ngr-cab__hint{font-size:12.5px;color:#8a919b;line-height:1.5;margin-top:8px}' +
       '.ngr-cab__photo{display:flex;align-items:center;gap:12px;flex-wrap:wrap}' +
-      '.ngr-cab__prev{width:64px;height:64px;border-radius:50%;border:1px solid #e3e8ee;' +
-      'background:#f3f5f8 center/cover no-repeat;flex:0 0 64px}' +
+      /*
+       * Блок фотографии — покрупнее и с понятной парой кнопок.
+       *
+       * Пожелание Александра 14.08: «это должно выглядеть современно,
+       * красиво и понятно». Кружок был 64 px и стоял в одну строку с
+       * кнопками, из-за чего читался как значок, а не как «вот так вас
+       * увидят». Теперь 96 px с мягким кольцом, рядом столбик: главное
+       * действие, второстепенное и подсказка про размер.
+       */
+      '.ngr-cab__prev{width:96px;height:96px;border-radius:50%;border:0;' +
+      'box-shadow:0 0 0 1px #e3e8ee,0 6px 18px rgba(20,23,28,.08);' +
+      'background:#f3f5f8 center/cover no-repeat;flex:0 0 96px}' +
+      '.ngr-cab__photo{gap:16px!important;align-items:center!important}' +
+      '.ngr-cab__photoacts{display:flex;flex-direction:column;gap:8px;align-items:flex-start;min-width:0}' +
+      '.ngr-cab__photohint{font-size:12.5px;line-height:1.35;color:#8a919b}' +
       'label.ngr-cab__copy{display:inline-block}' +
+      // Главное действие видно сразу, второстепенное — спокойное.
+      '.ngr-cab__photoacts label.ngr-cab__copy{background:#4984c4;border-color:#4984c4;color:#fff}' +
+      '.ngr-cab__photoacts label.ngr-cab__copy:hover{background:#3f76b1;border-color:#3f76b1}' +
       '@media(max-width:860px){' +
       '.ngr-cab{grid-template-columns:1fr;gap:16px;padding:12px 16px 26px}' +
       '.ngr-cab__side{position:static}' +
@@ -1215,7 +2502,23 @@
       '.ngr-avc__row{display:flex;flex-wrap:wrap;gap:12px;margin:4px 0 14px}' +
       '.ngr-avc__cap{font-size:12.5px;font-weight:700;color:#8a919b;text-transform:uppercase;' +
       'letter-spacing:.4px;margin:10px 0 2px}' +
-      '.ngr-avc__all{margin-top:4px}' +
+      /*
+       * Галерея аватаров: своя область с прокруткой, а не бесконечная лента.
+       *
+       * Шестьдесят кружков в шесть наборов растягивали профиль так, что
+       * кнопка «Сохранить» уезжала за экран. Ограничиваем высоту, подписи
+       * наборов прилипают к верху области — видно, где находишься.
+       */
+      '.ngr-avc__all{margin-top:4px;max-height:340px;overflow-y:auto;overflow-x:hidden;' +
+      'padding:2px 4px 4px;border:1px solid #eef1f5;border-radius:14px;background:#fcfdfe;' +
+      'overscroll-behavior:contain}' +
+      '.ngr-avc__cap{position:sticky;top:0;z-index:2;background:#fcfdfe;padding:8px 2px 4px}' +
+      // Выбранный виден без сомнений: кольцо и галочка.
+      '.ngr-avc.on::after{content:"";position:absolute;right:2px;bottom:2px;width:20px;height:20px;' +
+      'border-radius:50%;background:#4984c4 center/12px 12px no-repeat;' +
+      'background-image:url("data:image/svg+xml;utf8,' +
+      "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'><path d='M20 6L9 17l-5-5'/></svg>" +
+      '");box-shadow:0 0 0 2px #fff}' +
       '@media(max-width:560px){.ngr-avc{width:62px;height:62px}.ngr-avc__row{gap:9px}}' +
       '.ngr-avc__more{padding:9px 16px;border:1px solid #e3e8ee;background:#fff;border-radius:10px;' +
       'font-size:14px;font-weight:600;color:#14171c;cursor:pointer;font-family:inherit}' +
@@ -1230,60 +2533,183 @@
    * Александра 08.08). Память браузера остаётся быстрым кэшем, чтобы
    * значок рисовался сразу, не дожидаясь ответа.
    */
-  function pushProfile(login) {
-    if (!login) return;
-    var cur = profileSettings();
-    fetch(API + '/profile/me', {
+  var accountSubject = '';
+  var accountToken = '';
+  var accountPromise = null;
+  var accountVerified = false;
+
+  function legacyProfileSettings() {
+    try { return JSON.parse(localStorage.getItem('ngr_me') || '{}'); } catch (e) { return {}; }
+  }
+  function legacyFavorites() {
+    try { return JSON.parse(localStorage.getItem('ngr_fav') || '[]'); } catch (e) { return []; }
+  }
+  function accountCacheKey(base) {
+    return accountSubject ? base + ':' + accountSubject : base;
+  }
+  /**
+   * Доказательство «это я» для воркера.
+   *
+   * Токен Tilda воркер подтвердить не может, поэтому прикладываем то же
+   * доказательство, что и кабинет: адрес почты и собственные заказы из
+   * панели Tilda. Их видит только тот, кто вошёл. Воркер сверяет со своими
+   * записями и, если сходится, выдаёт подписанный пропуск — дальше шлём
+   * его, и перебор заказов больше не нужен.
+   */
+  function предъявлениеДляВоркера() {
+    var п = cabData.profile || memberProfile() || {};
+    var почта = String(p_login(п)).trim().toLowerCase();
+    var список = (cabData.dash && cabData.dash.last_orders) || [];
+    if (почта.indexOf('@') < 1 || !список.length) return null;
+    var заказы = список.map(function (o) {
+      return {
+        id: String(orderNo(o) || ''),
+        amount: Number(o.amount_total || o.amount_final || o.amount || 0),
+        created: String(o.created || '')
+      };
+    }).filter(function (o) { return o.id; });
+    return заказы.length ? { email: почта, orders: заказы } : null;
+  }
+  function p_login(п) { return (п && (п.login || п.email)) || ''; }
+
+  function accountPost(action, data, requestToken) {
+    var token = requestToken || memberToken();
+    if (!token) return Promise.reject(new Error('no member token'));
+    var body = {};
+    Object.keys(data || {}).forEach(function (k) { body[k] = data[k]; });
+    body.action = action;
+    body.token = token;
+    var свой = пропуск();
+    if (свой) body.pass = свой;
+    var предъявление = предъявлениеДляВоркера();
+    if (предъявление) body.claim = предъявление;
+    return fetch(API + '/account/state', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ login: login, nick: cur.nick || '', avatar: cur.avatar || '' })
-    }).catch(function () {});
+      cache: 'no-store',
+      body: JSON.stringify(body)
+    }).then(function (r) {
+      if (!r.ok) {
+        var error = new Error('account HTTP ' + r.status);
+        error.status = r.status;
+        throw error;
+      }
+      return r.json().then(function (snapshot) {
+        return { snapshot: snapshot, token: token };
+      });
+    });
+  }
+  function applyAccountSnapshot(packet) {
+    var j = packet && packet.snapshot;
+    var requestToken = packet && packet.token;
+    if (!requestToken || requestToken !== accountToken || requestToken !== memberToken()) return null;
+    if (!j || !j.subject) return j;
+    if (j.pass) запомнитьПропуск(j.pass);
+    accountVerified = true;
+    accountSubject = String(j.subject);
+    var p = j.profile && typeof j.profile === 'object' ? j.profile : {};
+    try {
+      localStorage.setItem(accountCacheKey('ngr_me'), JSON.stringify(p));
+      localStorage.setItem(accountCacheKey('ngr_fav'), JSON.stringify(Array.isArray(j.favorites) ? j.favorites : []));
+    } catch (e) {}
+    paintMe();
+    fixAccountButton();
+    paintFavoriteButtons();
+    // Первый apply идёт до ответа Worker и временно закрывает оформление.
+    // После подтверждения токена сразу пересчитываем gate, не ждём случайной DOM-мутации.
+    fixAuthGate();
+    return j;
+  }
+  function syncAccount(force) {
+    var token = memberToken();
+    if (!token) {
+      accountSubject = '';
+      accountToken = '';
+      accountPromise = null;
+      accountVerified = false;
+      return Promise.resolve(null);
+    }
+    if (accountToken !== token) {
+      accountToken = token;
+      accountSubject = '';
+      accountPromise = null;
+      accountVerified = false;
+    }
+    if (accountPromise && !force) return accountPromise;
+    var request = accountPost('read', null, token).then(function (packet) {
+      return applyAccountSnapshot(packet);
+    }).catch(function (error) {
+      if (accountToken === token && memberToken() === token) {
+        if (error && error.status === 401) {
+          accountVerified = false;
+          // 401 — сервер осознанно не признал этот токен (Tilda не подтверждает
+          // его вне браузера, см. журнал 12.08). Повторять тот же запрос на
+          // каждую перерисовку страницы бессмысленно — консоль покупателя
+          // заливало лавиной 401. Промис оставляем: повтор только по force
+          // (открытие кабинета) или при смене токена.
+          return null;
+        }
+        // Сетевые сбои — временные: разрешаем повтор при следующем проходе.
+        accountPromise = null;
+      }
+      return null;
+    });
+    accountPromise = request;
+    return request;
   }
 
-  var pulledFor = '';
+  function pushProfile() {
+    var cur = profileSettings();
+    return accountPost('profile', {
+      profile: { nick: cur.nick || '', avatar: cur.avatar || '', photo: cur.photo || '' }
+    }).then(function (j) { return applyAccountSnapshot(j); });
+  }
 
   function pullProfileOnce() {
-    var m = member();
-    var login = m && m.login;
-    if (!login || pulledFor === login) return;
-    pulledFor = login;
-    pullProfile(login);
+    syncAccount(false);
   }
 
-  function pullProfile(login) {
-    if (!login) return;
-    fetch(API + '/profile/me?login=' + encodeURIComponent(login))
-      .then(function (r) { return r.json(); })
-      .then(function (j) {
-        var cur = profileSettings();
-        if (j && (j.nick || j.avatar)) {
-          // Настройки с сервера главнее: они одни на все устройства.
-          if (j.nick) cur.nick = j.nick;
-          cur.avatar = j.avatar || '';
-          try { localStorage.setItem('ngr_me', JSON.stringify(cur)); } catch (e) {}
-        } else if (cur.nick || cur.avatar) {
-          // Первый заход после переезда: поднимаем прежний выбор из браузера.
-          pushProfile(login);
-        }
-        paintMe();
-        fixAccountButton();
-        // Если профиль уже открыт, форма собрана по старым данным —
-        // пересобираем её, иначе выбранный аватар не отмечен.
-        if (document.querySelector('.ngr-avc__all') && cabData.profile) cabSection('profile');
-      })
-      .catch(function () {});
+  function pullProfile() {
+    return syncAccount(true);
   }
 
-  /** Личные настройки покупателя. В браузере — кэш, хранилище — интегратор. */
+  /**
+   * Где лежат личные настройки покупателя.
+   *
+   * Замечание Александра 14.08: «не сохраняет». Так и было, и вот почему.
+   * Ключ хранения складывался из подтверждённого воркером признака входа, а
+   * подтвердить вход воркер не может: Tilda отвечает ему отказом на проверку
+   * токена (журнал NG-2026-08-08-006, тупик подтверждён и 13.08). Значит
+   * признака нет, ключа нет, и запись отменялась ещё до попытки — человек
+   * видел «Не удалось синхронизировать» и терял выбранный аватар.
+   *
+   * Разводим два вопроса, которые были смешаны в один. Хранить настройки на
+   * этом устройстве можно всегда: это его же браузер и его же выбор. А вот
+   * переносить их между устройствами — только когда воркер согласился, что
+   * это тот самый человек. Ключ поэтому берём по возможности подтверждённый,
+   * а если подтверждения нет — по адресу почты из профиля Tilda. Настройки
+   * разных людей за одним браузером всё равно не смешаются.
+   */
+  function профильКлюч() {
+    if (accountSubject && accountVerified && accountToken === memberToken()) {
+      return accountCacheKey('ngr_me');
+    }
+    var m = memberProfile();
+    var почта = m ? String(m.login || m.email || '').trim().toLowerCase() : '';
+    return почта ? 'ngr_me:почта:' + почта : 'ngr_me';
+  }
   function profileSettings() {
-    try { return JSON.parse(localStorage.getItem('ngr_me') || '{}'); } catch (e) { return {}; }
+    try { return JSON.parse(localStorage.getItem(профильКлюч()) || '{}'); } catch (e) { return {}; }
+  }
+  function writeProfileSettings(cur) {
+    try { localStorage.setItem(профильКлюч(), JSON.stringify(cur)); return true; } catch (e) { return false; }
   }
   function saveProfileSettings(v) {
     var cur = profileSettings();
     cur.nick = v.nick;
     if ('avatar' in v) cur.avatar = v.avatar;
     if ('emoji' in v) cur.emoji = v.emoji;
-    try { localStorage.setItem('ngr_me', JSON.stringify(cur)); } catch (e) {}
+    writeProfileSettings(cur);
   }
 
   /**
@@ -1331,22 +2757,58 @@
     new: 'Новый', inprocess: 'В обработке', processing: 'В обработке',
     paid: 'Оплачен', payed: 'Оплачен', awaiting_payment: 'Ожидает оплаты',
     delivery: 'В доставке', shipped: 'Отправлен', done: 'Выполнен',
-    completed: 'Выполнен', cancelled: 'Отменён', canceled: 'Отменён',
-    refunded: 'Возврат', undeliverable: 'Доставка невозможна'
+    completed: 'Выполнен', fulfilled: 'Выполнен', inprogress: 'В обработке',
+    in_progress: 'В обработке', cancelled: 'Отменён', canceled: 'Отменён',
+    refunded: 'Возврат', undeliverable: 'Доставка невозможна',
+    delivery_created: 'Передан в Ozon Доставку', checkout_ok_dry_run: 'Доставка подтверждена',
+    create_failed: 'Нужна помощь с доставкой', cancel_requested: 'Запрошена отмена',
+    change_requested: 'Запрошено изменение'
   };
 
   function orderStatus(o) {
-    var s = o.status_name || o.status || o.state || '';
+    // Состояние от Ozon старше всех остальных: наш собственный статус — это
+    // лишь этап обработки («передан в доставку»), и он не меняется после
+    // создания отправления. Замечание Александра 13.08: заказ уже получен, а
+    // в карточке сверху висело «Передан в Ozon Доставку».
+    if (o.shipment && o.shipment.text) {
+      var т = String(o.shipment.text);
+      return т.charAt(0).toUpperCase() + т.slice(1);
+    }
+    var s = o.delivery_status || o.status_name || o.status || o.state || '';
     if (s && typeof s === 'object') s = s.name || s.title || s.text || s.value || '';
     s = String(s || '');
     var key = s.toLowerCase().replace(/[\s-]/g, '_');
-    return STATUS_RU[key] || (s ? s : 'Оформлен');
+    if (STATUS_RU[key]) return STATUS_RU[key];
+    /**
+     * Незнакомый код покупателю не показываем.
+     *
+     * 14.08 в кабинете висело «fulfilled»: словарь его не знал, а запасной
+     * ход отдавал строку как есть. Ровно так же 13.08 вылезло
+     * «posting_in_carriage» от Ozon. Правило одно: латиница с
+     * подчёркиваниями — служебный код, вместо него нейтральное «В
+     * обработке», а сам код пишем в консоль, чтобы дописать словарь.
+     *
+     * Проверяем исходную строку, а не ключ: пробелы мы сами заменили на
+     * подчёркивания, и по ключу живая надпись «Ожидает подтверждения»
+     * выглядела бы кодом.
+     */
+    if (/^[a-z0-9_-]+$/i.test(s.trim())) {
+      if (key) console.log('NGR: неизвестный статус заказа —', key);
+      return 'В обработке';
+    }
+    return s || 'Оформлен';
   }
 
-  /** Номер заказа: у Tilda он лежит под разными именами. */
+  /**
+   * Номер заказа: у Tilda он лежит под разными именами.
+   *
+   * formsref добавлен 13.08: именно им пронумерованы заказы в панели
+   * личного кабинета, а в списке его не было. Из-за этого номер выходил
+   * пустым, наши заказы не находили пары в панели и не показывались вовсе.
+   */
   function orderNo(o) {
-    return String(o.id || o.orderid || o.order_id || o.number || o.num ||
-      o.uid || o.paymentid || '').trim();
+    return String(o.formsref || o.id || o.orderid || o.order_id || o.number ||
+      o.num || o.uid || o.paymentid || '').trim();
   }
 
   function orderItems(o) {
@@ -1354,11 +2816,306 @@
     return Array.isArray(a) ? a : [];
   }
 
+  /**
+   * Наши заказы для кабинета.
+   *
+   * Токен Tilda воркер подтвердить не может: тот же токен работает из
+   * браузера покупателя и не работает из сети Cloudflare (девять опытов,
+   * журнал NG-2026-08-13-025). Поэтому вместе с токеном шлём предъявление —
+   * почту из профиля и по каждому заказу номер, сумму и время создания,
+   * взятые из панели самой Tilda. Всё это видно только вошедшему, и воркер
+   * отдаёт заказ, лишь когда сходится всё сразу.
+   *
+   * Мера временная и слабее настоящей сессии; следующим шагом — свой вход
+   * по коду на почту.
+   */
+  /**
+   * Пропуск нашего собственного входа.
+   *
+   * Живёт в браузере покупателя. Внутри только почта и срок, подписанные на
+   * стороне воркера, — секретов в нём нет, подделать нельзя.
+   */
+  var КЛЮЧ_ПРОПУСКА = 'ngr_pass_v1';
+  /**
+   * Пропуск выдаёт воркер после того, как мы предъявили ему собственные
+   * заказы. Дальше он предъявляется вместо них — воркеру не приходится
+   * перебирать хранилище на каждое чтение профиля.
+   */
+  function запомнитьПропуск(п) {
+    if (!п) return;
+    try { localStorage.setItem(КЛЮЧ_ПРОПУСКА, String(п)); } catch (e) {}
+  }
+  function пропуск() {
+    try { return localStorage.getItem(КЛЮЧ_ПРОПУСКА) || ''; } catch (e) { return ''; }
+  }
+  function забытьПропуск() {
+    try { localStorage.removeItem(КЛЮЧ_ПРОПУСКА); } catch (e) {}
+  }
+
+  /**
+   * Заготовки вида {{form_login_title}} в окне входа.
+   *
+   * Замечание Александра 14.08: при открытии окна входа на секунду видны
+   * служебные метки, потом подменяются настоящими надписями. Источник найти
+   * не удалось: ни в нашем коде, ни в разметке страницы, ни в загруженных
+   * файлах Tilda этих меток нет — окно строит скрипт, который подтягивается
+   * уже по нажатию «Войти».
+   *
+   * Поэтому лечим не причину, а то, что видит человек: пока в окне остаются
+   * метки, прячем его содержимое, и показываем, как только они подменились.
+   * Через полторы секунды показываем в любом случае — оставить человека перед
+   * пустым окном хуже, чем показать ему метки.
+   *
+   * Смотрим только на добавленные узлы, а не на весь документ: перебор всей
+   * страницы на каждое изменение — это тот самый холостой обход, который мы
+   * уже вычищали из каталога.
+   */
+  /**
+   * Заготовки Tilda вида {{ключ}} и наши запасные надписи.
+   *
+   * Держим в общей области: этим пользуются и заслон в основном документе, и
+   * починка внутри iframe с формой входа.
+   */
+  var МЕТКА = /\{\{[a-z0-9_]{3,40}\}\}/i;
+  // Надписи взяты с той же формы, когда она успела загрузиться, — то есть
+  // это ровно то, что Tilda и показывает, а не мой перевод.
+  var НАШИ_НАДПИСИ = {
+    form_login_title: 'Авторизация',
+    form_login_field_email: 'Эл. почта',
+    form_login_placeholder_email: 'Введите эл. почту',
+    form_login_field_password: 'Пароль',
+    form_login_placeholder_password: 'Введите свой пароль',
+    form_login_submit: 'Войти',
+    form_login_link_signup: 'Зарегистрироваться',
+    form_login_link_rec: 'Восстановить пароль'
+  };
+  function подменитьЗнакомые(корень) {
+    var замена = function (текст) {
+      return String(текст)
+        /*
+         * Единица измерения на странице заказа.
+         *
+         * Замечание Александра 15.08 со снимком: в заказе №1868559242 вместо
+         * «2 940 р./шт.» стояло «2 940 р./{{units_шт.}}», и рядом «1
+         * {{units_шт.}}». Это заготовка самой Tilda: в ключе уже лежит нужное
+         * слово, она просто не подставила его на этой странице. Подставляем
+         * то, что в ключе и написано, — не выдумывая.
+         */
+        .replace(/\{\{units_([^}]{1,16})\}\}/gi, function (всё, ед) { return ед; })
+        .replace(/\{\{([a-z0-9_]+)\}\}/gi, function (всё, ключ) {
+          return Object.prototype.hasOwnProperty.call(НАШИ_НАДПИСИ, ключ)
+            ? НАШИ_НАДПИСИ[ключ] : всё;
+        });
+    };
+    // Только текстовые узлы и подсказки полей: разметку не трогаем.
+    var ходок = document.createTreeWalker(корень, NodeFilter.SHOW_TEXT, null);
+    var узел, правки = [];
+    while ((узел = ходок.nextNode())) {
+      if (МЕТКА.test(узел.nodeValue || '')) правки.push(узел);
+    }
+    правки.forEach(function (t) { t.nodeValue = замена(t.nodeValue); });
+    корень.querySelectorAll('input[placeholder],textarea[placeholder]').forEach(function (п) {
+      if (МЕТКА.test(п.placeholder || '')) п.placeholder = замена(п.placeholder);
+    });
+  }
+
+  (function прячемЗаготовки() {
+    function окно(el) {
+      return (el.closest && el.closest('[class*=popup],[class*=modal],[class*=t-form]')) || null;
+    }
+    function присмотреть(узел) {
+      if (!узел || узел.nodeType !== 1) return;
+      if (!МЕТКА.test(узел.textContent || '')) return;
+      var о = окно(узел) || узел;
+      if (о.getAttribute('data-ngr-ждём') === '1') return;
+      о.setAttribute('data-ngr-ждём', '1');
+      var былаВидимость = о.style.visibility;
+      о.style.visibility = 'hidden';
+      var показать = function (подставить) {
+        // Если Tilda так и не подставила надписи, ставим свои — но только те,
+        // что я видел своими глазами на загрузившейся форме. Выдумывать
+        // подписи к незнакомым ключам нельзя: лучше метка, чем неверное слово.
+        if (подставить) подменитьЗнакомые(о);
+        о.style.visibility = былаВидимость || '';
+        о.removeAttribute('data-ngr-ждём');
+        clearInterval(таймер);
+        clearTimeout(предел);
+      };
+      var таймер = setInterval(function () {
+        if (!МЕТКА.test(о.textContent || '')) показать();
+      }, 60);
+      var предел = setTimeout(function () { показать(true); }, 1500);
+    }
+    var наблюдатель = new MutationObserver(function (записи) {
+      for (var i = 0; i < записи.length; i++) {
+        var доб = записи[i].addedNodes;
+        for (var k = 0; k < доб.length; k++) присмотреть(доб[k]);
+      }
+    });
+    наблюдатель.observe(document.documentElement, { childList: true, subtree: true });
+  })();
+
+  function loadIntegratorOrders(token, profile, dash) {
+    var свой = пропуск();
+    // Без входа в Tilda, но со своим пропуском заказы всё равно показываем:
+    // ради этого пропуск и заводился.
+    if (!token && !свой) return Promise.resolve({ orders: [] });
+    var тело = {};
+    if (token) тело.token = token;
+    if (свой) тело.pass = свой;
+    var почта = (profile && (profile.login || profile.email)) || '';
+    var список = (dash && dash.last_orders) || [];
+    if (почта && список.length) {
+      тело.claim = {
+        email: String(почта),
+        orders: список.map(function (o) {
+          return {
+            id: String(orderNo(o) || ''),
+            amount: Number(o.amount_total || o.amount_final || o.amount || 0),
+            created: String(o.created || '')
+          };
+        }).filter(function (o) { return o.id; })
+      };
+    }
+    return fetch(API + '/orders/my', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      cache: 'no-store', body: JSON.stringify(тело)
+    }).then(function (r) { if (!r.ok) throw new Error('orders HTTP ' + r.status); return r.json(); })
+      .catch(function () { return { orders: [] }; });
+  }
+
+  function mergeOrderDashboard(nativeDash, integrator) {
+    var dash = nativeDash && typeof nativeDash === 'object' ? nativeDash : {};
+    var out = {};
+    Object.keys(dash).forEach(function (k) { out[k] = dash[k]; });
+    var orders = Array.isArray(dash.last_orders) ? dash.last_orders.slice() : [];
+    var byId = {};
+    orders.forEach(function (o, i) { var id = orderNo(o); if (id) byId[id] = i; });
+    ((integrator && integrator.orders) || []).forEach(function (o) {
+      var id = String(o.id || '').trim();
+      var mapped = {
+        id: id, date: o.at || '', amount: Number(o.amount) || 0,
+        delivery_status: o.status || '', city: o.city || '', address: o.address || '',
+        point: o.point || '', ozon_order: o.ozon_order || '',
+        shipment: o.shipment || null,
+        items: (o.items || []).map(function (it) {
+          return { name: it.name || '', sku: it.sku || '', quantity: Number(it.qty) || 1, price: Number(it.price) || 0 };
+        })
+      };
+      if (id && byId[id] !== undefined) {
+        var current = orders[byId[id]];
+        current.delivery_status = mapped.delivery_status || current.delivery_status || '';
+        current.city = current.city || mapped.city;
+        current.address = current.address || mapped.address;
+        current.ozon_order = current.ozon_order || mapped.ozon_order;
+        // Состояние доставки всегда берём наше: Tilda о нём не знает, её
+        // поле статуса ставит руками оператор (журнал NG-2026-08-13-021).
+        if (mapped.shipment) current.shipment = mapped.shipment;
+        if (!orderItems(current).length && mapped.items.length) current.items = mapped.items;
+      } else {
+        orders.push(mapped);
+        if (id) byId[id] = orders.length - 1;
+      }
+    });
+    orders.sort(function (a, b) {
+      return String(b.date || b.created || b.datetime || '').localeCompare(String(a.date || a.created || a.datetime || ''));
+    });
+    /**
+     * Заодно запоминаем покупателя для корзины.
+     *
+     * Просьба Александра 14.08: «профиль должен автоматически заполниться».
+     * До этого корзина знала человека только на том устройстве, где он уже
+     * оформлял заказ. Теперь достаточно один раз открыть кабинет: имя и
+     * телефон приходят из его же последнего заказа, и следующая корзина
+     * подставит их сама — на любом устройстве.
+     *
+     * Только пустые места: то, что человек вводил на этом устройстве сам,
+     * ценнее прошлого заказа и не перетирается.
+     */
+    var свежий = ((integrator && integrator.orders) || []).slice().sort(function (a, b) {
+      return String(b.at || '').localeCompare(String(a.at || ''));
+    })[0];
+    if (свежий && (свежий.name || свежий.phone)) {
+      var уже = покупательИзПамяти();
+      запомнитьПокупателя({
+        name: уже.name || свежий.name || '',
+        phone: уже.phone || цифрыТелефона(свежий.phone || '')
+      });
+    }
+    out.last_orders = orders;
+    return out;
+  }
+
+  /**
+   * Метки {{form_login_...}} в окне входа сайта.
+   *
+   * Устройство окна выяснилось 14.08: #authModal — это подложка, внутри
+   * которой лежит iframe со страницей /members/login того же домена. Форма
+   * живёт в отдельном документе, поэтому прежний заслон от меток не
+   * срабатывал вовсе — метки мелькают там, где он их не видел.
+   *
+   * Домен тот же, значит документ доступен, и метки чиним прямо в нём.
+   * Свой вход по коду отсюда убран 14.08 («убирай наш костыль»): вход по
+   * одноразовому коду делает сама Tilda, а её письма идут через наш SMTP.
+   */
+  (function нашВходВОкне() {
+    function документОкна() {
+      var ф = document.querySelector('#authModal iframe');
+      if (!ф) return null;
+      try { return ф.contentDocument || null; } catch (e) { return null; }
+    }
+
+    // Метки чиним там же, где они появляются, — внутри окна.
+    function починитьМетки() {
+      var д = документОкна();
+      if (!д || !д.body) return;
+      if (!МЕТКА.test(д.body.textContent || '')) return;
+      подменитьЗнакомые(д.body);
+    }
+
+    /**
+     * От нашего входа по коду здесь осталась только починка меток.
+     *
+     * Причина проста: наш код не делал человека вошедшим в Tilda — сессию
+     * сайта выдаёт только она, метода для этого у её API нет. Рядом с родным
+     * входом наш выглядел как второй вход, который «не сработал», хотя
+     * работал: просто открывал не то.
+     *
+     * 14.08 в настройках личного кабинета включён штатный «Одноразовый код»,
+     * и письма Tilda идут через наш SMTP. Свой механизм убран целиком — и из
+     * страницы, и из воркера: ручки /auth/request и /auth/confirm отвечают
+     * 410, потому что открытая отправка письма на любой адрес — это чужая
+     * рассылка от нашего имени.
+     */
+    function присмотреть() { починитьМетки(); }
+
+    var попыток = 0;
+    var часы = setInterval(function () {
+      присмотреть();
+      if (++попыток > 40) clearInterval(часы);   // две минуты и хватит
+    }, 3000);
+    присмотреть();
+
+    // И сразу, как только окно показывают или iframe перезагружается.
+    new MutationObserver(function () {
+      присмотреть();
+      var ф = document.querySelector('#authModal iframe');
+      if (ф && !ф.getAttribute('data-ngr-слежу')) {
+        ф.setAttribute('data-ngr-слежу', '1');
+        ф.addEventListener('load', function () { setTimeout(присмотреть, 300); });
+      }
+    }).observe(document.documentElement,
+      { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'src'] });
+  })();
+
   function cabSection(name) {
     var host = document.querySelector('.ngr-cab__main');
     if (!host) return;
     document.querySelectorAll('.ngr-cab__nav b').forEach(function (b) {
-      b.className = b.getAttribute('data-s') === name ? 'on' : '';
+      // Переключаем только «on». Раньше здесь переписывался весь className, и
+      // это сдирало с пункта «Выйти» его класс ngr-cab__out вместе с
+      // оформлением — пункт был, но выглядел как обычный раздел.
+      b.classList.toggle('on', b.getAttribute('data-s') === name);
     });
     var d = cabData.dash || {};
     var p = cabData.profile || {};
@@ -1380,7 +3137,33 @@
           (no ? 'Заказ № ' + no : 'Заказ') + '</b>' +
           '<div class="ngr-cab__mail">' + String(o.date || o.created || o.datetime || '').slice(0, 16) + '</div></div>' +
           '<div style="text-align:right"><div class="ngr-cab__sum">' + money(Number(o.amount) || 0) + '</div>' +
-          '<div class="ngr-cab__st">' + orderStatus(o) + '</div></div></div>';
+          '<div class="ngr-cab__st">' + (o.delivery_status ? 'Статус доставки: ' : '') + orderStatus(o) + '</div></div></div>';
+        if (o.shipment && o.shipment.text) {
+          var ship = document.createElement('div');
+          var код = String(o.shipment.code || '');
+          ship.className = 'ngr-cab__ship' +
+            (код === 'posting_canceled' ? ' ngr-cab__ship_off' :
+             (код === 'posting_delivered' || код === 'posting_received' ||
+              код === 'posting_in_pickup_point') ? '' : ' ngr-cab__ship_wait');
+          // Собираем узлами, а не строкой HTML: текст приходит от Ozon, и
+          // подставлять чужую строку в разметку незачем.
+          // Само состояние уже стоит в заголовке карточки, здесь — только
+          // номер отправления, иначе одно и то же слово в карточке дважды.
+          ship.appendChild(document.createTextNode('Доставка Ozon'));
+          if (o.shipment.posting) {
+            ship.appendChild(document.createTextNode(', отправление '));
+            var жирным = document.createElement('b');
+            жирным.textContent = String(o.shipment.posting);
+            ship.appendChild(жирным);
+          }
+          c.appendChild(ship);
+        }
+        if (o.address) {
+          var delivery = document.createElement('div');
+          delivery.className = 'ngr-cab__hint';
+          delivery.textContent = String(o.city || '') + (o.city && o.address ? ', ' : '') + String(o.address || '');
+          c.appendChild(delivery);
+        }
         if (items.length) {
           var box = document.createElement('div');
           box.className = 'ngr-cab__items';
@@ -1409,6 +3192,12 @@
         }
         host.appendChild(c);
       });
+      var fullHistory = document.createElement('div');
+      fullHistory.className = 'ngr-cab__hint';
+      fullHistory.innerHTML = '<a href="/members/" style="color:#2f6ba8;font-weight:700">' +
+        'Открыть полную историю заказов</a><br>' +
+        'Здесь показаны последние заказы и актуальный статус доставки.';
+      host.appendChild(fullHistory);
       return;
     }
 
@@ -1438,8 +3227,36 @@
 
     if (name === 'fav') {
       var list = favList();
-      host.innerHTML = '<h2>Избранное</h2>' + (list.length ? '' :
-        '<div class="ngr-cab__empty">Пока пусто. Нажмите ♡ на карточке товара, чтобы сохранить его сюда.</div>');
+      var oldFav = legacyFavorites();
+      var migrationDone = false;
+      try { migrationDone = localStorage.getItem('ngr_fav_migrated:' + accountSubject) === '1'; } catch (e) {}
+      var canMigrate = !!(accountSubject && oldFav.length && !migrationDone);
+      host.innerHTML = '<h2>Избранное</h2>' +
+        (canMigrate ? '<div class="ngr-cab__card ngr-cab__favmigrate">' +
+          '<b>На этом устройстве найдено сохранённых товаров: ' + oldFav.length + '</b>' +
+          '<div class="ngr-cab__hint">Перенести их именно в текущий аккаунт?</div>' +
+          '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">' +
+          '<button type="button" class="ngr-cab__save ngr-cab__favyes">Перенести</button>' +
+          '<button type="button" class="ngr-cab__copy ngr-cab__favno">Не переносить</button></div></div>' : '') +
+        (list.length ? '' :
+          '<div class="ngr-cab__empty">Пока пусто. Нажмите ♡ на карточке товара, чтобы сохранить его сюда.</div>');
+      var yes = host.querySelector('.ngr-cab__favyes');
+      if (yes) yes.addEventListener('click', function () {
+        yes.disabled = true;
+        accountPost('merge', { favorites: oldFav }).then(function (packet) {
+          if (!applyAccountSnapshot(packet)) throw new Error('account changed');
+          try {
+            localStorage.setItem('ngr_fav_migrated:' + accountSubject, '1');
+            localStorage.removeItem('ngr_fav');
+          } catch (e) {}
+          cabSection('fav');
+        }).catch(function () { yes.disabled = false; });
+      });
+      var no = host.querySelector('.ngr-cab__favno');
+      if (no) no.addEventListener('click', function () {
+        try { localStorage.setItem('ngr_fav_migrated:' + accountSubject, '1'); } catch (e) {}
+        cabSection('fav');
+      });
       if (list.length) {
         var fb = document.createElement('div');
         fb.className = 'ngr-shelf';
@@ -1463,6 +3280,7 @@
     // Профиль с персонализацией: покупатель выбирает значок и псевдоним,
     // рядом — его реферальная ссылка (запрос Александра 08.08).
     var me = profileSettings();
+    var oldLocalPhoto = String((legacyProfileSettings() || {}).photo || '');
     host.innerHTML = '<h2>Профиль</h2>' +
       '<div class="ngr-cab__card">' +
       '<div class="ngr-cab__field"><u>Как вас показывать</u>' +
@@ -1475,9 +3293,16 @@
       '<div class="ngr-cab__prev"' +
       (me.photo ? ' style="background-image:url(' + me.photo + ')"'
         : (me.avatar ? ' style="background-image:url(' + avaFile(me.avatar) + ')"' : '')) + '></div>' +
+      '<div class="ngr-cab__photoacts">' +
       '<label class="ngr-cab__copy">Загрузить фото' +
       '<input type="file" accept="image/*" id="ngrPhoto" style="display:none"></label>' +
-      (me.photo ? '<button type="button" class="ngr-cab__copy ngr-cab__drop">Убрать</button>' : '') +
+      (me.photo ? '<button type="button" class="ngr-cab__copy ngr-cab__drop">Убрать фотографию</button>' : '') +
+      (!me.photo && oldLocalPhoto
+        ? '<button type="button" class="ngr-cab__copy ngr-cab__importphoto">Перенести фото с этого устройства</button>'
+        : '') +
+      '<div class="ngr-cab__photohint">Подойдёт любое изображение — мы уменьшим его до 160 точек ' +
+      'прямо в браузере, на сервер оно не уходит.</div>' +
+      '</div>' +
       '</div></div>' +
       '<div class="ngr-cab__field"><u>Или выберите аватар</u>' +
       '<div class="ngr-avc__all" role="radiogroup" aria-label="Аватар"></div></div>' +
@@ -1501,6 +3326,34 @@
     avaCss();
     var chosen = me.avatar || '';
 
+    var avaПоказано = 0;
+    /** Догрузка остальных аватаров: наблюдаем сам список, а не страницу. */
+    function догрузитьАватары(список) {
+      var ждут = [].slice.call(список.querySelectorAll('img[data-src]'));
+      if (!ждут.length) return;
+      var прокрутка = список;
+      while (прокрутка && прокрутка !== document.body) {
+        var o = getComputedStyle(прокрутка).overflowY;
+        if (o === 'auto' || o === 'scroll') break;
+        прокрутка = прокрутка.parentElement;
+      }
+      var включить = function (im) {
+        var u = im.getAttribute('data-src');
+        if (!u) return;
+        im.removeAttribute('data-src');
+        im.src = u;
+      };
+      if (!('IntersectionObserver' in window)) { ждут.forEach(включить); return; }
+      var сторож = new IntersectionObserver(function (записи) {
+        записи.forEach(function (з) {
+          if (!з.isIntersecting) return;
+          включить(з.target);
+          сторож.unobserve(з.target);
+        });
+      }, { root: (прокрутка && прокрутка !== document.body) ? прокрутка : null, rootMargin: '300px' });
+      ждут.forEach(function (im) { сторож.observe(im); });
+    }
+
     // Кружок аватара. Подписи в ряду нет — название читается наведением
     // и озвучивается голосовым доступом.
     function avaCard(a) {
@@ -1513,10 +3366,30 @@
       b.title = a[3];
       b.setAttribute('data-id', a[0]);
       var im = document.createElement('img');
-      im.loading = 'lazy';
+      /*
+       * Аватары грузим сами, без loading="lazy".
+       *
+       * Замечание Александра 14.08: «аватары не прогружаются в личном
+       * кабинете». Проверка на его же странице: все шестьдесят картинок
+       * висят с complete=false, naturalWidth=0, и **ни одного сетевого
+       * запроса** — при том, что первая из них занимает 68×68 прямо в
+       * видимой части экрана, а файлы отдаются с кодом 200.
+       *
+       * Дело в самом lazy: кабинет — это наложение поверх страницы со своей
+       * прокруткой, и браузер не считает нужным грузить картинки внутри
+       * него. Проверено там же: стоит поставить eager и перезадать адрес,
+       * как все шесть подопытных загружаются (512×512).
+       *
+       * Поэтому откладываем загрузку сами и по своим правилам: первые
+       * восемнадцать (три ряда, которые видно сразу) грузятся немедленно,
+       * остальные — когда доедут до края списка. Наблюдатель привязан к
+       * самому списку, а не к странице, — в этом и была разница.
+       */
       im.decoding = 'async';
       im.alt = '';
-      im.src = AVA_URL + a[1];
+      if (avaПоказано < 18) { im.src = AVA_URL + a[1]; }
+      else { im.setAttribute('data-src', AVA_URL + a[1]); }
+      avaПоказано++;
       b.appendChild(im);
       b.addEventListener('click', function () { pickAva(a[0]); });
       return b;
@@ -1535,18 +3408,27 @@
       var cur = profileSettings();
       cur.avatar = id;
       cur.emoji = '';
-      var ok = true;
-      try { localStorage.setItem('ngr_me', JSON.stringify(cur)); } catch (e) { ok = false; }
+      delete cur.photo;
+      var ok = writeProfileSettings(cur);
       var note = host.querySelector('.ngr-cab__saved');
-      if (note) note.textContent = ok ? '✓ Аватар сохранён' : 'Браузер не дал сохранить выбор';
+      if (note) note.textContent = ok ? 'Сохраняем…' : 'Браузер не дал сохранить выбор';
       var prev = host.querySelector('.ngr-cab__prev');
-      if (prev && !cur.photo) {
+      if (prev) {
         prev.style.backgroundImage = 'url(' + avaFile(id) + ')';
         prev.style.backgroundSize = 'cover';
       }
       paintMe();
       fixAccountButton();
-      pushProfile((cabData.profile || {}).login || '');
+      // Сохранено на этом устройстве — уже успех, и об этом надо сказать
+      // именно так. Перенос на другие устройства зависит от подтверждения
+      // входа воркером, а его Tilda не даёт; называть это «не удалось» —
+      // значит пугать человека там, где его выбор на самом деле сохранён.
+      if (ok && note) note.textContent = '✓ Аватар сохранён';
+      if (ok) pushProfile().then(function () {
+        if (note) note.textContent = '✓ Аватар сохранён на всех устройствах';
+      }).catch(function () {
+        if (note) note.textContent = '✓ Аватар сохранён на этом устройстве';
+      });
       drawRow();
     }
 
@@ -1555,6 +3437,7 @@
     var row = host.querySelector('.ngr-avc__all');
     function drawRow() {
       row.innerHTML = '';
+      avaПоказано = 0;
       AVA_CATS.forEach(function (c) {
         var head = document.createElement('div');
         head.className = 'ngr-avc__cap';
@@ -1565,6 +3448,7 @@
         AVATARS.forEach(function (a) { if (a[2] === c) line.appendChild(avaCard(a)); });
         row.appendChild(line);
       });
+      догрузитьАватары(row);
     }
     drawRow();
 
@@ -1586,24 +3470,50 @@
             side, side, 0, 0, s, s);
           var data = cv.toDataURL('image/jpeg', 0.82);
           var cur = profileSettings(); cur.photo = data;
-          try { localStorage.setItem('ngr_me', JSON.stringify(cur)); } catch (e) {
+          if (!writeProfileSettings(cur)) {
             alert('Не удалось сохранить фотографию в этом браузере.'); return;
           }
           host.querySelector('.ngr-cab__prev').style.backgroundImage = 'url(' + data + ')';
           paintMe(); fixAccountButton();
+          var note = host.querySelector('.ngr-cab__saved');
+          if (note) note.textContent = 'Сохраняем фото…';
+          pushProfile().then(function () {
+            try { localStorage.removeItem('ngr_me'); } catch (e) {}
+            if (note) note.textContent = '✓ Фото сохранено на всех устройствах';
+          }).catch(function () {
+            if (note) note.textContent = 'Фото осталось на этом устройстве; синхронизация не удалась.';
+          });
         };
         im.src = rd.result;
       };
       rd.readAsDataURL(f);
     });
 
+    var importPhoto = host.querySelector('.ngr-cab__importphoto');
+    if (importPhoto) importPhoto.addEventListener('click', function () {
+      var cur = profileSettings();
+      cur.photo = oldLocalPhoto;
+      if (!writeProfileSettings(cur)) return;
+      importPhoto.disabled = true;
+      var note = host.querySelector('.ngr-cab__saved');
+      if (note) note.textContent = 'Переносим фото…';
+      pushProfile().then(function () {
+        try { localStorage.removeItem('ngr_me'); } catch (e) {}
+        cabSection('profile');
+      }).catch(function () {
+        importPhoto.disabled = false;
+        if (note) note.textContent = 'Не удалось перенести фото. Попробуйте ещё раз.';
+      });
+    });
+
     var drop = host.querySelector('.ngr-cab__drop');
     if (drop) drop.addEventListener('click', function () {
       var cur = profileSettings(); delete cur.photo;
-      try { localStorage.setItem('ngr_me', JSON.stringify(cur)); } catch (e) {}
+      writeProfileSettings(cur);
       host.querySelector('.ngr-cab__prev').style.backgroundImage = '';
       drop.parentNode.removeChild(drop);
       paintMe(); fixAccountButton();
+      pushProfile().catch(function () {});
     });
 
     host.querySelector('.ngr-cab__save').addEventListener('click', function () {
@@ -1612,11 +3522,17 @@
       // Запись в память браузера может не пройти молча — перечитываем
       // сохранённое и говорим покупателю правду.
       var now = profileSettings();
-      host.querySelector('.ngr-cab__saved').textContent =
-        (now.nick === nick && now.avatar === chosen) ? '✓ Сохранено' : 'Браузер не дал сохранить';
-      pushProfile((cabData.profile || {}).login || '');
-      paintMe();
-      fixAccountButton();
+      var зам = host.querySelector('.ngr-cab__saved');
+      var сохранилось = (now.nick === nick && now.avatar === chosen);
+      зам.textContent = сохранилось ? '✓ Сохранено' : 'Браузер не дал сохранить';
+      if (!сохранилось) return;
+      paintMe(); fixAccountButton();
+      pushProfile().then(function () {
+        зам.textContent = '✓ Сохранено на всех устройствах';
+        paintMe(); fixAccountButton();
+      }).catch(function () {
+        зам.textContent = '✓ Сохранено на этом устройстве';
+      });
     });
 
     // Раньше подпись искалась по общему классу и доставалась первой кнопке —
@@ -1632,6 +3548,48 @@
         setTimeout(function () { copyRef.textContent = 'Скопировать'; }, 1800);
       });
     }
+  }
+
+  /**
+   * Выход из кабинета.
+   *
+   * Выходим руками Tilda: tma__userbar__sendLogout — её же функция, ту самую
+   * кнопку «Выйти» показывает Tilda в форме заказа. Своими силами сессию не
+   * гасим: чем гасить, знает только Tilda, а расходиться с ней в этом вопросе
+   * опасно — можно оставить полусостояние, когда профиль стёрт, а сессия жива.
+   *
+   * Локальный слепок профиля стираем сами: по нему ngr-stock решает, вошёл ли
+   * покупатель, и без этого страница до перезагрузки считала бы, что он всё
+   * ещё внутри. Ключ проекта не зашиваем — снимаем все tilda_members_profile*.
+   */
+  function cabLogout(btn) {
+    if (btn) { btn.textContent = 'Выходим…'; btn.style.pointerEvents = 'none'; }
+    var завершить = function () {
+      try {
+        var убрать = [];
+        for (var i = 0; i < localStorage.length; i++) {
+          var k = localStorage.key(i);
+          if (k && k.indexOf('tilda_members_profile') === 0) убрать.push(k);
+        }
+        убрать.forEach(function (k) { localStorage.removeItem(k); });
+        // И наш пропуск. Его никто не стирал: выйдя из Tilda, человек
+        // оставался «своим» для воркера, и кабинет по старому пропуску
+        // показал бы его заказы следующему, кто сядет за этот браузер.
+        забытьПропуск();
+      } catch (e) {}
+      location.reload();
+    };
+    try {
+      if (typeof window.tma__userbar__sendLogout === 'function') {
+        var r = window.tma__userbar__sendLogout();
+        // Функция Tilda ничего не возвращает и сама не перезагружает страницу,
+        // поэтому даём ей секунду на свой запрос и уходим сами.
+        if (r && typeof r.then === 'function') { r.then(завершить, завершить); return; }
+        setTimeout(завершить, 1000);
+        return;
+      }
+    } catch (e) {}
+    завершить();
   }
 
   function openCabinet() {
@@ -1651,24 +3609,40 @@
       '<b data-s="purchases">Купленные товары</b>' +
       '<b data-s="fav">Избранное</b>' +
       '<b data-s="profile">Профиль</b>' +
+      // Выхода в кабинете не было вовсе: сменить аккаунт можно было только
+      // через кнопку Tilda в форме заказа, а её видно лишь при оформлении
+      // (замечание Александра 13.08).
+      '<b data-s="logout" class="ngr-cab__out">Выйти</b>' +
       '</div></div><div class="ngr-cab__main"><div class="ngr-cab__empty">Загружаем…</div></div></div>';
 
     body.querySelectorAll('.ngr-cab__nav b').forEach(function (b) {
-      b.addEventListener('click', function () { cabSection(b.getAttribute('data-s')); });
+      b.addEventListener('click', function () {
+        if (b.getAttribute('data-s') === 'logout') { cabLogout(b); return; }
+        cabSection(b.getAttribute('data-s'));
+      });
     });
 
-    var noToken = !memberToken();
+    var token = memberToken();
+    var noToken = !token;
     Promise.all([
       noToken ? Promise.resolve(null) : tildaPost('https://members.tildaapi.com/api/getprofile/').catch(function () { return null; }),
-      noToken ? Promise.resolve(null) : tildaPost('https://store.tildaapi.com/api/orders/getdashboard/').catch(function () { return null; })
-    ]).then(function (res) {
+      noToken ? Promise.resolve(null) : tildaPost('https://store.tildaapi.com/api/orders/getdashboard/').catch(function () { return null; }),
+      noToken ? Promise.resolve(null) : syncAccount(false)
+    ]).then(function (первые) {
+      // За нашими заказами идём после панели: из неё берётся предъявление.
+      var проф = (первые[0] && первые[0].data) || null;
+      var панель = (первые[1] && первые[1].data) || первые[1] || null;
+      return loadIntegratorOrders(token, проф, панель)
+        .then(function (наши) { return первые.concat([наши]); });
+    }).then(function (res) {
       // На страницах без корзины Tilda не выдаёт токен — показываем то,
       // что знаем из профиля, и честно говорим про заказы.
       cabData.profile = (res[0] && res[0].data) || memberProfile() || {};
-      cabData.dash = res[1] || {};
+      // Tilda встречается в двух совместимых форматах: dashboard в корне либо в data.
+      // Нормализуем только оболочку; владельцем статуса заказа остаётся сама Tilda.
+      cabData.dash = mergeOrderDashboard((res[1] && res[1].data) || res[1] || {}, res[3]);
       cabData.noToken = noToken;
       paintMe();
-      pullProfile(cabData.profile.login || '');
       cabSection('orders');
     });
   }
@@ -1677,12 +3651,14 @@
 
   /* ---------- Избранное ---------- */
 
-  /**
-   * Избранное храним в браузере покупателя: отдельного хранилища на нашей
-   * стороне не требуется, а личные данные никуда не уходят.
-   */
+  /** Гость хранит избранное локально; аккаунт — в проверенном Worker state. */
+  function verifiedAccountToken() {
+    var token = memberToken();
+    return token && accountVerified && accountSubject && accountToken === token ? token : '';
+  }
   function favList() {
-    try { return JSON.parse(localStorage.getItem('ngr_fav') || '[]'); } catch (e) { return []; }
+    var key = verifiedAccountToken() ? accountCacheKey('ngr_fav') : 'ngr_fav:guest:v1';
+    try { return JSON.parse(localStorage.getItem(key) || '[]'); } catch (e) { return []; }
   }
   function favHas(a) { return favList().indexOf(String(a)) > -1; }
 
@@ -1728,11 +3704,36 @@
       host.appendChild(b);
     });
   }
+  function paintFavoriteButtons() {
+    document.querySelectorAll('.js-product, .ngr-sc').forEach(function (c) {
+      var art = c.classList.contains('ngr-sc') ? c.getAttribute('data-art') : article(c);
+      var b = c.querySelector('.ngr-fav');
+      if (!art || !b) return;
+      var on = favHas(art);
+      b.className = 'ngr-fav' + (on ? ' on' : '');
+      b.textContent = on ? '♥' : '♡';
+    });
+  }
   function favToggle(a) {
     var l = favList(), i = l.indexOf(String(a));
     if (i > -1) l.splice(i, 1); else l.push(String(a));
-    try { localStorage.setItem('ngr_fav', JSON.stringify(l)); } catch (e) {}
-    return favHas(a);
+    var on = i < 0;
+    var requestToken = verifiedAccountToken();
+    var intentToken = memberToken();
+    var key = requestToken ? accountCacheKey('ngr_fav') : 'ngr_fav:guest:v1';
+    try { localStorage.setItem(key, JSON.stringify(l)); } catch (e) {}
+    if (intentToken) {
+      var send = function () {
+        // Клик относится к тому аккаунту, который был открыт в момент клика.
+        // После logout/switch не переносим это действие в новую сессию.
+        if (memberToken() !== intentToken) return Promise.resolve(null);
+        return accountPost('favorite', { id: String(a), on: on }, intentToken)
+          .then(function (packet) { applyAccountSnapshot(packet); });
+      };
+      if (requestToken) send().catch(function () {});
+      else syncAccount(false).then(function () { return send(); }).catch(function () {});
+    }
+    return on;
   }
 
   /* ---------- Полки на главной ---------- */
@@ -1772,10 +3773,31 @@
       '.ngr-sc__r{display:flex;align-items:center;gap:6px;font-size:12.5px;color:#8a919b}' +
       '.ngr-sc__r b{color:#14171c}' +
       '.ngr-sc__p{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:auto;padding-top:4px}' +
-      '.ngr-sc__now{background:#4984c4;color:#fff;font-size:18px;font-weight:800;padding:5px 11px;border-radius:10px}' +
-      '.ngr-sc__old{color:#a6adb6;font-size:14px;font-weight:600;text-decoration:line-through}' +
-      '@media(max-width:1024px){.ngr-shelf{grid-template-columns:repeat(3,1fr)}}' +
-      '@media(max-width:760px){.ngr-shelf{grid-template-columns:repeat(2,1fr);gap:12px}' +
+      /*
+       * Цена на полке не переносится по строкам.
+       *
+       * Замечание Александра 15.08 со снимком «Скидки недели»: вместо
+       * «1 373 ₽» в плашке стояло три строки — «1», «373», «₽». Замер на
+       * 375 px: ширина плашки 49 px при высоте 65 — то есть колонка ужалась
+       * до ширины самого длинного слова, а слова здесь по одному знаку.
+       * Запрещаем перенос и не даём колонке сжиматься меньше содержимого.
+       */
+      '.ngr-sc__now{background:#4984c4;color:#fff;font-size:18px;font-weight:800;padding:5px 11px;' +
+      'border-radius:10px;white-space:nowrap;flex:0 0 auto}' +
+      '.ngr-sc__old{color:#a6adb6;font-size:14px;font-weight:600;text-decoration:line-through;' +
+      'white-space:nowrap;flex:0 0 auto}' +
+      /*
+       * Число колонок на полке — с тем же весом, что и у основного правила.
+       *
+       * Замечание Александра 15.08: «Скидки недели — то же самое с вёрсткой».
+       * И правда: у базового правила стоял !important, а у медиазапросов нет,
+       * поэтому четыре колонки побеждали на любой ширине. Замер на 375 px:
+       * `grid-template-columns: 73.25px 73.25px 73.25px 73.25px` — карточка
+       * шириной 73 пикселя, оттого цена и разваливалась на три строки.
+       */
+      '@media(max-width:1024px){.ngr-shelf{grid-template-columns:repeat(3,1fr)!important}}' +
+      '@media(max-width:760px){.ngr-shelf{grid-template-columns:repeat(2,1fr)!important;' +
+      'gap:12px!important}' +
       '.ngr-sc__b{padding:11px;gap:6px}.ngr-sc__t{font-size:13px}' +
       '.ngr-sc__now{font-size:16px;padding:4px 9px}}';
     document.head.appendChild(st);
@@ -2008,15 +4030,144 @@
    * читаемое название, заметная цена.
    */
   /**
-   * Серая выноска с суммой у корзины. Tilda показывает её, проставляя стиль
-   * прямо на элемент из своего скрипта, поэтому правилом CSS её не убрать —
-   * снимаем со страницы (замечание Александра 08.08).
+   * Серая выноска с суммой у корзины скрывается стилем в cartCss().
+   *
+   * Важно: узел .t706__carticon-text обязан оставаться в DOM. Штатный
+   * tilda-cart-1.1.min.js обращается к нему без null-check при перерисовке
+   * счётчика. Физическое удаление обрывало инициализацию корзины на mobile:
+   * window.tcart не создавался, а клик по иконке ничего не открывал.
    */
   function dropCartTip() {
-    document.querySelectorAll('.t706__carticon-text').forEach(function (e) {
-      if (e.parentNode) e.parentNode.removeChild(e);
-    });
+    // Сохраняем обязательную нативную разметку Tilda. Визуальное скрытие —
+    // только через CSS ниже, чтобы tcart__reDrawCartIcon не падал на null.style.
   }
+
+  /**
+   * Корзина подставляет то, что покупатель уже вводил.
+   *
+   * Замечание Александра 14.08: «человек тут не пишет номер телефона, имя.
+   * Когда он будет создавать заказ, то его профиль должен автоматически
+   * заполниться». В тот же день вход в кабинет перевели на одноразовый код
+   * с почты — Tilda при таком входе не спрашивает ни имени, ни телефона,
+   * так что у нового покупателя в профиле нет ничего, кроме адреса почты.
+   * Значит источник данных один: прошлый заказ этого человека.
+   *
+   * Берём по порядку — что вводили в прошлый раз на этом устройстве, затем
+   * профиль Tilda. Заполняем только пустые поля и только один раз на форму:
+   * набранное руками не трогаем никогда, стёртое нарочно не возвращаем.
+   *
+   * Пункт выдачи и адрес не подставляем сознательно. Адрес пишет виджет
+   * вместе с номером пункта, и если вписать туда прошлый адрес, номер
+   * останется от прежнего выбора: заказ уедет не в тот пункт, а покупатель
+   * увидит в корзине верную строку. Цена ошибки здесь выше пользы.
+   */
+  var КЛЮЧ_ПОКУПАТЕЛЯ = 'ngr_buyer_v1';
+
+  function покупательИзПамяти() {
+    try { return JSON.parse(localStorage.getItem(КЛЮЧ_ПОКУПАТЕЛЯ) || 'null') || {}; }
+    catch (e) { return {}; }
+  }
+
+  function запомнитьПокупателя(v) {
+    var cur = покупательИзПамяти();
+    ['name', 'phone', 'email'].forEach(function (k) { if (v[k]) cur[k] = v[k]; });
+    try { localStorage.setItem(КЛЮЧ_ПОКУПАТЕЛЯ, JSON.stringify(cur)); } catch (e) {}
+  }
+
+  /** Профиль Tilda лежит в браузере под ключом с номером проекта. */
+  function покупательИзПрофиля() {
+    try {
+      for (var i = 0; i < localStorage.length; i++) {
+        var k = localStorage.key(i);
+        if (!k || k.indexOf('tilda_members_profile') !== 0 || /_timestamp$/.test(k)) continue;
+        var p = JSON.parse(localStorage.getItem(k) || 'null');
+        if (p) return { name: p.name || '', phone: p.phone || '', email: p.login || p.email || '' };
+      }
+    } catch (e) {}
+    return {};
+  }
+
+  function цифрыТелефона(v) {
+    var d = String(v || '').replace(/\D/g, '');
+    if (d.length === 10) d = '7' + d;
+    if (d.length === 11 && d.charAt(0) === '8') d = '7' + d.slice(1);
+    return d.length === 11 ? d : '';
+  }
+
+  function вписать(поле, знач) {
+    if (!поле || !знач || поле === document.activeElement) return false;
+    if (String(поле.value || '').trim()) return false;
+    поле.value = знач;
+    поле.dispatchEvent(new Event('input', { bubbles: true }));
+    поле.dispatchEvent(new Event('change', { bubbles: true }));
+    return true;
+  }
+
+  /**
+   * Телефон у Tilda собран из трёх полей: видимая маска без кода страны,
+   * скрытый Phone с кодом и скрытый iso. Замер 14.08: достаточно вписать
+   * маску и послать input — обработчик Tilda сам пересчитал Phone
+   * («+7 (905) 333-85-34») и iso. Скрытые поля дописываем только если он
+   * почему-то не сработал: заказ без номера в пункте выдачи не отдадут.
+   *
+   * И только вслед за видимой маской. Замер 14.08: когда маску заполнить не
+   * удалось (в ней стоял курсор), скрытое поле всё равно получало номер —
+   * покупатель видел пустую строку телефона, а заказ уходил с номером,
+   * которого он не видел. Такого расхождения быть не должно.
+   */
+  function вписатьТелефон(form, цифры) {
+    if (!цифры) return;
+    var маска = form.querySelector('input.t-input-phonemask') ||
+                form.querySelector('input[type="tel"]');
+    var n = цифры.slice(1);
+    if (!вписать(маска, '(' + n.slice(0, 3) + ') ' + n.slice(3, 6) + '-' +
+                        n.slice(6, 8) + '-' + n.slice(8))) return;
+    var скрытое = form.querySelector('input[name="Phone"]');
+    if (скрытое && String(скрытое.value || '').replace(/\D/g, '').length < 11) {
+      скрытое.value = '+' + цифры;
+      скрытое.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+  }
+
+  function cartForm() {
+    var mark = document.querySelector('input[name="tildaspec-formname"][value="Cart"]');
+    return (mark && mark.form) || null;
+  }
+
+  function prefillCart() {
+    var form = cartForm();
+    if (!form || form.__ngrPrefill) return;
+    var свои = покупательИзПамяти();
+    var профиль = покупательИзПрофиля();
+    var имя = свои.name || профиль.name || '';
+    var почта = свои.email || профиль.email || '';
+    var тел = цифрыТелефона(свои.phone || профиль.phone || '');
+    if (!имя && !почта && !тел) return;
+    form.__ngrPrefill = 1;
+    вписать(form.querySelector('input[name="Name"]'), имя);
+    вписать(form.querySelector('input[name="Email"]'), почта);
+    вписатьТелефон(form, тел);
+  }
+
+  /**
+   * Запоминаем покупателя в тот момент, когда он отправляет заказ: это
+   * единственная точка, где имя, почта и телефон заведомо заполнены и
+   * проверены самой Tilda.
+   */
+  document.addEventListener('submit', function (e) {
+    var f = e.target;
+    if (!f || !f.querySelector) return;
+    var mark = f.querySelector('input[name="tildaspec-formname"]');
+    if (!mark || mark.value !== 'Cart') return;
+    var скрытое = (f.querySelector('input[name="Phone"]') || {}).value || '';
+    var маска = (f.querySelector('input.t-input-phonemask') || {}).value || '';
+    var a = String(скрытое).replace(/\D/g, ''), b = String(маска).replace(/\D/g, '');
+    запомнитьПокупателя({
+      name: ((f.querySelector('input[name="Name"]') || {}).value || '').trim(),
+      email: ((f.querySelector('input[name="Email"]') || {}).value || '').trim(),
+      phone: цифрыТелефона(a.length >= b.length ? a : b)
+    });
+  }, true);
 
   /**
    * Строка фильтров Tilda: то, что осталось на главной.
@@ -2046,15 +4197,28 @@
       '.t-catalog__filter__input{border:1px solid #e3e8ee!important;border-radius:10px!important;' +
       'height:42px!important}' +
       // Сама строка: ровные отступы и перенос вместо обрезки
-      '.t-catalog__filter{display:flex!important;flex-wrap:wrap!important;gap:10px!important;' +
-      'align-items:flex-start!important}' +
-      '.t-catalog__filter__item{margin:0!important}' +
+      '#rec2502703571 .t-catalog__filter{display:flex!important;flex-wrap:wrap!important;gap:10px!important;' +
+      'align-items:flex-start!important;background:transparent!important;padding:0!important;' +
+      'border-radius:0!important;margin:0 0 14px!important}' +
+      // Tilda пересобирает пункты фильтра при фокусе и вводе. Inline-скрытие
+      // срабатывало только на следующем JS-проходе, поэтому старые чипы успевали
+      // появиться на кадр. Постоянное правило не даёт им участвовать в раскладке
+      // ни на главной витрине, ни в полном каталоге.
+      '#rec2502703571.ngr-catalog-record .t-catalog__filter__options > .t-catalog__filter__item{display:none!important;margin:0!important}' +
       // Поиск и сортировка уезжали на второй этаж: блок с фильтрами
       // занимал всю ширину. Ставим их в один ряд, справа.
       '.t-catalog__filter__controls-wrapper{align-items:center!important;gap:12px!important}' +
-      '.t-catalog__filter__options{flex:1 1 auto!important;width:auto!important}' +
-      '.t-catalog__filter__search-and-sort{flex:0 0 auto!important;margin-left:auto!important}' +
-      '@media(max-width:900px){.t-catalog__filter__search-and-sort{margin-left:0!important;' +
+      '#rec2502703571.ngr-catalog-record .t-catalog__filter__controls-wrapper > .t-catalog__filter__options,' +
+      '#rec2502703571 .js-catalog-filter-mob-btn,' +
+      '#rec2502703571 .js-catalog-sort-mob-btn,' +
+      '#rec2502703571 .js-catalog-search-mob-btn,' +
+      '#rec2502703571 .js-catalog-search-mob-close-btn{display:none!important}' +
+      '#rec2502703571 .t-catalog__filter__search-and-sort{flex:0 0 auto!important;' +
+      // 275px — столько же ставит JS и второй блок стилей ниже. Здесь стояло
+      // 286, и панель прыгала на 11px при каждом сбросе инлайновых стилей.
+      'margin-left:275px!important;display:flex!important;gap:10px!important;align-items:center!important}' +
+      '@media(max-width:860px){#rec2502703571 .t-catalog__filter__search-and-sort{margin-left:0!important;' +
+      'display:grid!important;grid-template-columns:minmax(104px,.78fr) minmax(0,1.22fr)!important;' +
       'width:100%!important}}' +
       /*
        * В каталоге фильтры живут в своей колонке, и от строки Tilda остаются
@@ -2062,24 +4226,273 @@
        * пустой (замечание Александра 08.08). Убираем коробку и ставим
        * их над сеткой товаров, как на Ozon: сортировка слева, поиск рядом.
        */
-      '.ngr-catpage .t-catalog__filter{background:transparent!important;padding:0!important;' +
-      'border-radius:0!important;margin:0 0 14px!important}' +
-      '.ngr-catpage .t-catalog__filter__search-and-sort{margin-left:286px!important;' +
+      // 275px, а не 286: ровно столько ставит JS ниже. Пока значения
+      // расходились, панель прыгала на 11px каждый раз, когда Tilda сбрасывала
+      // инлайновые стили и страница откатывалась к одному только CSS.
+      '#rec2502703571 .t-catalog__filter__search-and-sort{margin-left:275px!important;' +
       'display:flex!important;gap:10px!important;align-items:center!important;width:auto!important}' +
-      '.ngr-catpage .t-catalog__sort-select{order:0;height:44px!important;min-width:210px;' +
+      // Ниже — то, что раньше делал только JS. Пока этого не было в CSS, между
+      // сбросом инлайновых стилей и следующим проходом apply страница успевала
+      // показать тильдовский вид: голубая коробка вокруг панели, пустой блок
+      // фильтров во всю ширину, дублирующие мобильные кнопки. Это и читалось
+      // как «переключение стилей поиска» (замечание Александра 13.08).
+      '#rec2502703571 .t-catalog__filter{background:transparent!important;padding:0!important;' +
+      'border-radius:0!important;margin:0 0 14px!important}' +
+      '#rec2502703571 .t-catalog__filter__options{display:none!important}' +
+      // Сами элементы строки фильтров — на случай, если Tilda перенесёт их
+      // из скрытой обёртки. Раньше их гасил инлайном syncSideFilters на
+      // каждом проходе, и между перерисовкой Tilda и проходом строка успевала
+      // мелькнуть. Правилу мелькать нечем: оно действует сразу при вставке.
+      '#rec2502703571 .t-catalog__filter__item{display:none!important}' +
+      '#rec2502703571 .js-catalog-filter-mob-btn,#rec2502703571 .js-catalog-sort-mob-btn,' +
+      '#rec2502703571 .js-catalog-search-mob-btn,#rec2502703571 .js-catalog-search-mob-close-btn{' +
+      'display:none!important}' +
+      // Порядок обязан стоять на обёртках Tilda — это и есть флекс-элементы
+      // строки. Ниже те же order задаются из JS, но JS отрабатывает уже после
+      // первой отрисовки, и панель успевала прыгнуть: кадр в порядке DOM
+      // (поиск слева), затем перестановка (сортировка слева). Правило здесь
+      // применяется сразу, поэтому первый же кадр верный, а JS лишь повторяет
+      // те же значения. Замечание Александра 13.08 «скачет фильтр».
+      '#rec2502703571 .t-catalog__filter__sort{order:0!important}' +
+      '#rec2502703571 .t-catalog__filter__search{order:1!important}' +
+      // display:block и padding-right:36px — ровно то, что ставит JS ниже.
+      // Раньше в CSS было inline-block и 38px, и в кадрах без инлайновых
+      // стилей селект вёл себя чуть иначе.
+      '#rec2502703571 .t-catalog__sort-select{order:0;height:44px!important;min-width:210px;' +
+      'display:block!important;' +
       'border:1px solid #e3e8ee!important;border-radius:12px!important;background:#fff!important;' +
-      'font-size:14.5px!important;color:#14171c!important;padding:0 38px 0 14px!important}' +
-      '.ngr-catpage .js-catalog-filter-search{order:1;height:44px!important;width:260px!important;' +
+      'font-size:14.5px!important;color:#14171c!important;padding:0 36px 0 14px!important}' +
+      '#rec2502703571 .js-catalog-filter-search{order:1;height:44px!important;width:260px!important;' +
       'border:1px solid #e3e8ee!important;border-radius:12px!important;background:#fff!important;' +
-      'font-size:14.5px!important;padding:0 14px 0 38px!important;' +
+      // 42px слева, как и в JS: при 38px слово «Поиск» на пару пикселей
+      // наезжало на лупу, и это было видно в момент переключения.
+      'font-size:14.5px!important;padding:0 14px 0 42px!important;box-sizing:border-box!important;' +
       'background-image:url("data:image/svg+xml;utf8,' +
       "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238a919b' stroke-width='2'><circle cx='11' cy='11' r='7'/><path d='M20 20l-3.5-3.5'/></svg>" +
-      '")!important;background-repeat:no-repeat!important;background-position:12px center!important;' +
-      'background-size:17px 17px!important}' +
-      '@media(max-width:1000px){.ngr-catpage .t-catalog__filter__search-and-sort{margin-left:0!important;' +
-      'flex-wrap:wrap!important}' +
-      '.ngr-catpage .js-catalog-filter-search{width:100%!important}}' +
-      '.t-catalog__filter__item-title{border-radius:12px!important}';
+      '")!important;background-repeat:no-repeat!important;background-position:14px center!important;' +
+      'background-size:18px 18px!important}' +
+      // ------------------------------------------------------------------
+      // Перекрытие custom.css. На nutry-go.ru лежит отдельный файл
+      // /custom.css (478 правил), где панель каталога описана ещё одной
+      // схемой оформления, и селекторы там сильнее наших:
+      //   #rec2502703571.ngr-catalog-record .t-catalog__filter   (1 id, 2 класса)
+      //   #rec2502703571.ngr-catalog-record input, ... select    (1 id, 1 класс, 1 тег)
+      // против наших #rec2502703571 .t-catalog__filter (1 id, 1 класс).
+      // Оба набора с !important, поэтому решает специфичность — выигрывал
+      // custom.css. Класс ngr-catalog-record вешает наш же JS, так что до
+      // него правила custom.css не срабатывают, а после срабатывают: отсюда
+      // и переключение оформления, которое Александр снял на скриншотах
+      // 13.08 (лупа наезжает на «Поиск» — это padding-left:14px вместо 42;
+      // голубая коробка — background #f5f9fc + border-radius 18 + padding 20;
+      // высокая панель — .t-catalog__filter__options{display:flex}).
+      // Ниже те же значения, что и выше, но с префиксом html и с классом
+      // записи: 1 id + 2-3 класса + тег, то есть заведомо сильнее.
+      // Дублирование намеренное: правила без ngr-catalog-record выше нужны
+      // для кадров до того, как JS повесил класс.
+      'html #rec2502703571.ngr-catalog-record .t-catalog__filter{background:transparent!important;' +
+      'border:0!important;border-radius:0!important;padding:0!important;margin:0 0 14px!important}' +
+      'html #rec2502703571.ngr-catalog-record .t-catalog__filter__options{display:none!important}' +
+      'html #rec2502703571.ngr-catalog-record .t-catalog__filter__item{display:none!important}' +
+      // Удвоение класса — обычный приём поднятия специфичности; не завязываемся
+      // на имя тега, потому что размётку строки Tilda может поменять.
+      'html #rec2502703571.ngr-catalog-record .t-catalog__sort-select.t-catalog__sort-select{' +
+      'height:44px!important;min-height:44px!important;font-size:14.5px!important;display:block!important;' +
+      'border-radius:12px!important;padding:0 36px 0 14px!important}' +
+      'html #rec2502703571.ngr-catalog-record .js-catalog-filter-search.js-catalog-filter-search{' +
+      'height:44px!important;min-height:44px!important;font-size:14.5px!important;' +
+      'border-radius:12px!important;padding:0 14px 0 42px!important;' +
+      'background-position:14px center!important;background-size:18px 18px!important}' +
+      // На desktop Tilda задаёт wrapper-ам flex:1. После добавления панели
+      // подсказок сортировка забирала все 510px, а host поиска схлопывался в 0.
+      '@media(min-width:861px){' +
+      '#rec2502703571 .t-catalog__filter__sort{width:210px!important;min-width:210px!important;' +
+      'max-width:210px!important;flex:0 0 210px!important}' +
+      '#rec2502703571 .t-catalog__filter__search{width:260px!important;min-width:0!important;' +
+      'max-width:260px!important;flex:0 0 260px!important}' +
+      '#rec2502703571 .t-catalog__filter__sort .t-catalog__sort-select,' +
+      '#rec2502703571 .t-catalog__filter__search .js-catalog-filter-search{' +
+      'width:100%!important;max-width:100%!important;box-sizing:border-box!important}}' +
+      '@media(max-width:860px){#rec2502703571 .t-catalog__filter__search-and-sort{margin-left:0!important;' +
+      'display:grid!important;grid-template-columns:minmax(104px,.78fr) minmax(0,1.22fr)!important;' +
+      'width:100%!important;min-width:0!important}' +
+      '#rec2502703571 .t-catalog__filter__search-and-sort>*{width:100%!important;min-width:0!important}' +
+      '#rec2502703571 .js-catalog-filter-search,#rec2502703571 .t-catalog__sort-select{' +
+      'width:100%!important;min-width:0!important;max-width:100%!important}}' +
+      '@media(max-width:600px){#rec2502703571 .t-catalog__filter__search-and-sort{' +
+      'grid-template-columns:minmax(0,1fr)!important}' +
+      '#rec2502703571 .t-catalog__filter__search-and-sort>*{grid-column:1!important}}' +
+      // Локальные результаты поиска не участвуют в разметке сетки Tilda,
+      // поэтому её перерисовка не двигает поле и не забирает фокус.
+      '.ngr-smart-search{position:relative!important;min-width:0!important}' +
+      '.ngr-smart-search__panel{position:absolute;z-index:10020;left:0;right:auto;top:calc(100% + 6px);' +
+      'width:100%;max-width:100%;min-width:0;max-height:480px;max-height:min(55dvh,480px);overflow-y:auto;overflow-x:hidden;' +
+      'box-sizing:border-box;background:#fff;border:1px solid #dfe5ec;border-radius:14px;' +
+      'box-shadow:0 16px 40px rgba(20,23,28,.16);padding:6px}' +
+      '.ngr-smart-search__panel[hidden]{display:none!important}' +
+      '.ngr-smart-search__item{display:flex;width:100%;flex-direction:column;align-items:flex-start;' +
+      'gap:3px;border:0;border-radius:10px;background:#fff;padding:10px 11px;text-align:left;' +
+      'font-family:inherit;color:#14171c;cursor:pointer;min-width:0;max-width:100%;box-sizing:border-box;' +
+      'white-space:normal;overflow:hidden;overflow-wrap:anywhere}' +
+      '.ngr-smart-search__item:hover,.ngr-smart-search__item:focus{background:#f2f6fa;outline:none}' +
+      '.ngr-smart-search__item strong,.ngr-smart-search__item span,.ngr-smart-search__item small{' +
+      'width:100%;max-width:100%;min-width:0;box-sizing:border-box;white-space:normal;overflow-wrap:anywhere;word-break:break-word}' +
+      '.ngr-smart-search__item strong{font-size:14px;line-height:1.35}' +
+      '.ngr-smart-search__item span{font-size:12px;color:#2f6ba8}' +
+      '.ngr-smart-search__item small{font-size:12px;line-height:1.35;color:#6f7782;' +
+      'display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}' +
+      '.ngr-smart-search__note{padding:12px;font-size:13px;line-height:1.4;color:#6f7782}' +
+      // Кнопка «Найти» внутри поля: на телефоне другого способа запустить
+      // поиск нет — мобильные кнопки Tilda мы прячем (замечание 14.08).
+      '.ngr-smart-search__go{position:absolute;right:4px;top:50%;transform:translateY(-50%);' +
+      'z-index:3;height:36px;padding:0 14px;border:0;border-radius:9px;background:#f28c28;' +
+      'color:#fff;font-family:inherit;font-size:13.5px;font-weight:700;cursor:pointer;line-height:1}' +
+      '.ngr-smart-search__go:hover{background:#e07f1c}' +
+      // Свои значки Tilda в поле поиска: лупа и крестик очистки. Лупу мы
+      // рисуем фоном самого поля, крестик заменяет «Показать все», а у
+      // значков есть левая граница — она и осталась тонкой полоской за
+      // кнопкой «Найти» (замечание Александра 14.08 со снимком).
+      'html #rec2502703571 .t-catalog__search-wrapper > svg,' +
+      'html #rec2502703571.ngr-catalog-record .t-catalog__search-wrapper > svg{display:none!important}' +
+      // Найденное показываем строкой под поиском: сколько нашли и как вернуть всё.
+      '.ngr-search-note{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;' +
+      'margin:2px 0 12px;font-size:13.5px;color:#42506a;grid-column:1/-1;width:100%}' +
+      '.ngr-search-note__off{border:1px solid #e3e8ee;background:#fff;border-radius:9px;' +
+      'padding:7px 12px;font-family:inherit;font-size:13px;color:#2f6ba8;cursor:pointer}' +
+      '.ngr-search-note__off:hover{background:#f6f8fa}' +
+      '#rec2502703571 .js-product.ngr-search-off{display:none!important}' +
+      '@media(max-width:600px){#rec2502703571.ngr-catalog-record input.js-catalog-filter-search{font-size:16px!important}' +
+      '.ngr-smart-search{width:100%!important;min-width:0!important}' +
+      '.ngr-smart-search__panel{left:0;right:auto;width:100%;max-width:100%;min-width:0;' +
+      'max-height:50dvh;overflow-x:hidden}}' +
+      '.t-catalog__filter__item-title{border-radius:12px!important}' +
+      /*
+       * Суммы не сжимаем никогда.
+       *
+       * Замечание Александра 14.08 со снимком: в карточке вместо «1 250 р.»
+       * стояло «1 ... р.». Так и есть: у числа в синей плашке своё правило
+       * Tilda `overflow:hidden; text-overflow:ellipsis; max-width:100%`, а
+       * вся строка цены — флекс, где рядом уживаются плашка, старая цена и
+       * значок скидки. В четырёх колонках на 1280 px строке не хватает
+       * одного-двух пикселей, и флекс сжимает именно число.
+       *
+       * Замер 14.08: из шестидесяти видимых карточек три обрезаны на 1–2 px
+       * (6 360, 4 600, 4 449). На другом экране и другом шрифте обрезка
+       * заметнее — это и попало на снимок.
+       *
+       * Лечим по существу: числу запрещаем и сжиматься, и обрезаться, а
+       * строке цены разрешаем перенос — пусть лучше значок скидки уедет на
+       * следующую строку, чем покупатель увидит вместо цены многоточие.
+       */
+      'html #rec2502703571 .js-catalog-price-wrapper{flex-wrap:wrap!important}' +
+      'html #rec2502703571 .t-catalog__card__price,' +
+      'html #rec2502703571 .t-catalog__card__price-currency{flex:0 0 auto!important;max-width:none!important}' +
+      'html #rec2502703571 .js-product-price,' +
+      'html #rec2502703571 .js-catalog-prod-price-val,' +
+      'html #rec2502703571 .js-catalog-prod-price-old-val{overflow:visible!important;' +
+      'text-overflow:clip!important;max-width:none!important;flex:0 0 auto!important;' +
+      'white-space:nowrap!important}' +
+      'html #rec2502703571 .ngr-oldprice,html #rec2502703571 .ngr-off{flex:0 0 auto!important;' +
+      'white-space:nowrap!important}' +
+      /*
+       * У оформления строки поиска должен быть один хозяин.
+       *
+       * Замечание Александра 14.08: «визуально прыгает поиск, от одного
+       * визуала к другому», «как будто два кода борются». Так и есть, и вот
+       * кто с кем. На сайте лежит /custom.css (72 КБ, июльская схема
+       * оформления), где та же строка описана иначе:
+       *
+       *   #rec2502703571.ngr-catalog-record input,
+       *   #rec2502703571.ngr-catalog-record select
+       *     { border-color:#cfd9e1!important; min-height:46px!important;
+       *       padding-left:14px!important; ... }
+       *
+       * Специфичность этого правила выше наших, поэтому в стилях выигрывал
+       * custom.css, а наш вид держался только инлайновыми стилями, которые
+       * дописывал JS. Tilda пересобирает панель на каждую догрузку каталога
+       * — за загрузку это тринадцать раз, — и каждый раз новый узел рождался
+       * без инлайнов: кадр в оформлении custom.css, потом проход JS
+       * возвращал наше. Замер 14.08 на 1280 px показал, что именно менялось:
+       *
+       *   | свойство         | наш JS   | custom.css |
+       *   | border-color     | #e3e8ee  | #cfd9e1    |
+       *   | max-width        | none     | 100%       |
+       *   | min-width селекта| 0        | 210px      |
+       *   | лупа             | один SVG | другой SVG |
+       *
+       * Лечим не третьим слоем поверх, а тем, что забираем оформление в
+       * стили целиком: правила ниже сильнее custom.css, поэтому верен уже
+       * первый кадр после вставки узла, и дописывать инлайны больше не
+       * нужно — соответствующий кусок trimFilterBar() удалён.
+       */
+      'html #rec2502703571 .t-catalog__filter__search-and-sort input.js-catalog-filter-search,' +
+      'html #rec2502703571.ngr-catalog-record .t-catalog__filter__search-and-sort input.js-catalog-filter-search{' +
+      'height:44px!important;min-height:44px!important;border:1px solid #e3e8ee!important;' +
+      'border-radius:12px!important;background-color:#fff!important;color:#14171c!important;' +
+      'box-sizing:border-box!important;min-width:0!important;order:1!important;' +
+      // справа место под кнопку «Найти»
+      'padding:0 96px 0 42px!important;' +
+      'background-image:url("data:image/svg+xml;utf8,' +
+      "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238a919b' stroke-width='2' stroke-linecap='round'><circle cx='11' cy='11' r='7'/><path d='M20 20l-3.6-3.6'/></svg>" +
+      '")!important;background-repeat:no-repeat!important;background-position:14px center!important;' +
+      'background-size:18px 18px!important}' +
+      'html #rec2502703571 .t-catalog__filter__search-and-sort select.t-catalog__sort-select,' +
+      'html #rec2502703571.ngr-catalog-record .t-catalog__filter__search-and-sort select.t-catalog__sort-select{' +
+      'height:44px!important;min-height:44px!important;border:1px solid #e3e8ee!important;' +
+      'border-radius:12px!important;background-color:#fff!important;color:#14171c!important;' +
+      'box-sizing:border-box!important;min-width:0!important;order:0!important;display:block!important;' +
+      'padding:0 36px 0 14px!important}' +
+      // Обёртка поиска рисует свою рамку — вертикальная черта рядом с полем.
+      'html #rec2502703571 .t-catalog__search-wrapper,' +
+      'html #rec2502703571.ngr-catalog-record .t-catalog__search-wrapper{border:0!important;' +
+      'background:transparent!important;box-shadow:none!important;padding:0!important;' +
+      'min-width:0!important}' +
+      // Размеры зависят от ширины окна, поэтому — медиазапросами, а не JS.
+      // Их место в файле последнее: правила равной силы решает порядок.
+      // Граница «широкий экран» — 861 px, а не 1000.
+      //
+      // Замечание Александра 14.08: «когда с телефона смотришь в режиме ПК,
+      // фильтры слева не прогружаются». Колонка при этом собрана и полна —
+      // 73 фильтра, — но спрятана: телефон в режиме ПК даёт около 980 px, а
+      // это была наша «узкая» полоса, где фильтры живут за кнопкой. В режиме
+      // ПК человек ждёт вида ПК, и место под колонку там есть: 861 − 275
+      // оставляет под сетку почти 600 px, то есть две карточки в ряд.
+      '@media(min-width:861px){' +
+      'html #rec2502703571 .t-catalog__filter__search-and-sort,' +
+      'html #rec2502703571.ngr-catalog-record .t-catalog__filter__search-and-sort{' +
+      'display:flex!important;gap:10px!important;align-items:center!important;width:auto!important;' +
+      'min-width:0!important;margin-left:275px!important}' +
+      'html #rec2502703571 .t-catalog__filter__search-and-sort input.js-catalog-filter-search,' +
+      'html #rec2502703571.ngr-catalog-record .t-catalog__filter__search-and-sort input.js-catalog-filter-search{' +
+      'width:260px!important;max-width:none!important;font-size:14.5px!important}' +
+      'html #rec2502703571 .t-catalog__filter__search-and-sort select.t-catalog__sort-select,' +
+      'html #rec2502703571.ngr-catalog-record .t-catalog__filter__search-and-sort select.t-catalog__sort-select{' +
+      'width:210px!important;max-width:none!important;font-size:14.5px!important}' +
+      'html #rec2502703571 .t-catalog__search-wrapper{width:auto!important}}' +
+      '@media(max-width:860px){' +
+      'html #rec2502703571 .t-catalog__filter__search-and-sort,' +
+      'html #rec2502703571.ngr-catalog-record .t-catalog__filter__search-and-sort{' +
+      'display:grid!important;gap:10px!important;align-items:center!important;' +
+      'grid-template-columns:minmax(104px,.78fr) minmax(0,1.22fr)!important;' +
+      'width:100%!important;min-width:0!important;margin-left:0!important}' +
+      'html #rec2502703571 .t-catalog__filter__search-and-sort>*,' +
+      'html #rec2502703571.ngr-catalog-record .t-catalog__filter__search-and-sort>*{' +
+      'display:block!important;width:100%!important;min-width:0!important}' +
+      'html #rec2502703571 .t-catalog__filter__search-and-sort input.js-catalog-filter-search,' +
+      'html #rec2502703571.ngr-catalog-record .t-catalog__filter__search-and-sort input.js-catalog-filter-search,' +
+      'html #rec2502703571 .t-catalog__filter__search-and-sort select.t-catalog__sort-select,' +
+      'html #rec2502703571.ngr-catalog-record .t-catalog__filter__search-and-sort select.t-catalog__sort-select{' +
+      'width:100%!important;max-width:100%!important;font-size:14.5px!important}' +
+      'html #rec2502703571 .t-catalog__search-wrapper{width:100%!important}}' +
+      '@media(max-width:600px){' +
+      'html #rec2502703571 .t-catalog__filter__search-and-sort,' +
+      'html #rec2502703571.ngr-catalog-record .t-catalog__filter__search-and-sort{' +
+      'grid-template-columns:minmax(0,1fr)!important}' +
+      'html #rec2502703571 .t-catalog__filter__search-and-sort>*,' +
+      'html #rec2502703571.ngr-catalog-record .t-catalog__filter__search-and-sort>*{grid-column:1!important}' +
+      // 16px — чтобы телефон не увеличивал страницу при фокусе в поле.
+      'html #rec2502703571 .t-catalog__filter__search-and-sort input.js-catalog-filter-search,' +
+      'html #rec2502703571.ngr-catalog-record .t-catalog__filter__search-and-sort input.js-catalog-filter-search{' +
+      'font-size:16px!important}}';
     document.head.appendChild(st);
   }
 
@@ -2093,97 +4506,17 @@
     var cat = onCatalogPage();
     document.documentElement.classList.toggle('ngr-catpage', cat);
 
-    // Голубую коробку вокруг поиска Tilda задаёт правилом с номером блока,
-    // и обычным стилем его не перебить. Ставим прямо на элемент.
-    if (cat) {
-      var bar = document.querySelector('.t-catalog__filter');
-      if (bar && bar.style.background !== 'transparent') {
-        bar.style.setProperty('background', 'transparent', 'important');
-        bar.style.setProperty('padding', '0', 'important');
-        bar.style.setProperty('border-radius', '0', 'important');
-        bar.style.setProperty('margin', '0 0 14px', 'important');
-      }
-      // Блок фильтров Tilda в каталоге пуст — все его пункты живут в нашей
-      // колонке. Пустой он всё равно занимал всю ширину и отжимал поиск
-      // с сортировкой к правому краю.
-      var opts = document.querySelector('.t-catalog__filter__options');
-      if (opts && opts.style.display !== 'none') opts.style.setProperty('display', 'none', 'important');
-
-      // На телефоне Tilda рисует свои кнопки «Фильтры» и «Поиск» — они
-      // повторяют нашу кнопку фильтров и видимое поле поиска. Оставляем
-      // только её сортировку (замечание Александра 08.08).
-      ['.js-catalog-filter-mob-btn', '.js-catalog-search-mob-btn'].forEach(function (sel) {
-        document.querySelectorAll(sel).forEach(function (b) {
-          if (b.style.display !== 'none') b.style.setProperty('display', 'none', 'important');
-        });
-      });
-
-      var ss = document.querySelector('.t-catalog__filter__search-and-sort');
-      if (ss) {
-        ss.style.setProperty('display', 'flex', 'important');
-        ss.style.setProperty('gap', '10px', 'important');
-        ss.style.setProperty('align-items', 'center', 'important');
-        ss.style.setProperty('width', 'auto', 'important');
-        // Ровно над сеткой товаров: колонка фильтров 262 плюс отступ 24.
-        ss.style.setProperty('margin-left', innerWidth > 1000 ? '275px' : '0', 'important');
-        // Сортировка слева, поиск рядом — как в каталоге Ozon. Оформление
-        // задаём прямо на элементах: свои правила Tilda пишет с номером
-        // блока, и обычным стилем их не перебить (замечание Александра 08.08
-        // про слово «Поиск», заезжающее на лупу).
-        var s = ss.querySelector('select'), q = ss.querySelector('input');
-        var лупа = 'url("data:image/svg+xml;utf8,' +
-          "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' " +
-          "stroke='%238a919b' stroke-width='2' stroke-linecap='round'>" +
-          "<circle cx='11' cy='11' r='7'/><path d='M20 20l-3.6-3.6'/></svg>\")";
-        function ставь(e, prop, val) {
-          if (!e || e.style.getPropertyValue(prop) === val) return;
-          e.style.setProperty(prop, val, 'important');
-        }
-        function поле(e, w) {
-          if (!e) return;
-          ставь(e, 'height', '44px');
-          ставь(e, 'width', w);
-          ставь(e, 'border', '1px solid #e3e8ee');
-          ставь(e, 'border-radius', '12px');
-          ставь(e, 'background-color', '#fff');
-          ставь(e, 'font-size', '14.5px');
-          ставь(e, 'color', '#14171c');
-          ставь(e, 'box-sizing', 'border-box');
-        }
-        var узко = innerWidth <= 1000;
-        поле(s, '210px');
-        поле(q, узко ? '100%' : '280px');
-        // Порядок задаём на прямых детях строки: сами поля лежат внутри
-        // обёрток Tilda, и свойство на них ничего не решает.
-        [].slice.call(ss.children).forEach(function (c) {
-          if (s && (c === s || c.contains(s))) c.style.setProperty('order', '0', 'important');
-          else if (q && (c === q || c.contains(q))) c.style.setProperty('order', '1', 'important');
-        });
-        if (s) {
-          ставь(s, 'order', '0');
-          ставь(s, 'padding', '0 36px 0 14px');
-        }
-        if (q) {
-          ставь(q, 'order', '1');
-          // Слева оставляем место под лупу, иначе подпись наезжает на неё.
-          ставь(q, 'padding', '0 14px 0 42px');
-          ставь(q, 'background-image', лупа);
-          ставь(q, 'background-repeat', 'no-repeat');
-          ставь(q, 'background-position', '14px center');
-          ставь(q, 'background-size', '18px 18px');
-          // У обёртки поиска своя рамка — она рисовала вертикальную черту
-          // рядом с полем (замечание Александра 08.08).
-          if (q.parentNode && q.parentNode !== ss) {
-            ставь(q.parentNode, 'order', '1');
-            ставь(q.parentNode, 'width', 'auto');
-            ставь(q.parentNode, 'border', '0');
-            ставь(q.parentNode, 'background', 'transparent');
-            ставь(q.parentNode, 'box-shadow', 'none');
-            ставь(q.parentNode, 'padding', '0');
-          }
-        }
-      }
-    }
+    /*
+     * Оформление панели каталога целиком в таблице стилей (filterBarCss).
+     *
+     * Раньше те же значения дописывались отсюда инлайном. Замер 14.08
+     * показал, что все шесть узлов — сама панель, пустой блок фильтров и
+     * четыре мобильные кнопки Tilda — выглядят одинаково с инлайнами и без
+     * них: правила уже сильнее чужих, а проход JS переписывал их тем же
+     * самым. Для строки поиска расхождение было настоящим (цвет рамки,
+     * лупа, ширины) — из-за него вид и переключался на глазах. Теперь
+     * хозяин один: стили.
+     */
 
     // Ползунки цены закрашены белым и прячут дорожку. Правило со стилем
     // Tilda перебивает своим, поэтому снимаем фон прямо на элементах.
@@ -2303,7 +4636,7 @@
       // Серая выноска с суммой выезжает при наведении на корзину
       // и портит вид (замечание Александра 08.08). Значок и счётчик
       // остаются, выноску убираем.
-      '.t706__carticon-text{display:none!important}' +
+      '.ngr-ready .t706__carticon .t706__carticon-text{display:none!important}' +
       '@supports (height:100dvh){' +
       '.t706__cartwin{height:100dvh!important;max-height:100dvh!important}}' +
       '.t706__cartwin-content{-webkit-overflow-scrolling:touch}' +
@@ -2324,12 +4657,95 @@
       '.t706__product-thumb{width:62px!important;height:62px!important;flex:0 0 62px!important}' +
       '.t706__product-title{font-size:13.5px!important}' +
       '.t706__product-plusminus{margin-top:8px!important}' +
+      // На узком экране штатный контейнер иконки растягивался до 146 px
+      // и перекрывал ссылки второй колонки. Кликабельной остаётся только
+      // компактная круглая кнопка в безопасном отступе.
+      '.ngr-ready .t706__carticon{left:auto!important;right:12px!important;' +
+      'bottom:calc(12px + env(safe-area-inset-bottom,0px))!important;width:56px!important;' +
+      'min-width:56px!important;max-width:56px!important;height:56px!important;padding:0!important;' +
+      'display:block!important;box-sizing:border-box!important;pointer-events:none!important}' +
+      '.ngr-ready .t706__carticon-wrapper{width:56px!important;height:56px!important;' +
+      'pointer-events:auto!important;display:flex!important;align-items:center!important;' +
+      'justify-content:center!important;position:relative!important}' +
+      /*
+       * Значок и счётчик — по центру кружка, а не в углу.
+       *
+       * Замечание Александра 14.08: «при мобильной вёрстке криво
+       * показывается корзина». Замер на 375 px: кружок 56×56 в точке
+       * (307,744), а значок 48×48 внутри него — в точке (308,745), то есть
+       * прижат к левому верхнему углу вместо середины; счётчик же торчал за
+       * правый край кружка на пять пикселей.
+       */
+      // Значок лежит не прямо в обёртке, а ещё в одной коробке —
+      // .t706__carticon-imgwrap; центрировать надо и её, иначе выравнивание
+      // обёртки ни на что не влияет (замер 14.08: значок 26×26 оказывался
+      // на десять пикселей выше и левее середины кружка).
+      '.ngr-ready .t706__carticon-imgwrap{position:static!important;width:100%!important;' +
+      'height:100%!important;display:flex!important;align-items:center!important;' +
+      'justify-content:center!important;margin:0!important;padding:0!important}' +
+      '.ngr-ready .t706__carticon-img{position:static!important;margin:0!important;' +
+      'padding:0!important;width:26px!important;height:26px!important;display:block!important}' +
+      '.ngr-ready .t706__carticon-counter{pointer-events:auto!important;position:absolute!important;' +
+      'top:-2px!important;right:-2px!important;left:auto!important;bottom:auto!important;' +
+      'min-width:22px!important;height:22px!important;box-sizing:border-box!important}' +
+      // Ссылка выхода в заголовке формы не должна выходить за viewport.
+      '.t706__cartwin .t706__auth{display:flex!important;flex-wrap:wrap!important;gap:6px 10px!important;' +
+      'align-items:center!important}' +
+      '.t706__cartwin .js-cart-log-out{position:static!important;right:auto!important;' +
+      'max-width:100%!important;box-sizing:border-box!important;overflow-wrap:anywhere}' +
       '.t706__cartwin-bottom .t-form__submit button,.t706__cartwin-bottom .t-submit{' +
-      'position:sticky;bottom:0;font-size:16px!important;padding:16px!important}}';
+      'position:sticky;bottom:0;font-size:16px!important;padding:16px!important}}' +
+      /*
+       * Крестик закрытия корзины — ровно в середине своей кнопки.
+       *
+       * Замечание Александра 14.08: «неровно находятся значки креста или
+       * круга, когда открываешь корзину». Замер на 1280 px: обёртка креста
+       * 43×43 в точке (1227,10), а кнопка внутри — шириной 23, и сам значок
+       * начинался на десять пикселей правее её левого края, вылезая за
+       * кнопку. Задаём середину явно, чтобы не зависеть от чужих отступов.
+       */
+      'html .t706__cartwin .t706__close.t706__cartwin-close{width:44px!important;height:44px!important;' +
+      'display:flex!important;align-items:center!important;justify-content:center!important;padding:0!important}' +
+      'html .t706__cartwin .t706__close-button{width:100%!important;height:100%!important;' +
+      'display:flex!important;align-items:center!important;justify-content:center!important;' +
+      'padding:0!important;margin:0!important}' +
+      'html .t706__cartwin .t706__close-button svg{display:block!important;margin:0!important}';
     document.head.appendChild(st);
   }
 
   /* ---------- Боковая колонка фильтров ---------- */
+
+  var sideReturnFocus = null;
+
+  function closeSideFilters() {
+    var live = document.querySelector('.ngr-side_open');
+    if (live) {
+      live.classList.remove('ngr-side_open');
+      live.removeAttribute('aria-modal');
+    }
+    document.documentElement.classList.remove('ngr-side-lock');
+    if (sideReturnFocus && sideReturnFocus.isConnected) {
+      try { sideReturnFocus.focus({ preventScroll: true }); } catch (e) { sideReturnFocus.focus(); }
+    }
+  }
+
+  function openSideFilters(button) {
+    var live = document.querySelector('.ngr-side');
+    if (!live) return;
+    sideReturnFocus = button || document.activeElement;
+    live.classList.add('ngr-side_open');
+    live.setAttribute('aria-modal', 'true');
+    document.documentElement.classList.add('ngr-side-lock');
+    var first = live.querySelector('.ngr-side__close');
+    if (first) first.focus();
+  }
+
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && document.querySelector('.ngr-side_open')) {
+      e.preventDefault();
+      closeSideFilters();
+    }
+  });
 
   /**
    * Фильтры вынесены в боковую колонку, как на маркетплейсах (запрос
@@ -2368,7 +4784,22 @@
     var st = document.createElement('style');
     st.id = 'ngr-side-css';
     st.textContent =
-      '.ngr-withside{display:grid;grid-template-columns:262px minmax(0,1fr);gap:24px;align-items:start}' +
+      /*
+       * Зазор только между колонками, но не между строками.
+       *
+       * Замечание Александра 14.08: «кнопка „загрузить ещё“ срабатывает
+       * слишком низко, приходится прокручивать и видеть большой пробел в
+       * товарах». Пробел оказался арифметическим: колонка фильтров занимает
+       * строки с первой по девяносто девятую, чтобы держаться слева на всю
+       * высоту, а зазор в 24px стоит между КАЖДОЙ парой строк. Девяносто
+       * восемь пустых зазоров — это 2352 пикселя белизны под товарами.
+       *
+       * Замер на боевой странице подтвердил ровно эту цифру: высота
+       * контейнера 15826 при высоте сетки товаров 13474, разница 2352, и
+       * после обнуления зазора строк она обращается в ноль.
+       */
+      '.ngr-withside{display:grid;grid-template-columns:262px minmax(0,1fr);' +
+      'column-gap:24px;row-gap:0;align-items:start}' +
       // Место колонок закреплено, а не задано порядком элементов. После
       // применения фильтра Tilda вставляет первой свою строку «Найдено»,
       // и всё съезжало вправо: товары оказывались в узкой колонке под
@@ -2404,7 +4835,8 @@
       '.ngr-side__up.on{opacity:1;pointer-events:auto}' +
       '.ngr-side__up:hover{background:#f6f8fa}' +
       '.ngr-sidebtn{display:none}' +
-      '@media(max-width:1000px){' +
+      '@media(max-width:860px){' +
+      'html.ngr-side-lock,html.ngr-side-lock body{overflow:hidden!important;overscroll-behavior:none}' +
       '.ngr-withside{grid-template-columns:minmax(0,1fr)}' +
       '.ngr-withside>*{grid-column:1}' +
       '.ngr-withside>.ngr-side{grid-column:1;grid-row:auto}' +
@@ -2413,9 +4845,10 @@
       '.ngr-sidebtn{display:inline-flex;align-items:center;gap:8px;margin:0 0 12px;padding:11px 18px;' +
       'border:1px solid #e3e8ee;background:#fff;border-radius:12px;font-size:14px;font-weight:700;' +
       'color:#14171c;cursor:pointer}' +
-      '.ngr-side__close{display:block;width:100%;margin-top:8px;padding:13px;border:0;border-radius:12px;' +
+      '.ngr-side__close{display:block;position:sticky;top:0;z-index:5;width:100%;margin:0 0 8px;' +
+      'padding:13px;border:0;border-radius:12px;' +
       'background:#4984c4;color:#fff;font-size:15px;font-weight:700;cursor:pointer}}' +
-      '@media(min-width:1001px){.ngr-side__close{display:none}}';
+      '@media(min-width:861px){.ngr-side__close{display:none}}';
     document.head.appendChild(st);
   }
 
@@ -2510,19 +4943,25 @@
    */
   function syncSideFilters() {
     var side = document.querySelector('.ngr-side');
-    if (!side) return;
+    if (!side) { document.documentElement.classList.remove('ngr-side-lock'); return; }
+    if (!side.classList.contains('ngr-side_open')) document.documentElement.classList.remove('ngr-side-lock');
     side.querySelectorAll('.ngr-side__o').forEach(function (row) {
       var lab = liveOpt(row.getAttribute('data-g'), row.getAttribute('data-v'));
       var inp = lab && lab.querySelector('input');
-      row.className = 'ngr-side__o' + (inp && inp.checked ? ' on' : '') + (lab ? '' : ' off');
+      var next = 'ngr-side__o' + (inp && inp.checked ? ' on' : '') + (lab ? '' : ' off');
+      // Пишем только при настоящем изменении. Замер 13.08: проход переписывал
+      // класс всем 74 строкам колонки, и переписывал тем же самым значением —
+      // 74 пересчёта стиля на каждый вызов, на видимой колонке. Это и есть
+      // «скачут фильтры» при вводе в поиск (замечание Александра 13.08).
+      if (row.className !== next) row.className = next;
     });
-    // Прячем всю строку фильтров Tilda, включая кнопку «Сортировка»:
-    // она повторяет список выбора справа от поиска и при этом норовит
-    // закрыться от любого щелчка мимо — выбрать в ней ничего не успеть
-    // (замечание Александра 09.08). Сортировка остаётся одна, справа.
-    document.querySelectorAll('.t-catalog__filter__item').forEach(function (it) {
-      if (it.style.display !== 'none') it.style.setProperty('display', 'none', 'important');
-    });
+    // Строку фильтров Tilda (она повторяет список выбора справа от поиска и
+    // закрывается от любого щелчка мимо — замечание Александра 09.08) раньше
+    // прятали здесь, инлайном, на каждом проходе. Это и был мигающий фильтр:
+    // Tilda перерисовывает строку, кадр она видна, следующий проход её гасит.
+    // Теперь строка скрыта правилом в таблице стилей — оно действует в тот же
+    // миг, когда узел вставлен, и проходу тут делать нечего.
+    // См. .t-catalog__filter__item и .t-catalog__filter__options в filterBarCss.
     // Кнопка фильтров должна быть одна: лишние остаются от прежних сборок.
     var btns = document.querySelectorAll('.ngr-sidebtn');
     for (var b = 0; b < btns.length - 1; b++) btns[b].remove();
@@ -2595,6 +5034,15 @@
 
     var side = document.createElement('aside');
     side.className = 'ngr-side';
+    side.setAttribute('role', 'dialog');
+    side.setAttribute('aria-label', 'Фильтры каталога');
+
+    var close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'ngr-side__close';
+    close.textContent = 'Показать товары';
+    close.addEventListener('click', closeSideFilters);
+    side.appendChild(close);
 
     items.forEach(function (it) {
       var title = ((it.querySelector('.t-catalog__filter__item-title') || {}).textContent || '').trim();
@@ -2705,16 +5153,6 @@
     });
     side.appendChild(up);
 
-    var close = document.createElement('button');
-    close.type = 'button';
-    close.className = 'ngr-side__close';
-    close.textContent = 'Показать товары';
-    close.addEventListener('click', function () {
-      var live = document.querySelector('.ngr-side');
-      if (live) live.classList.remove('ngr-side_open');
-    });
-    side.appendChild(close);
-
     // Ставим колонку слева от сетки товаров.
     var grid = block.querySelector('.t-catalog__products, .js-catalog-products') ||
       (document.querySelector('.js-product') || {}).parentNode;
@@ -2733,8 +5171,7 @@
     btn.className = 'ngr-sidebtn';
     btn.textContent = '☰ Фильтры';
     btn.addEventListener('click', function () {
-      var live = document.querySelector('.ngr-side');
-      if (live) live.classList.add('ngr-side_open');
+      openSideFilters(btn);
     });
     host.parentNode.insertBefore(btn, host);
 
@@ -3251,6 +5688,102 @@
    * только на шаге с адресом, а запрет должен работать на всём оформлении.
    * Кнопку гасим и объясняем, почему, — молча запрещать нельзя.
    */
+  /* ---------- Форма заказа переживает вход ---------- */
+
+  /**
+   * Заполненное покупателем не должно пропадать.
+   *
+   * Случай из жизни (замечание Александра 16.08): человек в корзине вводит
+   * имя, телефон, почту, выбирает пункт выдачи — и упирается в требование
+   * войти. Жмёт «зарегистрироваться», Tilda перезагружает страницу, и всё
+   * введённое исчезает. Он уже вошёл, но обязан набирать заново — на этом
+   * шаге и бросают заказ.
+   *
+   * Поэтому: сохраняем поля при вводе, возвращаем их после перезагрузки.
+   * Храним недолго и только у покупателя в браузере; пароли, скрытые поля
+   * и токены не трогаем.
+   */
+  var КЛЮЧ_ФОРМЫ = 'ngr_cart_form';
+  var ЖИЗНЬ_ФОРМЫ = 2 * 60 * 60 * 1000;   // два часа: дольше заказ не оформляют
+
+  function поляФормы(f) {
+    return [].slice.call(f.querySelectorAll('input, select, textarea')).filter(function (e) {
+      if (e.type === 'password' || e.type === 'hidden' || e.type === 'file') return false;
+      if (e.type === 'checkbox' || e.type === 'radio') return false;
+      // Служебные поля Tilda и наш токен кабинета сохранять незачем.
+      return !!e.name && e.name !== 'ngmember' && !/^tildaspec-cookie/.test(e.name);
+    });
+  }
+
+  function сохранитьФорму() {
+    var данные = {};
+    cartForms().forEach(function (f) {
+      поляФормы(f).forEach(function (e) {
+        if (e.value) данные[e.name] = e.value;
+      });
+    });
+    if (!Object.keys(данные).length) return;
+    try {
+      localStorage.setItem(КЛЮЧ_ФОРМЫ, JSON.stringify({ когда: Date.now(), поля: данные }));
+    } catch (e) {}
+  }
+
+  function вернутьФорму() {
+    var сохранённое;
+    try { сохранённое = JSON.parse(localStorage.getItem(КЛЮЧ_ФОРМЫ) || 'null'); } catch (e) { return; }
+    if (!сохранённое || !сохранённое.поля) return;
+    if (Date.now() - (сохранённое.когда || 0) > ЖИЗНЬ_ФОРМЫ) {
+      try { localStorage.removeItem(КЛЮЧ_ФОРМЫ); } catch (e) {}
+      return;
+    }
+    var вернули = false;
+    cartForms().forEach(function (f) {
+      поляФормы(f).forEach(function (e) {
+        // Заполняем только пустое: то, что покупатель уже набрал сейчас,
+        // важнее сохранённого.
+        if (e.value || !сохранённое.поля[e.name]) return;
+        e.value = сохранённое.поля[e.name];
+        e.dispatchEvent(new Event('input', { bubbles: true }));
+        e.dispatchEvent(new Event('change', { bubbles: true }));
+        вернули = true;
+      });
+    });
+    return вернули;
+  }
+
+  /**
+   * Следим за вводом и возвращаем сохранённое, когда форма появится.
+   * Форму Tilda пересобирает, поэтому обработчик вешаем на документ.
+   */
+  var формаНастроена = false;
+
+  function держатьФорму() {
+    if (!формаНастроена) {
+      формаНастроена = true;
+      var таймер = null;
+      document.addEventListener('input', function (e) {
+        var f = e.target && e.target.closest && e.target.closest(
+          '.t-store__cart-form, .t706__cartwin form, form[name*="cart"]');
+        if (!f) return;
+        clearTimeout(таймер);
+        таймер = setTimeout(сохранитьФорму, 400);
+      }, true);
+      // Уход на регистрацию — последний момент, когда можно сохранить.
+      document.addEventListener('click', function (e) {
+        var a = e.target && e.target.closest && e.target.closest('a[href*="openmembersbar"]');
+        if (a) сохранитьФорму();
+      }, true);
+      // Заказ оформлен — сохранённое больше не нужно.
+      document.addEventListener('submit', function (e) {
+        var f = e.target;
+        if (f && f.matches && f.matches('.t-store__cart-form, .t706__cartwin form, form[name*="cart"]')) {
+          if (member()) { try { localStorage.removeItem(КЛЮЧ_ФОРМЫ); } catch (err) {} }
+        }
+      }, true);
+    }
+    вернутьФорму();
+  }
+
   function cartForms() {
     var out = [];
     document.querySelectorAll('.t-store__cart-form, .t706__cartwin form, form[name*="cart"]')
@@ -3335,14 +5868,98 @@
   }, true);
 
   function apply() {
-    fixPopup(); fixCards(); fixCart(); fixDupDelivery(); fixUnits(); fixBrands();
-    initSearchGuard(); fixSearch(); fixAccountButton(); fixAuthGate();
-    fixRatings(); fixPopupReviews(); fixDescription(); fixDeliveryOrder(); fixCardPhotos(); fixPrices(); fixFilterValues(); fixRatingFilter(); applyRatingFilter(false); fixShelves(); fixSgr(); fixFav(); cartCss(); docsSearch(); filterBarCss(); trimFilterBar(); dropCartTip(); pullProfileOnce(); refreshBrands(); buildSideFilters(); syncSideFilters(); fixUrlSort();
+    fixPopup(); fixCards(); fixCart(); fixPromocode(); fixDupDelivery(); fixUnits(); fixBrands();
+    initSearchGuard(); fixSearch(); initSmartSearch(); fixAccountButton(); fixAuthGate(); держатьФорму();
+    fixRatings(); fixPopupReviews(); fixDescription(); fixDeliveryOrder(); fixCardPhotos(); fixPrices(); fixFilterValues(); fixRatingFilter(); applyRatingFilter(false); fixShelves(); fixSgr(); fixFav(); cartCss(); docsSearch(); filterBarCss(); trimFilterBar(); dropCartTip(); prefillCart(); pullProfileOnce(); refreshBrands(); buildSideFilters(); syncSideFilters(); fixUrlSort();
   }
 
   apply();
   document.addEventListener('DOMContentLoaded', apply);
   window.addEventListener('load', apply);
-  new MutationObserver(function () { apply(); })
-    .observe(document.documentElement, { childList: true, subtree: true });
+  // Tilda меняет каталог пачкой мутаций. Короткий debounce объединяет пачку,
+  // но его общий max-deadline не переносится: непрерывная лента изменений
+  // не может навсегда отложить apply и оставить старую inline-геометрию.
+  var APPLY_DELAY = 40;
+  var APPLY_MAX_WAIT = 180;
+  var applyTimer = null;
+  var applyMaxTimer = null;
+  var applyPromptTimer = null;
+  var applyPending = false;
+
+  function runQueuedApply() {
+    if (!applyPending) return;
+    applyPending = false;
+    if (applyTimer !== null) {
+      clearTimeout(applyTimer);
+      applyTimer = null;
+    }
+    if (applyMaxTimer !== null) {
+      clearTimeout(applyMaxTimer);
+      applyMaxTimer = null;
+    }
+    if (applyPromptTimer !== null) {
+      clearTimeout(applyPromptTimer);
+      applyPromptTimer = null;
+    }
+    apply();
+    // apply() сам меняет DOM: цены, классы карточек, ссылки, галереи. Эти
+    // мутации видит наблюдатель ниже и снова ставит apply в очередь — проход
+    // гонялся по кругу без остановки. Замер 13.08 на каталоге из 730 карточек:
+    // 1208 мутаций в секунду непрерывно, из-за чего строку фильтров дёргало
+    // примерно дважды в секунду (замечание Александра «скачет фильтр, это цикл»).
+    // Забираем и выбрасываем записи, накопленные за время самого прохода:
+    // чужие изменения, пришедшие после него, поставят apply в очередь как обычно.
+    if (applyObserver) applyObserver.takeRecords();
+    applyPending = false;
+  }
+
+  function queueApply(prompt) {
+    applyPending = true;
+    // Смена ширины должна сразу обновить inline-размеры, даже если обычный
+    // mutation-проход уже стоит в очереди.
+    // MutationObserver передаёт массив мутаций первым аргументом, поэтому
+    // немедленный режим включается только явным boolean true от resize.
+    if (prompt === true && applyPromptTimer === null) {
+      applyPromptTimer = setTimeout(runQueuedApply, 0);
+    }
+    // Debounce объединяет короткую пачку, а hard max-wait не перезапускается:
+    // непрерывные мутации не вызывают apply каждые 40 мс и не могут его заморить.
+    if (applyTimer !== null) {
+      clearTimeout(applyTimer);
+    }
+    applyTimer = setTimeout(runQueuedApply, APPLY_DELAY);
+    if (applyMaxTimer === null) {
+      applyMaxTimer = setTimeout(runQueuedApply, APPLY_MAX_WAIT);
+    }
+  }
+  // Наблюдатель держим в переменной: runQueuedApply гасит через него мутации,
+  // которые породил сам apply, иначе проход будит сам себя по кругу.
+  var applyObserver = new MutationObserver(queueApply);
+  applyObserver.observe(document.documentElement, { childList: true, subtree: true });
+  /*
+   * Смена ширины окна больше не запускает полный проход.
+   *
+   * Замечание Александра 14.08: «когда работаю с окном, расширяю и сужаю —
+   * пропала плавность адаптации, видно, что фризит и догоняет размер экрана
+   * слишком медленно». Так и было: на каждое изменение ширины мы немедленно
+   * гнали apply() по всем 730 карточкам — цены, наличие, рейтинги, галереи, —
+   * и делали это десятки раз за одно перетаскивание края окна.
+   *
+   * Смысл в этом был, пока раскладку задавал JS инлайновыми размерами. Сегодня
+   * её задают медиазапросы, а браузер применяет их сам и мгновенно. Осталась
+   * одна мелочь, которой ширина ещё нужна, — метка страницы каталога; её и
+   * ставим, с задержкой в четверть секунды после того, как человек отпустил
+   * край окна.
+   */
+  var applyWidth = window.innerWidth;
+  var ширинаТаймер = null;
+  window.addEventListener('resize', function () {
+    if (window.innerWidth === applyWidth) return;
+    applyWidth = window.innerWidth;
+    if (ширинаТаймер !== null) clearTimeout(ширинаТаймер);
+    ширинаТаймер = setTimeout(function () {
+      ширинаТаймер = null;
+      try { trimFilterBar(); } catch (e) {}
+    }, 250);
+  }, { passive: true });
 })();
