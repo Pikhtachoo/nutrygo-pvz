@@ -5706,13 +5706,29 @@
   var КЛЮЧ_ФОРМЫ = 'ngr_cart_form';
   var ЖИЗНЬ_ФОРМЫ = 2 * 60 * 60 * 1000;   // два часа: дольше заказ не оформляют
 
+  /*
+   * Сохраняем строго перечисленное, а не «всё подряд».
+   *
+   * Телефон у Tilda живёт в трёх полях сразу, и главное из них скрытое —
+   * при отборе «только видимые» телефон терялся, а без него заказ бесполезен.
+   * Служебные поля формы (имя формы, скрытая приманка для роботов) наоборот
+   * попадали в сохранение зря. Поэтому список точный.
+   */
+  var ПОЛЯ_ЗАКАЗА = [
+    'Name', 'Email', 'Phone',
+    'tildaspec-phone-part[]', 'tildaspec-phone-part[]-iso',
+    'city', 'delivery_type', 'address', 'text', 'comment'
+  ];
+
   function поляФормы(f) {
-    return [].slice.call(f.querySelectorAll('input, select, textarea')).filter(function (e) {
-      if (e.type === 'password' || e.type === 'hidden' || e.type === 'file') return false;
-      if (e.type === 'checkbox' || e.type === 'radio') return false;
-      // Служебные поля Tilda и наш токен кабинета сохранять незачем.
-      return !!e.name && e.name !== 'ngmember' && !/^tildaspec-cookie/.test(e.name);
+    var список = [];
+    ПОЛЯ_ЗАКАЗА.forEach(function (имя) {
+      [].slice.call(f.querySelectorAll('[name="' + имя + '"]')).forEach(function (e) {
+        if (e.type === 'password' || e.type === 'file') return;
+        список.push(e);
+      });
     });
+    return список;
   }
 
   function сохранитьФорму() {
