@@ -6079,7 +6079,80 @@
     if (box) box.scrollIntoView({ block: 'center', behavior: 'smooth' });
   }, true);
 
+  /*
+   * Самопроверка аккаунта: nutry-go.ru/?ngr-check=1
+   *
+   * Кабинет открывается только под входом Александра, поэтому две вещи
+   * я проверить не могу: переносится ли аватар на телефон (замечание
+   * 16.08) и легли ли имя с телефоном из заказа в профиль на сервере.
+   * Панель показывает ровно то, что вернул сервер и что лежит в браузере.
+   * Достаточно открыть ссылку на компьютере и на телефоне и сравнить:
+   * если строки совпали — перенос работает.
+   *
+   * Покупателям панель не видна: без флага в адресе она не рисуется,
+   * и ничего никуда не записывает — только читает.
+   */
+  var самопроверкаИдёт = false;
+  function самопроверка() {
+    if (самопроверкаИдёт || location.search.indexOf('ngr-check=1') < 0) return;
+    самопроверкаИдёт = true;
+
+    var окно = document.createElement('div');
+    окно.style.cssText = 'position:fixed;z-index:2147483000;left:12px;right:12px;bottom:12px;' +
+      'max-width:560px;margin:0 auto;padding:16px 18px;border-radius:14px;' +
+      'background:#fff;border:1px solid #dfe3e8;box-shadow:0 12px 40px rgba(0,0,0,.18);' +
+      'font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;' +
+      'color:#222;max-height:80vh;overflow:auto';
+    окно.innerHTML = '<b>Самопроверка аккаунта</b><div class="ngr-chk__body">' +
+      'Спрашиваем сервер…</div>' +
+      '<button type="button" style="margin-top:12px;padding:9px 16px;border:0;border-radius:9px;' +
+      'background:#ff7a1a;color:#fff;font-weight:700;cursor:pointer">Закрыть</button>';
+    окно.querySelector('button').onclick = function () { окно.remove(); };
+    document.body.appendChild(окно);
+    var тело = окно.querySelector('.ngr-chk__body');
+
+    function строка(имя, знач) {
+      return '<div style="display:flex;gap:10px;padding:5px 0;border-bottom:1px solid #f0f2f5">' +
+        '<span style="flex:0 0 46%;color:#6b7280">' + имя + '</span>' +
+        '<b style="flex:1;word-break:break-word">' + (знач || '—') + '</b></div>';
+    }
+    var устройство = (window.innerWidth <= 640 ? 'телефон' : 'компьютер') +
+      ', ширина ' + window.innerWidth;
+
+    if (!memberToken()) {
+      тело.innerHTML = строка('Устройство', устройство) +
+        строка('Вход', 'не выполнен') +
+        '<div style="margin-top:10px;color:#6b7280">Войдите в кабинет и откройте ссылку снова.</div>';
+      return;
+    }
+
+    accountPost('read', {}).then(function (packet) {
+      var s = (packet && packet.snapshot) || {};
+      var p = s.profile || {};
+      var м = profileSettings();
+      тело.innerHTML =
+        строка('Устройство', устройство) +
+        строка('Аккаунт на сервере', s.subject ? 'узнан' : 'не узнан') +
+        строка('Псевдоним', p.nick) +
+        строка('Аватар', p.avatar) +
+        строка('Фотография', p.photo ? 'загружена, ' + Math.round(p.photo.length / 1024) + ' Кб' : 'нет') +
+        строка('Имя из заказа', p.name) +
+        строка('Телефон из заказа', p.phone ? телефонДляГлаз(p.phone) : '') +
+        строка('Избранное', String((s.favorites || []).length) + ' шт.') +
+        строка('Версия записи', String(s.revision || 0)) +
+        строка('Обновлено', s.updated) +
+        строка('В браузере — аватар', м.avatar) +
+        строка('В браузере — имя', м.name) +
+        '<div style="margin-top:10px;color:#6b7280">Строки «на сервере» должны совпасть ' +
+        'на компьютере и на телефоне.</div>';
+    }).catch(function (e) {
+      тело.innerHTML = строка('Устройство', устройство) +
+        строка('Ошибка', String((e && e.message) || e));
+    });
+  }
+
   function apply() {
+    самопроверка();
     fixPopup(); fixCards(); fixCart(); fixPromocode(); fixDupDelivery(); fixUnits(); fixBrands();
     initSearchGuard(); fixSearch(); initSmartSearch(); fixAccountButton(); fixAuthGate(); держатьФорму(); faqCss(); меткаКорзины(); значокВкладки();
     fixRatings(); fixPopupReviews(); fixDescription(); fixDeliveryOrder(); fixCardPhotos(); fixPrices(); fixFilterValues(); fixRatingFilter(); applyRatingFilter(false); fixShelves(); fixSgr(); fixFav(); cartCss(); docsSearch(); filterBarCss(); trimFilterBar(); dropCartTip(); prefillCart(); pullProfileOnce(); refreshBrands(); buildSideFilters(); syncSideFilters(); fixUrlSort();
