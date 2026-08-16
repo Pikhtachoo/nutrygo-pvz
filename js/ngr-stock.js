@@ -1730,9 +1730,13 @@
       st.id = 'ngr-account-css';
       st.textContent =
         '.ngr-account-link.ngr-account--in{background:#fff5ec;border-color:#f0c9a3}' +
-        '.ngr-account-link .ngr-ava{display:inline-flex;align-items:center;justify-content:center;' +
-        'width:32px;height:32px;border-radius:50%;background:#ff7a1a;color:#fff;font-size:14px;' +
-        'font-weight:700;margin-right:8px;flex:0 0 32px;background-size:cover;background-position:center}' +
+        '.ngr-account-link .ngr-ava{display:inline-flex!important;align-items:center!important;' +
+        'justify-content:center!important;width:32px;height:32px;border-radius:50%;background:#ff7a1a;' +
+        'color:#fff;font-size:14px;font-weight:700;margin-right:8px;flex:0 0 32px;' +
+        // Буква стояла не по центру: у Tilda своя высота строки и отступы,
+        // и они сдвигали её вниз-вбок (замечание Александра 16.08).
+        'line-height:1!important;padding:0!important;text-align:center;letter-spacing:0;' +
+        'background-size:cover;background-position:center;overflow:hidden;text-indent:0}' +
         '.ngr-account-link .ngr-account-name{max-width:132px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}';
       document.head.appendChild(st);
     }
@@ -3847,6 +3851,38 @@
       } else if (c.style.display === 'none') {
         c.style.removeProperty('display');
       }
+    });
+  }
+
+  /**
+   * Значок вкладки.
+   *
+   * В разметке стоял свой значок, но размером 1254 на 1254 точки и весом
+   * 755 килобайт — для вкладки это не иконка, а картинка, и браузеры
+   * подставляли вместо неё собственную заглушку (замечание Александра 16.08).
+   * Подкладываем те же изображения в нормальных размерах, включая значок
+   * для домашнего экрана телефона.
+   */
+  var ЗНАЧКИ = 'https://pikhtachoo.github.io/nutrygo-pvz/img/favicon/';
+
+  function значокВкладки() {
+    if (document.getElementById('ngr-favicon-32')) return;
+    // Старые ссылки убираем: браузер берёт последнюю подходящую, и тяжёлая
+    // картинка продолжила бы выигрывать.
+    document.querySelectorAll('link[rel~="icon"], link[rel="shortcut icon"], link[rel="apple-touch-icon"]')
+      .forEach(function (l) { l.parentNode.removeChild(l); });
+    [
+      { id: 'ngr-favicon-32', rel: 'icon', type: 'image/png', sizes: '32x32', file: 'favicon-32.png' },
+      { id: 'ngr-favicon-48', rel: 'icon', type: 'image/png', sizes: '48x48', file: 'favicon-48.png' },
+      { id: 'ngr-favicon-apple', rel: 'apple-touch-icon', sizes: '180x180', file: 'apple-touch-icon.png' }
+    ].forEach(function (з) {
+      var l = document.createElement('link');
+      l.id = з.id;
+      l.rel = з.rel;
+      if (з.type) l.type = з.type;
+      if (з.sizes) l.sizes = з.sizes;
+      l.href = ЗНАЧКИ + з.file;
+      document.head.appendChild(l);
     });
   }
 
@@ -5987,7 +6023,7 @@
 
   function apply() {
     fixPopup(); fixCards(); fixCart(); fixPromocode(); fixDupDelivery(); fixUnits(); fixBrands();
-    initSearchGuard(); fixSearch(); initSmartSearch(); fixAccountButton(); fixAuthGate(); держатьФорму(); faqCss(); меткаКорзины();
+    initSearchGuard(); fixSearch(); initSmartSearch(); fixAccountButton(); fixAuthGate(); держатьФорму(); faqCss(); меткаКорзины(); значокВкладки();
     fixRatings(); fixPopupReviews(); fixDescription(); fixDeliveryOrder(); fixCardPhotos(); fixPrices(); fixFilterValues(); fixRatingFilter(); applyRatingFilter(false); fixShelves(); fixSgr(); fixFav(); cartCss(); docsSearch(); filterBarCss(); trimFilterBar(); dropCartTip(); prefillCart(); pullProfileOnce(); refreshBrands(); buildSideFilters(); syncSideFilters(); fixUrlSort();
   }
 
