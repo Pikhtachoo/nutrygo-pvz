@@ -5688,6 +5688,118 @@
    * только на шаге с адресом, а запрет должен работать на всём оформлении.
    * Кнопку гасим и объясняем, почему, — молча запрещать нельзя.
    */
+  /* ---------- Форма заказа переживает вход ---------- */
+
+  /**
+   * Заполненное покупателем не должно пропадать.
+   *
+   * Случай из жизни (замечание Александра 16.08): человек в корзине вводит
+   * имя, телефон, почту, выбирает пункт выдачи — и упирается в требование
+   * войти. Жмёт «зарегистрироваться», Tilda перезагружает страницу, и всё
+   * введённое исчезает. Он уже вошёл, но обязан набирать заново — на этом
+   * шаге и бросают заказ.
+   *
+   * Поэтому: сохраняем поля при вводе, возвращаем их после перезагрузки.
+   * Храним недолго и только у покупателя в браузере; пароли, скрытые поля
+   * и токены не трогаем.
+   */
+  var КЛЮЧ_ФОРМЫ = 'ngr_cart_form';
+  var ЖИЗНЬ_ФОРМЫ = 2 * 60 * 60 * 1000;   // два часа: дольше заказ не оформляют
+
+  /*
+   * Сохраняем строго перечисленное, а не «всё подряд».
+   *
+   * Телефон у Tilda живёт в трёх полях сразу, и главное из них скрытое —
+   * при отборе «только видимые» телефон терялся, а без него заказ бесполезен.
+   * Служебные поля формы (имя формы, скрытая приманка для роботов) наоборот
+   * попадали в сохранение зря. Поэтому список точный.
+   */
+  var ПОЛЯ_ЗАКАЗА = [
+    'Name', 'Email', 'Phone',
+    'tildaspec-phone-part[]', 'tildaspec-phone-part[]-iso',
+    'city', 'delivery_type', 'address', 'text', 'comment'
+  ];
+
+  function поляФормы(f) {
+    var список = [];
+    ПОЛЯ_ЗАКАЗА.forEach(function (имя) {
+      [].slice.call(f.querySelectorAll('[name="' + имя + '"]')).forEach(function (e) {
+        if (e.type === 'password' || e.type === 'file') return;
+        список.push(e);
+      });
+    });
+    return список;
+  }
+
+  function сохранитьФорму() {
+    var данные = {};
+    cartForms().forEach(function (f) {
+      поляФормы(f).forEach(function (e) {
+        if (e.value) данные[e.name] = e.value;
+      });
+    });
+    if (!Object.keys(данные).length) return;
+    try {
+      localStorage.setItem(КЛЮЧ_ФОРМЫ, JSON.stringify({ когда: Date.now(), поля: данные }));
+    } catch (e) {}
+  }
+
+  function вернутьФорму() {
+    var сохранённое;
+    try { сохранённое = JSON.parse(localStorage.getItem(КЛЮЧ_ФОРМЫ) || 'null'); } catch (e) { return; }
+    if (!сохранённое || !сохранённое.поля) return;
+    if (Date.now() - (сохранённое.когда || 0) > ЖИЗНЬ_ФОРМЫ) {
+      try { localStorage.removeItem(КЛЮЧ_ФОРМЫ); } catch (e) {}
+      return;
+    }
+    var вернули = false;
+    cartForms().forEach(function (f) {
+      поляФормы(f).forEach(function (e) {
+        // Заполняем только пустое: то, что покупатель уже набрал сейчас,
+        // важнее сохранённого.
+        if (e.value || !сохранённое.поля[e.name]) return;
+        e.value = сохранённое.поля[e.name];
+        e.dispatchEvent(new Event('input', { bubbles: true }));
+        e.dispatchEvent(new Event('change', { bubbles: true }));
+        вернули = true;
+      });
+    });
+    return вернули;
+  }
+
+  /**
+   * Следим за вводом и возвращаем сохранённое, когда форма появится.
+   * Форму Tilda пересобирает, поэтому обработчик вешаем на документ.
+   */
+  var формаНастроена = false;
+
+  function держатьФорму() {
+    if (!формаНастроена) {
+      формаНастроена = true;
+      var таймер = null;
+      document.addEventListener('input', function (e) {
+        var f = e.target && e.target.closest && e.target.closest(
+          '.t-store__cart-form, .t706__cartwin form, form[name*="cart"]');
+        if (!f) return;
+        clearTimeout(таймер);
+        таймер = setTimeout(сохранитьФорму, 400);
+      }, true);
+      // Уход на регистрацию — последний момент, когда можно сохранить.
+      document.addEventListener('click', function (e) {
+        var a = e.target && e.target.closest && e.target.closest('a[href*="openmembersbar"]');
+        if (a) сохранитьФорму();
+      }, true);
+      // Заказ оформлен — сохранённое больше не нужно.
+      document.addEventListener('submit', function (e) {
+        var f = e.target;
+        if (f && f.matches && f.matches('.t-store__cart-form, .t706__cartwin form, form[name*="cart"]')) {
+          if (member()) { try { localStorage.removeItem(КЛЮЧ_ФОРМЫ); } catch (err) {} }
+        }
+      }, true);
+    }
+    вернутьФорму();
+  }
+
   function cartForms() {
     var out = [];
     document.querySelectorAll('.t-store__cart-form, .t706__cartwin form, form[name*="cart"]')
@@ -5773,7 +5885,7 @@
 
   function apply() {
     fixPopup(); fixCards(); fixCart(); fixPromocode(); fixDupDelivery(); fixUnits(); fixBrands();
-    initSearchGuard(); fixSearch(); initSmartSearch(); fixAccountButton(); fixAuthGate();
+    initSearchGuard(); fixSearch(); initSmartSearch(); fixAccountButton(); fixAuthGate(); держатьФорму();
     fixRatings(); fixPopupReviews(); fixDescription(); fixDeliveryOrder(); fixCardPhotos(); fixPrices(); fixFilterValues(); fixRatingFilter(); applyRatingFilter(false); fixShelves(); fixSgr(); fixFav(); cartCss(); docsSearch(); filterBarCss(); trimFilterBar(); dropCartTip(); prefillCart(); pullProfileOnce(); refreshBrands(); buildSideFilters(); syncSideFilters(); fixUrlSort();
   }
 
