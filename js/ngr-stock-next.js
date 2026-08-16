@@ -2611,6 +2611,36 @@
   }
   function p_login(п) { return (п && (п.login || п.email)) || ''; }
 
+  /*
+   * Опознание покупателя вне кабинета.
+   *
+   * Токен Tilda наш сервер подтвердить не может (тупик от 10.08), поэтому
+   * вместо него предъявляются собственные заказы покупателя. Их список
+   * появлялся только при открытом кабинете — а на странице товара его нет,
+   * и человек, честно купивший товар, получал отказ: «нажимаю в профиле,
+   * а отзыв написать не могу» (замечание Александра 16.08). По той же
+   * причине на устройстве, где кабинет не открывали, не переносились
+   * псевдоним и аватар.
+   *
+   * Поэтому профиль и заказы подтягиваем сами — один раз за посещение и
+   * только пока нет подписанного пропуска.
+   */
+  var предъявлениеЖдёт = null;
+  function подготовитьПредъявление() {
+    if (пропуск() || предъявлениеДляВоркера()) return Promise.resolve(true);
+    if (!memberToken()) return Promise.resolve(false);
+    if (предъявлениеЖдёт) return предъявлениеЖдёт;
+    предъявлениеЖдёт = Promise.all([
+      tildaPost('https://members.tildaapi.com/api/getprofile/').catch(function () { return null; }),
+      tildaPost('https://store.tildaapi.com/api/orders/getdashboard/').catch(function () { return null; })
+    ]).then(function (r) {
+      if (!cabData.profile) cabData.profile = (r[0] && r[0].data) || memberProfile() || {};
+      if (!cabData.dash) cabData.dash = (r[1] && r[1].data) || r[1] || null;
+      return !!предъявлениеДляВоркера();
+    }).catch(function () { return false; });
+    return предъявлениеЖдёт;
+  }
+
   function accountPost(action, data, requestToken, путь) {
     var token = requestToken || memberToken();
     if (!token) return Promise.reject(new Error('no member token'));
@@ -2682,7 +2712,9 @@
       accountVerified = false;
     }
     if (accountPromise && !force) return accountPromise;
-    var request = accountPost('read', null, token).then(function (packet) {
+    var request = подготовитьПредъявление().then(function () {
+      return accountPost('read', null, token);
+    }).then(function (packet) {
       return applyAccountSnapshot(packet);
     }).catch(function (error) {
       if (accountToken === token && memberToken() === token) {
@@ -6049,7 +6081,9 @@
     if (правоНаОтзыв) return Promise.resolve(правоНаОтзыв);
     if (правоЖдёт) return правоЖдёт;
     if (!memberToken()) return Promise.resolve([]);
-    правоЖдёт = accountPost('can', {}, null, '/reviews/can').then(function (j) {
+    правоЖдёт = подготовитьПредъявление().then(function () {
+      return accountPost('can', {}, null, '/reviews/can');
+    }).then(function (j) {
       if (j && j.pass) запомнитьПропуск(j.pass);
       правоНаОтзыв = (j && Array.isArray(j.items)) ? j.items : [];
       return правоНаОтзыв;
@@ -6629,7 +6663,9 @@
       return;
     }
 
-    accountPost('read', {}).then(function (packet) {
+    подготовитьПредъявление().then(function () {
+      return accountPost('read', {});
+    }).then(function (packet) {
       var s = (packet && packet.snapshot) || {};
       var p = s.profile || {};
       var м = profileSettings();
