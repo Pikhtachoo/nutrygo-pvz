@@ -412,7 +412,14 @@
       fetch(API + '/catalog/cards?f=2')
         .then(function (r) { return r.json(); })
         .then(function (j) {
-          if (j && j.items && j.items.length) { НАШИ_ТОВАРЫ = j.items; вПамять(КАРТОЧКИ_КЛЮЧ, j.items); }
+          if (j && j.items && j.items.length) {
+            НАШИ_ТОВАРЫ = j.items;
+            вПамять(КАРТОЧКИ_КЛЮЧ, j.items);
+            window.NGR_ЕСТЬ_ЧТО_ДОБРАТЬ = true;
+            // Список приехал позже обхода — просим ещё одну страницу, чтобы
+            // было куда подмешать (иначе витрина останется урезанной).
+            попроситьЕщёСтраницу();
+          }
         })
         .catch(function () {});
     }
@@ -539,8 +546,41 @@
     return n;
   }
 
+  /*
+   * Список наших товаров ещё не приехал, а обход уже кончается.
+   *
+   * Тогда витрина осталась бы без дорисовки: на холодном заходе 17.08 так и
+   * вышло — 610 карточек вместо 674. Не даём Tilda закрыть обход: обещаем ей,
+   * что товары ещё есть, и оставляем кнопку «Загрузить ещё» на месте. Когда
+   * список приедет, одно нажатие даст нам ответ, в который и подмешаем.
+   */
+  var ЖДЁМ_СПИСОК = false;
+
+  function попроситьЕщёСтраницу() {
+    if (!ЖДЁМ_СПИСОК) return;
+    ЖДЁМ_СПИСОК = false;
+    var б = document.querySelector('#rec2502703571 .js-catalog-load-more-btn') ||
+            document.querySelector('.js-catalog-load-more-btn');
+    if (б) б.click();
+  }
+
   function подмешатьСвои(текст, url) {
-    if (!НАШИ_ТОВАРЫ || !ОСТАТКИ_КАРТА) return текст;
+    if (!ОСТАТКИ_КАРТА) return текст;
+    if (!НАШИ_ТОВАРЫ) {
+      // Держим обход открытым, пока список в пути.
+      if (onCatalogPage() && чистаяВыдача(url)) {
+        try {
+          var ж = JSON.parse(текст);
+          if (ж && ж.products && ж.products.length) {
+            доставленоTilda += ж.products.length;
+            ж.total = доставленоTilda + 1;
+            ЖДЁМ_СПИСОК = true;
+            return JSON.stringify(ж);
+          }
+        } catch (e) {}
+      }
+      return текст;
+    }
     var j = JSON.parse(текст);
     var список = j.products;
     if (!список || !список.length) return текст;
