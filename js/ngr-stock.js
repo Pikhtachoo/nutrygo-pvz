@@ -402,6 +402,12 @@
    */
   var ЦЕНЫ_КЛЮЧ = 'ngr:prices';
   var ЦЕНЫ_КАРТА = (изПамяти(ЦЕНЫ_КЛЮЧ) || {}).data || null;
+  var ЦЕНЫ_ВЕРСИЯ = (изПамяти(ЦЕНЫ_КЛЮЧ) || {}).when || 0;
+
+  /** Отметка версии цен для адресов, которые кешируются на стороне сети. */
+  function версияЦен() {
+    return ЦЕНЫ_ВЕРСИЯ ? ('&v=' + Math.floor(ЦЕНЫ_ВЕРСИЯ / 60000)) : '';
+  }
   // Признак «витрина ещё не полна» читает пауза автозагрузчика: пока есть что
   // дорисовать, поиск важнее тишины на панели фильтров.
   window.NGR_ЕСТЬ_ЧТО_ДОБРАТЬ = !!(НАШИ_ТОВАРЫ && НАШИ_ТОВАРЫ.length);
@@ -440,6 +446,9 @@
         .then(function (j) {
           if (j && j.items && Object.keys(j.items).length > 50) {
             ЦЕНЫ_КАРТА = j.items; вПамять(ЦЕНЫ_КЛЮЧ, j.items);
+            ЦЕНЫ_ВЕРСИЯ = Date.now();
+            // Цены сменились — карточки, показанные из памяти, устарели.
+            try { for (var к in prodCache) delete prodCache[к]; } catch (e) {}
           }
         })
         .catch(function () {});
@@ -2999,7 +3008,9 @@
     if (prodCache[art]) { renderProduct(prodCache[art]); return; }
     w.querySelector('.ngr-pw__body').innerHTML =
       '<div style="padding:60px 30px;text-align:center;color:#8a919b">Загружаем карточку…</div>';
-    fetch(API + '/catalog/product?offer=' + encodeURIComponent(art))
+    // Версия цен в адресе: без неё карточка товара ещё десять минут отдавала
+    // прежнюю цену после её изменения (расхождение с полкой, 17.08).
+    fetch(API + '/catalog/product?offer=' + encodeURIComponent(art) + версияЦен())
       .then(function (r) { return r.json(); })
       .then(function (j) {
         if (!j || j.error) throw new Error('нет данных');
