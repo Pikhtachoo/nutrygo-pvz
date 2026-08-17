@@ -169,6 +169,50 @@
 
   var API = 'https://nutrygo-integrator.pikhtovnikov-alieksandr.workers.dev';
 
+  /*
+   * Промокод не должен стираться из корзины.
+   *
+   * Перенесено 17.08 из блока Tilda `NGRPromoGuard20260813`, поставленного
+   * 13.08. Сам разбор тогда: наш `render() → loadCart() → tcart__loadLocalObj()`
+   * срабатывал по наблюдателю сразу после применения промокода и перечитывал
+   * корзину из памяти браузера, где промокода ещё нет. Скидка стиралась за
+   * миллисекунды: покупатель видел её в итогах, а счёт в Ozon Pay уходил на
+   * полную сумму.
+   *
+   * Почему перенесено: тот блок живёт только внутри Tilda, в исходниках его
+   * нет, и любая пересборка оформления молча вернула бы денежный дефект.
+   * Метка `NGRPromoGuard20260813` — общая с ним: кто успел первым, тот и
+   * ставит защиту, второй ничего не делает. Поэтому блок можно удалить
+   * в Tilda в любой момент, разрыва не будет.
+   */
+  (function защитаПромокода() {
+    if (window.NGRPromoGuard20260813) return;
+    window.NGRPromoGuard20260813 = 1;
+    function поставить() {
+      var f = window.tcart__loadLocalObj;
+      if (typeof f !== 'function' || f.__ngrGuarded) return false;
+      var обёртка = function () {
+        var c = window.tcart;
+        // Пока промокод применён, перечитывать корзину с диска нельзя.
+        if (c && c.promocode) return;
+        return f.apply(this, arguments);
+      };
+      обёртка.__ngrGuarded = 1;
+      window.tcart__loadLocalObj = обёртка;
+      return true;
+    }
+    if (поставить()) return;
+    // Корзина Tilda подгружается позже — ждём её появления.
+    if (typeof window.t_onFuncLoad === 'function') {
+      window.t_onFuncLoad('tcart__loadLocalObj', поставить);
+      return;
+    }
+    var попыток = 0;
+    var часы = setInterval(function () {
+      if (поставить() || ++попыток > 100) clearInterval(часы);
+    }, 100);
+  })();
+
   /**
    * Просим у Tilda сразу только то, что есть на складе.
    *
@@ -5471,7 +5515,11 @@
     st.id = 'ngr-promo-btn-css';
     st.textContent =
       '.ngr-ready .t-inputpromocode__wrapper{display:flex!important}' +
-      '.ngr-ready .t-inputpromocode__btn{height:54px!important}';
+      // Чёрная кнопка в оранжевой форме выглядела чужой (замечание Александра
+      // 17.08). Берём тот же цвет и тот же цвет текста, что у «Оформить заказ».
+      '.ngr-ready .t-inputpromocode__btn{height:54px!important;' +
+      'background:var(--ngr-orange)!important;color:var(--ngr-ink)!important}' +
+      '.ngr-ready .t-inputpromocode__btn:hover{background:var(--ngr-orange-dark)!important}';
     document.head.appendChild(st);
   }
 
