@@ -446,6 +446,7 @@
     // Действующий запрос считаем и по своей памяти: панель Tilda пересобирается
     // на каждой догрузке и стирает текст из поля, а искать человек не перестал.
     if (String(NGR_ЗАПРОС || '').trim().length >= 2) return true;
+    if (String(НАБРАНО || '').trim().length >= 2) return true;
     var inp = document.querySelector('#rec2502703571 .js-catalog-filter-search') ||
               document.querySelector('input.js-catalog-filter-search');
     return !!(inp && String(inp.value).trim().length >= 2);
@@ -1792,6 +1793,15 @@
    */
   var карточекПриВыдаче = -1;
   var таймерПересева = null;
+  /**
+   * Что человек набрал, по нашей памяти, а не по полю Tilda.
+   *
+   * Поле — чужое и недолговечное: панель фильтров пересобирается на каждой
+   * догрузке, и набранное исчезает вместе с узлом. Замер 17.08: к моменту
+   * нажатия «Найти» поле было уже новым и пустым, и поиск отменял сам себя.
+   * Поэтому запрос запоминаем на первом же нажатии клавиши.
+   */
+  var НАБРАНО = '';
   /*
    * Окошко для замеров: поиск живёт в замыканиях, и без него состояние видно
    * только по последствиям. Пригодилось 17.08, когда запрос терялся при
@@ -1801,6 +1811,7 @@
     var поле = document.querySelector('#rec2502703571 .js-catalog-filter-search');
     return {
       запрос: NGR_ЗАПРОС,
+      набрано: НАБРАНО,
       вПоле: поле ? поле.value : null,
       полеЗаведено: !!(поле && поле.getAttribute('data-ngr-smart') === '1'),
       карточекПриВыдаче: карточекПриВыдаче,
@@ -1841,11 +1852,11 @@
       var живоеПоле = document.querySelector('#rec2502703571 .js-catalog-filter-search');
       if (!document.querySelector('.ngr-smart-search__go') ||
           (живоеПоле && живоеПоле.getAttribute('data-ngr-smart') !== '1')) initSmartSearch();
-      // Панель пересобрали — вернём человеку то, что он искал.
-      if (!NGR_ЗАПРОС) return;
+      // Панель пересобрали — вернём человеку то, что он искал или набирал.
+      if (!NGR_ЗАПРОС && !НАБРАНО) return;
       var поле = document.querySelector('#rec2502703571 .js-catalog-filter-search');
       if (поле && !(поле.value || '').trim() && document.activeElement !== поле) {
-        поле.value = NGR_ЗАПРОС;
+        поле.value = NGR_ЗАПРОС || НАБРАНО;
         if (typeof повторитьПоиск === 'function') повторитьПоиск();
         return;
       }
@@ -2072,6 +2083,7 @@
       var c = document.createElement('button');
       c.type = 'button'; c.className = 'ngr-search-note__off'; c.textContent = 'Показать все';
       c.addEventListener('click', function () {
+        НАБРАНО = '';
         inp.value = '';
         inp.dispatchEvent(new Event('input', { bubbles: true }));
         снятьВыдачу();
@@ -2102,9 +2114,9 @@
        * дорисовывалась и показывала весь каталог заново (замер 17.08).
        * Отмена — это когда человек стёр текст сам, и тогда курсор в поле.
        */
-      if (!сырое && NGR_ЗАПРОС && document.activeElement !== поле) {
-        сырое = String(NGR_ЗАПРОС).trim();
-        поле.value = сырое;
+      if (!сырое && document.activeElement !== поле) {
+        сырое = String(NGR_ЗАПРОС || НАБРАНО || '').trim();
+        if (сырое) поле.value = сырое;
       }
       var q = smartNorm(сырое);
       // Запоминаем действующий запрос: панель и сетку Tilda пересобирает на
@@ -2180,8 +2192,15 @@
 
     inp.addEventListener('input', function () {
       clearTimeout(smartTimer);
-      // Стёрли запрос — сразу возвращаем весь каталог, без нажатий.
-      if (!(inp.value || '').trim()) снятьВыдачу();
+      var сейчас = (inp.value || '').trim();
+      if (сейчас) НАБРАНО = сейчас;
+      /*
+       * Стёрли запрос — возвращаем весь каталог, но только если стёр человек.
+       *
+       * Пустое поле бывает и не по его воле: Tilda подменяет узел на каждой
+       * догрузке. Признак настоящей отмены — курсор в этом самом поле.
+       */
+      if (!сейчас && document.activeElement === inp) { НАБРАНО = ''; снятьВыдачу(); }
       smartTimer = setTimeout(run, 280);
     });
     inp.addEventListener('focus', function () { if (smartNorm(inp.value).length >= 2) run(); });
