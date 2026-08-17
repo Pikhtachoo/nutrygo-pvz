@@ -5615,6 +5615,20 @@
       '.ngr-ready .t-catalog__card .ng2-brand-buy:not([hidden]){' +
       'font-size:13px!important;line-height:1.25!important;min-height:40px!important;' +
       'display:flex!important;align-items:center!important;justify-content:center!important}' +
+      /*
+       * Снимок был уже текста под ним (замечание Александра 17.08:
+       * «текст шире чем сама картинка, выглядит нелогично»).
+       *
+       * Причина — в пропорциях: фотографии товаров вертикальные, 900×1200,
+       * а рамка квадратная, и при вписывании снимок сжимался до 121 точки
+       * при 135 у текста. Ставим рамке пропорцию самого снимка — он
+       * заполняет всю ширину карточки и становится заметно крупнее.
+       * `padding-bottom` обнуляем: квадрат Tilda держит именно им.
+       */
+      '.ngr-ready .t-catalog__card .t-catalog__card__imgwrapper{' +
+      'aspect-ratio:3/4!important;padding-bottom:0!important;height:auto!important}' +
+      // То же на полках «Чаще всего берут» и «Скидки недели» — там наша вёрстка.
+      '.ngr-ready .ngr-sc__pic{aspect-ratio:3/4!important}' +
       '}';
     document.head.appendChild(st);
   }
@@ -6486,6 +6500,42 @@
 
     wrap.appendChild(gal);
     return true;
+  }
+
+  /*
+   * Серая карточка вместо фотографии.
+   *
+   * Замечание Александра 17.08: «на веб-версии первая картинка серая, как
+   * будто что-то не прогружает». Замер объяснил: Tilda ставит в фон заглушку
+   * шириной 20 точек, а настоящий снимок держит в `data-original` и подменяет
+   * его лениво, когда карточка подъезжает к экрану. Заглушка 15×20, растянутая
+   * по рамке, и выглядит как серый прямоугольник.
+   *
+   * Почему до некоторых карточек не доезжает: список каталога перерисовывается
+   * (в том числе нашим подмешиванием товаров), и ленивый загрузчик успевает
+   * пройти до появления новых узлов. Поэтому сначала просим его пройти ещё
+   * раз, а те карточки, что уже на виду, дотягиваем сами.
+   *
+   * Осторожность: подменяем фон только после того, как снимок действительно
+   * загрузился, иначе покупатель увидит пустоту вместо хотя бы заглушки.
+   */
+  function дотянутьФото() {
+    try { if (typeof window.t_lazyload_update === 'function') window.t_lazyload_update(); } catch (e) {}
+    document.querySelectorAll('.t-catalog__card__bgimg[data-original]').forEach(function (e) {
+      var ор = e.getAttribute('data-original');
+      if (!ор) return;
+      if (String(e.style.backgroundImage || '').indexOf(ор) > -1) return;   // уже настоящий
+      if (e.getAttribute('data-ngr-photo') === '1') return;
+      var r = e.getBoundingClientRect();
+      // Далёкие карточки не трогаем: их дотянет ленивый загрузчик, а мы не
+      // будем тащить шестьсот снимков разом.
+      if (r.bottom < -300 || r.top > window.innerHeight + 600) return;
+      e.setAttribute('data-ngr-photo', '1');
+      var im = new Image();
+      im.onload = function () { e.style.backgroundImage = 'url("' + ор + '")'; };
+      im.onerror = function () { e.removeAttribute('data-ngr-photo'); };
+      im.src = ор;
+    });
   }
 
   function fixCardPhotos() {
@@ -7377,7 +7427,7 @@
     самопроверка();
     fixPopup(); fixCards(); fixCart(); fixPromocode(); fixDupDelivery(); fixUnits(); fixBrands();
     initSearchGuard(); fixSearch(); initSmartSearch(); fixAccountButton(); fixAuthGate(); держатьФорму(); faqCss(); меткаКорзины(); значокВкладки();
-    fixRatings(); fixPopupReviews(); fixDescription(); fixDeliveryOrder(); fixCardPhotos(); fixPrices(); fixFilterValues(); fixRatingFilter(); applyRatingFilter(false); fixShelves(); fixSgr(); fixFav(); cartCss(); docsSearch(); filterBarCss(); trimFilterBar(); dropCartTip(); prefillCart(); pullProfileOnce(); buildSideFilters(); syncSideFilters(); fixUrlSort(); promoBtnCss(); мобильнаяКарточкаCss();
+    fixRatings(); fixPopupReviews(); fixDescription(); fixDeliveryOrder(); fixCardPhotos(); fixPrices(); fixFilterValues(); fixRatingFilter(); applyRatingFilter(false); fixShelves(); fixSgr(); fixFav(); cartCss(); docsSearch(); filterBarCss(); trimFilterBar(); dropCartTip(); prefillCart(); pullProfileOnce(); buildSideFilters(); syncSideFilters(); fixUrlSort(); promoBtnCss(); мобильнаяКарточкаCss(); дотянутьФото();
   }
 
   apply();
