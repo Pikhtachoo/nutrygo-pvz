@@ -5566,6 +5566,34 @@
     document.head.appendChild(st);
   }
 
+  /*
+   * «В корзину» на карточке пропадала на телефоне.
+   *
+   * Замер 17.08 на ширине 375: у ссылки `.ng2-brand-buy` шрифт 0 и высота 0 —
+   * значит нажать её пальцем нельзя вовсе, и купить с карточки на телефоне
+   * было невозможно, только через «Подробнее» и окно товара. Причина не в ней:
+   * `font-size: 0` стоит выше по дереву у сетки каталога (приём против
+   * пробелов между блоками) и наследуется всем, что не задало размер само.
+   * На широком экране размер приходит из другого правила — 16 пикселей, —
+   * а на узком не приходит ниоткуда.
+   *
+   * Заодно делаем её нормальной кнопкой под палец: 40 точек высоты.
+   * `:not([hidden])` обязателен — когда товар уже в корзине, сайт прячет эту
+   * ссылку и показывает счётчик количества; перебивать это нельзя.
+   */
+  function мобильнаяКарточкаCss() {
+    if (document.getElementById('ngr-mobile-card-css')) return;
+    var st = document.createElement('style');
+    st.id = 'ngr-mobile-card-css';
+    st.textContent =
+      '@media (max-width:760px){' +
+      '.ngr-ready .t-catalog__card .ng2-brand-buy:not([hidden]){' +
+      'font-size:13px!important;line-height:1.25!important;min-height:40px!important;' +
+      'display:flex!important;align-items:center!important;justify-content:center!important}' +
+      '}';
+    document.head.appendChild(st);
+  }
+
   function cartCss() {
     if (document.getElementById('ngr-cart-css')) return;
     var st = document.createElement('style');
@@ -7262,7 +7290,7 @@
     самопроверка();
     fixPopup(); fixCards(); fixCart(); fixPromocode(); fixDupDelivery(); fixUnits(); fixBrands();
     initSearchGuard(); fixSearch(); initSmartSearch(); fixAccountButton(); fixAuthGate(); держатьФорму(); faqCss(); меткаКорзины(); значокВкладки();
-    fixRatings(); fixPopupReviews(); fixDescription(); fixDeliveryOrder(); fixCardPhotos(); fixPrices(); fixFilterValues(); fixRatingFilter(); applyRatingFilter(false); fixShelves(); fixSgr(); fixFav(); cartCss(); docsSearch(); filterBarCss(); trimFilterBar(); dropCartTip(); prefillCart(); pullProfileOnce(); buildSideFilters(); syncSideFilters(); fixUrlSort(); promoBtnCss();
+    fixRatings(); fixPopupReviews(); fixDescription(); fixDeliveryOrder(); fixCardPhotos(); fixPrices(); fixFilterValues(); fixRatingFilter(); applyRatingFilter(false); fixShelves(); fixSgr(); fixFav(); cartCss(); docsSearch(); filterBarCss(); trimFilterBar(); dropCartTip(); prefillCart(); pullProfileOnce(); buildSideFilters(); syncSideFilters(); fixUrlSort(); promoBtnCss(); мобильнаяКарточкаCss();
   }
 
   apply();
