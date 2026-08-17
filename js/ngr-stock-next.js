@@ -170,6 +170,47 @@
   var API = 'https://nutrygo-integrator.pikhtovnikov-alieksandr.workers.dev';
 
   /*
+   * Счётчик Яндекс.Метрики.
+   *
+   * До 17.08 на сайте не было ни одного счётчика: ни Метрики, ни GA, ни VK —
+   * проверено по разметке и по сетевым запросам. Магазин работал вслепую:
+   * не видно ни откуда приходят покупатели, ни где они уходят.
+   *
+   * Ставим отсюда, а не в поле Tilda: `custom.css` и блок с защитой промокода
+   * уже показали, что живущее только внутри Tilda теряется при пересборке
+   * оформления и обнаруживается это не сразу.
+   *
+   * `ecommerce: dataLayer` — задел на события покупки: складывать их в
+   * `dataLayer` можно будет, не трогая счётчик.
+   */
+  var СЧЁТЧИК_МЕТРИКИ = 111679170;
+
+  (function метрика() {
+    if (window.ym) return;
+    // В редакторе Tilda и на предпросмотре считать нечего.
+    if (/tilda\.(cc|ru)$/i.test(location.hostname)) return;
+    var адрес = 'https://mc.yandex.ru/metrika/tag.js';
+    for (var i = 0; i < document.scripts.length; i++) {
+      if (String(document.scripts[i].src).indexOf('mc.yandex.ru/metrika') > -1) return;
+    }
+    window.ym = window.ym || function () { (window.ym.a = window.ym.a || []).push(arguments); };
+    window.ym.l = 1 * new Date();
+    var s = document.createElement('script');
+    s.async = 1;
+    s.src = адрес;
+    var первый = document.getElementsByTagName('script')[0];
+    первый.parentNode.insertBefore(s, первый);
+    window.ym(СЧЁТЧИК_МЕТРИКИ, 'init', {
+      ssr: true,
+      webvisor: true,
+      clickmap: true,
+      ecommerce: 'dataLayer',
+      accurateTrackBounce: true,
+      trackLinks: true
+    });
+  })();
+
+  /*
    * Промокод не должен стираться из корзины.
    *
    * Перенесено 17.08 из блока Tilda `NGRPromoGuard20260813`, поставленного
