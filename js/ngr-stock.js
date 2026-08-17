@@ -2354,6 +2354,16 @@
     st.textContent =
       '.ngr-sgr{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:700;' +
       'color:#1a8f4c;background:#eaf7ef;border-radius:20px;padding:4px 10px;margin:4px 0;white-space:nowrap}' +
+      /*
+       * На узкой карточке надпись не влезала в зелёную заливку и вылезала
+       * за неё (снимок Александра с Samsung S24 Ultra, 17.08). Виноват
+       * `white-space: nowrap`: строка «✓ Проверен: СГР есть» шире колонки
+       * карточки, а фон рисуется по размеру плашки. На узких экранах
+       * разрешаем перенос и слегка уменьшаем текст — плашка растёт вниз,
+       * а не наружу.
+       */
+      '@media(max-width:960px){.ngr-sgr{white-space:normal;font-size:11px;line-height:1.25;' +
+      'padding:5px 9px;max-width:100%;box-sizing:border-box;text-align:center;justify-content:center}}' +
       '.ngr-sgr__num{display:block;margin-top:8px;font-size:13px;color:#6b7280}' +
       '.ngr-sgr__num b{color:#14171c;font-weight:600}';
     document.head.appendChild(st);
@@ -2457,9 +2467,21 @@
       '.ngr-pd__full{grid-column:1/-1;padding:0 30px 30px}' +
       '@media(max-width:900px){' +
       '.ngr-pw__win{inset:0;border-radius:0}' +
-      '.ngr-pd{grid-template-columns:1fr;gap:20px;padding:12px 16px 24px}' +
-      '.ngr-pd__gal{flex-direction:column-reverse}' +
-      '.ngr-pd__thumbs{flex-direction:row;flex:0 0 auto;overflow-x:auto}' +
+      /*
+       * Окно товара уезжало вправо, и его приходилось листать по горизонтали
+       * (замечание Александра 17.08 с телефона: название и кнопка «В корзину»
+       * обрезаны справа).
+       *
+       * Причина не в тексте: полоска миниатюр — это шесть картинок по 62
+       * точки, и её собственная минимальная ширина около 420. В сетке с
+       * колонкой `1fr` такой ребёнок раздвигает колонку шире экрана, и
+       * листать начинает вся страница, а не полоска. Лечится `minmax(0,1fr)`
+       * и `min-width: 0` — тогда полоска сжимается и прокручивается сама,
+       * как и задумано.
+       */
+      '.ngr-pd{grid-template-columns:minmax(0,1fr);gap:20px;padding:12px 16px 24px}' +
+      '.ngr-pd__gal{flex-direction:column-reverse;min-width:0}' +
+      '.ngr-pd__thumbs{flex-direction:row;flex:0 0 auto;overflow-x:auto;min-width:0;max-width:100%}' +
       '.ngr-pd h3{font-size:19px}' +
       '.ngr-pd__now{font-size:23px}' +
       '.ngr-pd__full{padding:0 16px 24px}}';
@@ -6316,7 +6338,15 @@
       '.ngr-gal b{width:22px;height:4px;border-radius:3px;background:rgba(20,23,28,.22);cursor:pointer;transition:background .15s}' +
       '.ngr-gal b.on{background:#ff7a1a}' +
       '.ngr-gal b:hover{background:rgba(20,23,28,.45)}' +
-      '@media(max-width:640px){.ngr-gal b{width:26px;height:5px}}';
+      /*
+       * На телефоне точки не нажимались (замечание Александра 17.08).
+       * Полоска высотой 5 точек — это не палец: нажатие попадало мимо и
+       * открывало карточку товара. Растим только область касания: сверху и
+       * снизу добавляем прозрачные поля, а сама полоска рисуется по
+       * содержимому — на вид ничего не меняется.
+       */
+      '@media(max-width:960px){.ngr-gal{bottom:0;padding:0 0 6px}' +
+      '.ngr-gal b{width:30px;height:5px;padding:11px 0;background-clip:content-box}}';
     document.head.appendChild(st);
   }
 
@@ -6397,9 +6427,63 @@
     dots.forEach(function (d, i) {
       d.addEventListener('mouseenter', function () { preload(); show(i); });
       d.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); preload(); show(i); });
+      /*
+       * Касание — отдельно от нажатия.
+       *
+       * На телефоне палец до `click` успевал открыть карточку товара: её
+       * обработчик срабатывает раньше. Поэтому переключаем кадр уже на
+       * `touchstart` и глушим событие, чтобы карточка не открывалась.
+       */
+      d.addEventListener('touchstart', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        preload();
+        show(i);
+      }, { passive: false });
     });
     wrap.addEventListener('mouseenter', preload);
     wrap.addEventListener('mouseleave', function () { show(0); });
+
+    /*
+     * Листание фотографии пальцем.
+     *
+     * Точки остаются, но целиться в них на ходу неудобно; смахивание по
+     * снимку — то, чего покупатель ждёт от телефона. Порог 30 точек, чтобы
+     * не спутать смахивание с нажатием, и по вертикали не мешаем прокрутке
+     * страницы.
+     */
+    var текущий = 0;
+    var сX = 0, сY = 0, следим = false;
+    wrap.addEventListener('touchstart', function (e) {
+      if (e.touches.length !== 1) { следим = false; return; }
+      сX = e.touches[0].clientX;
+      сY = e.touches[0].clientY;
+      следим = true;
+      preload();
+    }, { passive: true });
+    wrap.addEventListener('touchend', function (e) {
+      if (!следим) return;
+      следим = false;
+      var т = e.changedTouches && e.changedTouches[0];
+      if (!т) return;
+      var dx = т.clientX - сX, dy = т.clientY - сY;
+      if (Math.abs(dx) < 30 || Math.abs(dx) < Math.abs(dy)) return;   // это не смахивание
+      e.preventDefault();
+      e.stopPropagation();
+      var к = текущий + (dx < 0 ? 1 : -1);
+      if (к < 0) к = dots.length - 1;
+      if (к > dots.length - 1) к = 0;
+      текущий = к;
+      show(к);
+    }, { passive: false });
+
+    // Точки тоже двигают запомненный кадр, иначе смахивание после нажатия
+    // продолжало бы отсчёт с прежнего места.
+    dots.forEach(function (d, i) {
+      d.addEventListener('click', function () { текущий = i; });
+      d.addEventListener('touchstart', function () { текущий = i; }, { passive: true });
+    });
+
     wrap.appendChild(gal);
     return true;
   }
