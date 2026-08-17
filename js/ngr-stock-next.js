@@ -5586,7 +5586,10 @@
     var st = document.createElement('style');
     st.id = 'ngr-mobile-card-css';
     st.textContent =
-      '@media (max-width:760px){' +
+      // Граница — 960, как у самой Tilda: это она в `@media (max-width:960px)`
+      // ставит сетке каталога `font-size: 0`. Сначала правило стояло до 760,
+      // и между 761 и 960 — планшеты — кнопка оставалась мёртвой.
+      '@media (max-width:960px){' +
       '.ngr-ready .t-catalog__card .ng2-brand-buy:not([hidden]){' +
       'font-size:13px!important;line-height:1.25!important;min-height:40px!important;' +
       'display:flex!important;align-items:center!important;justify-content:center!important}' +
