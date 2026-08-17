@@ -5449,6 +5449,32 @@
     });
   }
 
+  /*
+   * Кнопка «Применить» у промокода.
+   *
+   * В оформлении заказа она выглядела чёрной полосой во всю ширину под полем
+   * (снимок Александра 17.08). Причина — встроенные стили, которые Tilda
+   * пишет прямо в элементы поверх наших правил: обёртке `display:table`,
+   * самой кнопке `height:auto`. Замер на живой странице: обёртка table,
+   * кнопка 896 на 20 точек вместо 124 на 54.
+   *
+   * Встроенный стиль сильнее правила по классу, но слабее правила с
+   * `!important` — им и возвращаем задуманную раскладку: поле в строку,
+   * кнопка справа от него.
+   *
+   * Правило продублировано в `custom.css` сайта, но тот живёт только внутри
+   * Tilda: при пересборке оформления он потеряется, а это — нет.
+   */
+  function promoBtnCss() {
+    if (document.getElementById('ngr-promo-btn-css')) return;
+    var st = document.createElement('style');
+    st.id = 'ngr-promo-btn-css';
+    st.textContent =
+      '.ngr-ready .t-inputpromocode__wrapper{display:flex!important}' +
+      '.ngr-ready .t-inputpromocode__btn{height:54px!important}';
+    document.head.appendChild(st);
+  }
+
   function cartCss() {
     if (document.getElementById('ngr-cart-css')) return;
     var st = document.createElement('style');
@@ -7145,7 +7171,7 @@
     самопроверка();
     fixPopup(); fixCards(); fixCart(); fixPromocode(); fixDupDelivery(); fixUnits(); fixBrands();
     initSearchGuard(); fixSearch(); initSmartSearch(); fixAccountButton(); fixAuthGate(); держатьФорму(); faqCss(); меткаКорзины(); значокВкладки();
-    fixRatings(); fixPopupReviews(); fixDescription(); fixDeliveryOrder(); fixCardPhotos(); fixPrices(); fixFilterValues(); fixRatingFilter(); applyRatingFilter(false); fixShelves(); fixSgr(); fixFav(); cartCss(); docsSearch(); filterBarCss(); trimFilterBar(); dropCartTip(); prefillCart(); pullProfileOnce(); buildSideFilters(); syncSideFilters(); fixUrlSort();
+    fixRatings(); fixPopupReviews(); fixDescription(); fixDeliveryOrder(); fixCardPhotos(); fixPrices(); fixFilterValues(); fixRatingFilter(); applyRatingFilter(false); fixShelves(); fixSgr(); fixFav(); cartCss(); docsSearch(); filterBarCss(); trimFilterBar(); dropCartTip(); prefillCart(); pullProfileOnce(); buildSideFilters(); syncSideFilters(); fixUrlSort(); promoBtnCss();
   }
 
   apply();
