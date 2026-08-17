@@ -189,7 +189,9 @@
     if (window.ym) return;
     // В редакторе Tilda и на предпросмотре считать нечего.
     if (/tilda\.(cc|ru)$/i.test(location.hostname)) return;
-    var адрес = 'https://mc.yandex.ru/metrika/tag.js';
+    // Номер обязателен прямо в ссылке: без него tag.js загружается, но
+    // счётчик не поднимается — проверено 17.08, ни хита, ни yaCounter.
+    var адрес = 'https://mc.yandex.ru/metrika/tag.js?id=' + СЧЁТЧИК_МЕТРИКИ;
     for (var i = 0; i < document.scripts.length; i++) {
       if (String(document.scripts[i].src).indexOf('mc.yandex.ru/metrika') > -1) return;
     }
