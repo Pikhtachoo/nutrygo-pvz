@@ -1808,6 +1808,31 @@
       }
     }, true);
 
+    /*
+     * Клик по карточке открывает товар без перезагрузки страницы.
+     *
+     * Родная ссылка Tilda уводит на адрес с параметром товара, а это полная
+     * перезагрузка: каталог начинает грузиться с нуля, и найденное пропадает.
+     * Замечание Александра 18.08: «нажимаешь на карточку и слетает поиск,
+     * потом через некоторое время опять прогружается». Перехватываем клик
+     * до Tilda и показываем свою карточку поверх, ничего не перезагружая.
+     *
+     * Кнопки покупки, избранного и счётчика количества не трогаем — они
+     * должны работать как работали.
+     */
+    document.addEventListener('click', function (e) {
+      var т = e.target;
+      if (!т || !т.closest) return;
+      if (т.closest('[class*="buy"], [class*="fav"], [class*="quantity"], [class*="counter"], input, select')) return;
+      var карточка = т.closest('#rec2502703571 .js-product');
+      if (!карточка) return;
+      var арт = article(карточка);
+      if (!арт) return;
+      e.preventDefault();
+      e.stopPropagation();
+      try { openProduct(арт); } catch (ошибка) { /* если не вышло — пусть работает как раньше */ }
+    }, true);
+
     function keepSearchDuringViewportResize() {
       if (!searchState || !searchState.active) return;
       searchRestoreTimers.forEach(clearTimeout);
