@@ -1823,12 +1823,20 @@
     document.addEventListener('click', function (e) {
       var т = e.target;
       if (!т || !т.closest) return;
-      if (т.closest('[class*="buy"], [class*="fav"], [class*="quantity"], [class*="counter"], input, select')) return;
       var карточка = т.closest('#rec2502703571 .js-product');
       if (!карточка) return;
+      // Поля ввода не трогаем вовсе: там счётчик количества и подобное.
+      if (т.closest('input, select, textarea')) return;
+      /*
+       * Ссылкой обёрнута вся карточка, поэтому переход отменяем при любом
+       * клике по ней — иначе кнопка «в избранное» тоже уводит на перезагрузку.
+       */
+      e.preventDefault();
+      // Кнопкам покупки, избранного и счётчика даём отработать своё —
+      // мешаем только переходу, а не их обработчикам.
+      if (т.closest('[class*="buy"], [class*="fav"], [class*="quantity"], [class*="counter"], [class*="cart"]')) return;
       var арт = article(карточка);
       if (!арт) return;
-      e.preventDefault();
       e.stopPropagation();
       try { openProduct(арт); } catch (ошибка) { /* если не вышло — пусть работает как раньше */ }
     }, true);
